@@ -1,8 +1,14 @@
-.venv/
-dist/
-target/
+# Ignore local environments during development and usage
+neuro-sdk
+neuro-api-jippity
+neuro-api-tony
 
-__pycache__/
+# Python packagees
+.venv
+.vscode
+__pycache__
 
-libs/
-build/
+# bin/ stuff
+node_modules
+*.exe
+*.log
