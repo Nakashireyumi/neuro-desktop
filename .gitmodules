@@ -1,3 +1,0 @@
-[submodule "windows-api"]
-	path = windows-api
-	url = https://github.com/nakurity/windows-api.git

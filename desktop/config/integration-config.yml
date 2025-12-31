@@ -1,0 +1,15 @@
+connection:
+  # APIs
+  neuro-backend: "ws://localhost:1337"
+  neuro-desktop-plugins-server: "ws://localhost:2328"
+
+  # User interfaces
+  neuro-desktop-admin-dashboard: "http://localhost:8300"
+  neuro-desktop-internal-thinking: "http://localhost:8400"
+
+package: # Information about the build
+  name: "neuro-desktop"
+  version: "1.0.0"
+  build: "release/28-12-2025"
+  package-id: "builtby.nakashireyumi/neuro-desktop"
+  description: "An neuro integration, that gives Neuro access to a Computer!"
