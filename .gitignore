@@ -1,14 +1,18 @@
-# Ignore local environments during development and usage
-neuro-sdk
-neuro-api-jippity
-neuro-api-tony
+.venv/
+dist/
+target/
 
-# Python packagees
-.venv
-.vscode
-__pycache__
+__pycache__/
 
-# bin/ stuff
-node_modules
-*.exe
-*.log
+libs/
+build/
+.idea/
+_external/
+desktop/apps/neuro-integration/*.exe
+desktop/apps/neuro-integration/dist/*.exe
+desktop/apps/neuro-desktop/target/**/*.exe
+desktop/dist/**/*.exe
+desktop/apps/process-handler/build-*/
+desktop/apps/process-handler/build-ci/
+desktop/apps/process-handler/build-ci-tests/
+desktop/frontend/package-lock.json

@@ -1,0 +1,9 @@
+# Core controller dependencies (Windows / Linux / macOS)
+pyautogui==0.9.53
+psutil==7.2.0
+Pillow==12.0.0
+mss==10.1.0
+pynput==1.8.1
+
+# Optional: window enumeration (best-effort; Linux/macOS support varies)
+PyGetWindow==0.0.9

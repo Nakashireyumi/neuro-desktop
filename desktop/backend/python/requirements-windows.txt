@@ -1,0 +1,3 @@
+# Windows-only extras (install after requirements.txt on Windows)
+-r requirements.txt
+pywin32==311

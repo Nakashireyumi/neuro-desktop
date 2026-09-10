@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "default_allow": false,
+  "allowed_actions": [
+    "run_script",
+    "execute_queue",
+    "clear_action_queue",
+    "move_mouse_to",
+    "mouse_click",
+    "key_press",
+    "type_text",
+    "enable_low_level_controls",
+    "disable_low_level_controls",
+    "get_desktop_context",
+    "send_desktop_context",
+    "get_status",
+    "list_catalog_items",
+    "find_catalog_items",
+    "get_catalog_item"
+  ],
+  "denied_actions": [
+    "shutdown_immediately",
+    "lock_workstation",
+    "install_extension"
+  ],
+  "scopes": {
+    "input": { "allowed": true },
+    "filesystem": { "allowed": false },
+    "process": { "allowed": true },
+    "network": { "allowed": true },
+    "system": { "allowed": false },
+    "vision": { "allowed": true }
+  }
+}

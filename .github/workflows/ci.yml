@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Headless runners must never drive a real display / mouse / keyboard.
+env:
+  NEURO_HEADLESS: "1"
+  PYAUTOGUI_FAILSAFE: "0"
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: Rust unit tests (no display)
+        run: cargo test --manifest-path desktop/apps/neuro-desktop/Cargo.toml
+        env:
+          # Ensure no accidental X11/Wayland use during unit tests.
+          DISPLAY: ""
+          WAYLAND_DISPLAY: ""
+
+      - name: Rust format check
+        run: cargo fmt --manifest-path desktop/apps/neuro-desktop/Cargo.toml -- --check
+
+      - name: Go format check
+        shell: bash
+        run: |
+          mapfile -t files < <(find desktop/apps/neuro-integration -name '*.go' ! -path '*/dist/*')
+          unformatted="$(gofmt -l "${files[@]}")"
+          if [[ -n "$unformatted" ]]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Go tests (neuro-integration)
+        working-directory: desktop/apps/neuro-integration
+        run: go test ./...
+
+      - name: Python unit tests (parser only — no pyautogui display)
+        run: python -m unittest discover desktop/backend/python/tests
+        env:
+          DISPLAY: ""
+          WAYLAND_DISPLAY: ""
+          NEURO_HEADLESS: "1"
+
+      - name: Ollama neuro tester unit tests
+        working-directory: desktop/tools/ollama-neuro
+        run: |
+          python -m pip install -q -r requirements.txt
+          python -m unittest test_brain.py -v
+
+      - name: Frontend build
+        working-directory: desktop/frontend
+        run: |
+          npm ci
+          npm run build
+
+      # process-handler: compile + unit tests only. Skip spawning GUI/desktop
+      # binaries or any input simulation on headless CI runners.
+      - name: Configure process-handler tests
+        run: cmake -S desktop/apps/process-handler -B desktop/apps/process-handler/build-ci -DBUILD_TESTS=ON
+
+      - name: Build process-handler tests
+        run: cmake --build desktop/apps/process-handler/build-ci --config Release --parallel
+
+      - name: Run process-handler unit tests
+        run: ctest --test-dir desktop/apps/process-handler/build-ci -C Release --output-on-failure -E 'FullLifecycle'
+        # FullLifecycle spawns real processes; keep message/validator unit tests.
