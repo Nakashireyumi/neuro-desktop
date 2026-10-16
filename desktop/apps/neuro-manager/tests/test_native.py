@@ -148,6 +148,44 @@ class NativeManagerTests(unittest.TestCase):
         output = next(view for view in self.widgets(dialog, Gtk.TextView) if not view.get_editable())
         return dialog, entry, output
 
+    def focus_entry(self, window, entry):
+        entry.grab_focus()
+        self.pump(lambda: window.get_focus() is entry.get_delegate())
+
+    def test_focused_approval_closes_after_focus_out_and_clears_credentials(self):
+        with self.session_fixture() as (app, state):
+            for sign_out in (False, True):
+                with self.subTest(sign_out=sign_out):
+                    dialog, approval, output = self.open_credential_dialog(app)
+                    approval.set_text("fixture-unsaved-approval")
+                    output.get_buffer().set_text(state.minted_token)
+                    self.focus_entry(dialog, approval)
+                    cleanup = app.session_dialogs[dialog]
+                    focus_during_cleanup = []
+                    focus_when_cleared = []
+
+                    def observed_clear(*_):
+                        if not approval.get_text():
+                            focus_when_cleared.append(dialog.get_focus())
+
+                    approval.connect("notify::text", observed_clear)
+
+                    def observed_cleanup():
+                        # A native IME must detach while its entry still has a
+                        # root/surface, before credentials and windows go away.
+                        focus_during_cleanup.append(dialog.get_focus())
+                        cleanup()
+
+                    app.session_dialogs[dialog] = observed_cleanup
+                    app.sign_out() if sign_out else dialog.close()
+                    self.assertEqual(focus_during_cleanup, [None])
+                    self.assertTrue(focus_when_cleared)
+                    self.assertTrue(all(focus is None for focus in focus_when_cleared))
+                    self.assertEqual(approval.get_text(), "")
+                    self.assertEqual(self.buffer_text(output), "")
+                    self.assertFalse(dialog.get_visible())
+                    self.assertFalse(app.session_dialogs)
+
     def test_invalid_pasted_token_is_handled_without_echoing_credentials(self):
         with self.session_fixture(sign_in=False) as (app, state):
             for token in ("fixture-private-credential-\u2603", "fixture-private-credential\r\nInjected: secret", "x" * 513):
@@ -205,6 +243,7 @@ class NativeManagerTests(unittest.TestCase):
             dialog, approval, output = self.open_credential_dialog(app)
             state.hold_token = True
             approval.set_text("fixture-token")
+            self.focus_entry(dialog, approval)
             self.click(dialog, "Approve and apply")
             self.pump(state.token_started.is_set)
 

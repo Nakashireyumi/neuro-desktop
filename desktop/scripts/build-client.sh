@@ -38,10 +38,14 @@ fi
 
 rm -rf "$WORK/pyi" "$OUT"
 mkdir -p "$WORK/pyi" "$OUT"
+# Input and screenshots use PyAutoGUI, MSS and Pillow. We do not use PyAutoGUI's
+# optional image matching; collecting ambient OpenCV/NumPy can also pull in
+# hundreds of megabytes of video, Qt and VTK libraries from a build machine.
 "$VENV/bin/pyinstaller" --noconfirm --onefile --clean \
   --name neuro-client \
   --paths backend/python \
   --collect-submodules pynput \
+  --exclude-module cv2 --exclude-module numpy \
   --distpath "$OUT" \
   --workpath "$WORK/pyi/build" \
   --specpath "$WORK/pyi" \

@@ -170,6 +170,9 @@ class ManagerApplication(Gtk.Application):
             GLib.timeout_add(250, self.quit)
 
     def show_signin(self, reason=""):
+        # Focus out while the old entry is still rooted. Win32's IME removes
+        # its native message filter during focus-out, before widget teardown.
+        self.window.set_focus(None)
         self.header.set_title_widget(label("Neuro Desktop Manager", "nd-subheading"))
         if hasattr(self, "signout_button"):
             self.header.remove(self.signout_button)
@@ -248,6 +251,7 @@ class ManagerApplication(Gtk.Application):
         self.session_dialogs[dialog] = cleanup
 
         def closed(*_):
+            dialog.set_focus(None)
             clean = self.session_dialogs.pop(dialog, None)
             if clean:
                 clean()
@@ -256,15 +260,19 @@ class ManagerApplication(Gtk.Application):
         dialog.connect("close-request", closed)
 
     def close_session_dialogs(self):
+        if self.window:
+            self.window.set_focus(None)
         if hasattr(self, "policy_operator_token"):
             self.policy_operator_token.set_text("")
         dialogs = list(self.session_dialogs.items())
         self.session_dialogs.clear()
         for dialog, cleanup in dialogs:
+            dialog.set_focus(None)
             cleanup()
             dialog.close()
 
     def build_manager(self):
+        self.window.set_focus(None)
         for name in ("policy_editor", "request_box", "audit_list"):
             if hasattr(self, name):
                 delattr(self, name)

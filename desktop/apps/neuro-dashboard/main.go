@@ -55,6 +55,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	server := flags.String("server", envOr("NEURO_DASHBOARD_SERVER", defaultServer), "the neuro-integration server; /api and /health are forwarded to it")
 	uiDir := flags.String("ui-dir", envOr("NEURO_UI_DIR", ""), "the built dashboard folder (contains index.html); found automatically when empty")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 
