@@ -44,6 +44,7 @@ from . import shell as shell_module
 from . import gui_stub
 from .gui_stub import describe_headless_reason, is_headless
 from .lib import initialize_driver
+from .controls import keyboard as keyboard_driver
 
 PROTOCOL_VERSION = "2"
 # One JSON line per message. A screenshot travels inside one line as base64 PNG,
@@ -151,16 +152,24 @@ class Agent:
         processes = self._safe(self.monitor.get_running_processes, []) or []
         actions = self._safe(self.monitor.get_action_history, []) or []
 
-        screen = self._safe(self.monitor.get_screen_size)
-        position = self._safe(self.monitor.get_current_mouse_position)
+        backend = keyboard_driver.pyautogui
+        input_available = not self.headless and not isinstance(backend, gui_stub.StubPyAutoGUI)
+        input_error = (describe_headless_reason() if self.headless else backend.reason) if not input_available else None
+        # Stub geometry is only for queue maths; never report it as a real screen.
+        screen = self._safe(self.monitor.get_screen_size) if input_available else None
+        position = self._safe(self.monitor.get_current_mouse_position) if input_available else None
 
         # The screenshot is returned as bytes. The server may be on another PC, and
         # it must never be asked to open a file that this machine names.
         screenshot_png_b64 = None
+        screenshot_error = describe_headless_reason() if params.get("capture_screenshot") and self.headless else None
         if params.get("capture_screenshot") and not self.headless:
-            png = self._safe(self.monitor.capture_screen_png)
-            if png:
-                screenshot_png_b64 = base64.b64encode(png).decode("ascii")
+            try:
+                png = self.monitor.capture_screen_png()
+                if png:
+                    screenshot_png_b64 = base64.b64encode(png).decode("ascii")
+            except Exception as error:
+                screenshot_error = str(error)
 
         return {
             "status": "running",
@@ -169,6 +178,8 @@ class Agent:
             # saying so is what lets the bridge (and Neuro) pick shell_command
             # instead of guessing.
             "headless": self.headless,
+            "input_available": input_available,
+            "input_error": input_error,
             "platform": self._safe(self.monitor.get_platform, sys.platform),
             "active_window": self._safe(self.monitor.get_active_window),
             "open_windows": sorted(dict.fromkeys(windows))[:max_windows],
@@ -177,6 +188,7 @@ class Agent:
             "screen": {"width": screen[0], "height": screen[1]} if screen else None,
             "mouse_position": {"x": position[0], "y": position[1]} if position else None,
             "screenshot_png_b64": screenshot_png_b64,
+            "screenshot_error": screenshot_error,
         }
 
     # ------------------------------------------------------------------

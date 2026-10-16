@@ -1,11 +1,14 @@
 # Architecture
 
-Neuro Desktop lets Neuro-sama use a desktop. It runs as **three programs** and a web
-page:
+Neuro Desktop lets Neuro and Evil use applications and operating systems, including
+applications without a dedicated integration. The native manager, server and
+controlled-machine client run as separate processes:
 
 * the **server** (`neuro-integration`) receives Neuro's commands, applies Vedal's policy,
   and does the heavy work (the dashboard API, the vision client, the relay);
-* the **dashboard program** (`neuro-dashboard`) serves the dashboard page and forwards
+* the **native manager** (`neuro-manager`) provides GTK 4 desktop controls and a
+  startup splash, with no embedded browser;
+* the optional **dashboard program** (`neuro-dashboard`) serves the browser dashboard and forwards
   its API to the server. It is optional: the server serves the page too;
 * the **client** (`neuro-client`) runs on the PC Neuro controls. It carries out the
   commands the server sends, and nothing else.
@@ -22,7 +25,7 @@ work runs on the server, and that PC only needs the client.
  │ stop switch: pause / kill file     executor hub ◀── clients (TCP, token)    │
  │ dashboard API + UI at /ui/         file IPC fallback (co-located client)    │
  │ relay client ──▶ Neuro Relay       relay host (`relay` subcommand, optional) │
- │ MCP bridge ──▶ MCP servers Vedal enabled (child processes)                   │
+ │ MCP bridge ──▶ enabled MCP servers (child processes)                   │
  │ catalog (signed) · game profiles · extension state · vision client           │
  └──────────────────────────────────────────────────────────────────────────────┘
       ▲ dashboard API (token)                  │ commands        ▲ results, telemetry
@@ -34,7 +37,7 @@ work runs on the server, and that PC only needs the client.
  └─────────────────────────────────────────────────┘   │ packaged with PyInstaller.        │
                                                        └───────────────────────────────────┘
 
- DASHBOARD PAGE (TypeScript + Vite) — Vedal's client:
+ NATIVE MANAGER (GTK 4) / OPTIONAL DASHBOARD (TypeScript + Vite):
  Extensions · Games · Permissions · Status (Settings)
 ```
 
@@ -42,6 +45,7 @@ work runs on the server, and that PC only needs the client.
 
 | Component | Where | Language | Role |
 | --- | --- | --- | --- |
+| Native manager | `desktop/apps/neuro-manager` | Python + GTK 4 | Desktop controls, native splash, bounded background API requests; standalone builds include GTK |
 | Server | `desktop/apps/neuro-integration` | Go | Everything Neuro can reach, and every gate between Neuro and the machine |
 | Client (`neuro-client`) | `desktop/backend/python/controller`, entry `desktop/apps/neuro-client`, packaged by `desktop/scripts/build-client.sh` | Python (stdlib-first), PyInstaller | Executes commands on the PC Neuro controls; reconnects on its own. Also run from source as `python3 -m controller.agent` |
 | Dashboard program | `desktop/apps/neuro-dashboard` | Go (stdlib only) | Serves the dashboard page and forwards `/api` and `/health` to the server. Optional |
@@ -109,10 +113,10 @@ Watcher commands from the relay take the same path, with the same gates
 * **The server does not start other programs.** It does not start a relay, and it
   does not supervise the agent. Operators run each process (or the bundle's
   `start.sh` / `start.bat`) and point the server at the others.
-* **No native tray.** The dashboard is served by the server and works without a
-  display, which the headless target needs. A tray could not be built or verified
-  in this environment, so it was not added. That is an explicit decision, not an
-  oversight. See `docs/PRODUCTION_TODO.md`.
+* **Native manager, optional browser dashboard.** The GTK manager runs independently
+  of the server. It polls only the visible page, backs off when unfocused or offline,
+  and never polls vision. The server and client can run headlessly with
+  `NEURO_NO_MANAGER=1`. See `desktop/apps/neuro-manager/README.md`.
 * **Headless first.** On a machine with no display (`NEURO_HEADLESS=1`), the agent
   runs its command-line parts and the server still serves the dashboard and the
   policy. CI runs the agent with no display as a regression test.
@@ -152,5 +156,7 @@ Watcher commands from the relay take the same path, with the same gates
 | End to end | the `agent-e2e` job starts the server and the agent | CI |
 
 What is **not** verified here: the client on a real Windows or macOS desktop
-(input, screen capture), the PyInstaller build on Windows and macOS, and the dashboard
-page visually. CI builds the server for those systems but cannot exercise the desktop.
+(input, screen capture), the PyInstaller build on Windows and macOS, and real Windows/macOS desktop input and screen capture. The native manager and
+browser dashboard were exercised visually on Linux. Cross-platform manager builds
+and GTK UI tests have their own CI matrix; local Linux execution alone does not
+verify other systems.

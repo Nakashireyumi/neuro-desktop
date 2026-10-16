@@ -76,6 +76,27 @@ The bundle's `start.sh` / `start.bat` launch the server and the local client
 together (`neuro-client/` when the bundle has it, else the Python agent);
 `NEURO_NO_AGENT=1` skips the client for a split-machine setup.
 
+On Linux/macOS, the development bundle also provides `dist/dev/start.sh` and
+starts the local client automatically. Rebuilding either shell bundle preserves
+tokens, `permissions.json`, installed extensions, and custom game profiles.
+The development script uses `backend/python/.venv/bin/python` when it exists;
+`NEURO_AGENT_PYTHON=/path/to/python` selects another client interpreter.
+For a desktop client from source, install its drivers once:
+
+```bash
+python3 -m venv backend/python/.venv
+backend/python/.venv/bin/python -m pip install -r backend/python/requirements.txt
+./scripts/bundle/dev.sh
+```
+
+With `NEURO_HEADLESS=1`, the client needs only Python's standard library.
+On supported Wayland compositors (including Hyprland), install `grim` for native
+screenshots; the client uses MSS on X11, Windows, and macOS. Missing GUI drivers
+and capture failures are reported in telemetry without stopping the client.
+The dashboard exposes Pause / Resume and Release all input on every tab. Its
+Activity tab reads `NEURO_AUDIT_LOG`; the Neuro API connection has its own runtime
+card, so an available dashboard does not imply Neuro is connected.
+
 ## Layout
 
 ```
@@ -89,7 +110,7 @@ desktop/
 ├── backend/python/
 │   ├── controller/           CLIENT / AGENT + drivers (agent.py, actions.py, controls/, shell.py)
 │   └── tests/                unittest suite for the agent and the safety rules
-├── frontend/                 DASHBOARD PAGE (TypeScript + Vite, no framework)
+├── frontend/                 DASHBOARD PAGE (React + TypeScript + Vite)
 ├── catalog/                  game profiles, catalog index, live extension state
 ├── config/                   example policy (no config file: settings are env vars)
 ├── scripts/                  build-all.*, build-go.ps1, build-client.*, bundle/{dev,prod}.*, templates/
@@ -210,4 +231,7 @@ explored) on a machine with no display and without touching anything.
 
 Several components were deleted when the server and the agent were consolidated into Go and Python: the Rust executor, the C++ process handler, the Python relay shim, the `native/` placeholders, and the root integration scripts that could not run. Nothing in the shipped path uses them, and `tools/ci/repo_checks.py` fails if a reference to one of them returns. The list and the reasons are in `CHANGELOG.md`.
 
-There is no native tray. The dashboard is served by the server and works headless, and a tray could not be verified here. The decision is recorded in `docs/PRODUCTION_TODO.md`.
+The manager is a separate native GTK 4 application with its own startup splash.
+Build it with `python3 scripts/build-manager.py --standalone`, or use the development
+bundle with GTK and PyGObject installed. The server also provides an optional browser
+dashboard. See [manager setup and resource use](apps/neuro-manager/README.md).

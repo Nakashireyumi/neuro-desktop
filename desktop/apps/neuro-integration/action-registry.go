@@ -49,6 +49,9 @@ const (
 	CmdUninstallExtension  CommandType = "uninstall_extension"
 	CmdEnableExtension     CommandType = "enable_extension"
 	CmdDisableExtension    CommandType = "disable_extension"
+	CmdMarketplaceSearch   CommandType = "marketplace_search"
+	CmdStageIntegration    CommandType = "stage_integration_source"
+	CmdViewerVisibility    CommandType = "set_viewer_visibility"
 	CmdGetStatus           CommandType = "get_status"
 	CmdRunScript           CommandType = "run_script"
 	CmdExecuteQueue        CommandType = "execute_queue"
@@ -214,6 +217,82 @@ var HLActionSpecs = []actionSpec{
 		Schema:      nil,
 	},
 	{
+		Name:        CmdGetDesktopContext,
+		Description: "Collect current desktop context snapshot (window/process/action history + optional screenshot path)",
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"capture_screenshot": map[string]interface{}{
+				"type":        "boolean",
+				"default":     false,
+				"description": "Capture a screenshot before generating context",
+			},
+		}, nil),
+	},
+	{
+		Name:        CmdSendDesktopContext,
+		Description: "Collect desktop context and send it to Neuro as a context message",
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"capture_screenshot": map[string]interface{}{
+				"type":        "boolean",
+				"default":     false,
+				"description": "Capture a screenshot before generating context",
+			},
+			"silent": map[string]interface{}{
+				"type":        "boolean",
+				"default":     true,
+				"description": "Send context silently",
+			},
+		}, nil),
+	},
+}
+
+// ShellActionSpecs is registered independently of the high/low level switch:
+// a headless machine has no high-level intents, but it does have a shell.
+var ShellActionSpecs = []actionSpec{
+	{
+		Name: CmdShellCommand,
+		Description: `Run one command line on the controlled machine and return its exit code and output. ` +
+			`Use this on headless/command-line-only machines, or for terminal work. ` +
+			`The program must be on the shell allowlist. Example: {"command": "ls -la"}`,
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"command": map[string]interface{}{
+				"type":        "string",
+				"description": "The full command line to run, e.g. \"ls -la\" or \"python3 --version\"",
+			},
+			"cwd": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional working directory; defaults to NEURO_SHELL_CWD or the executor's directory",
+			},
+			"timeout": map[string]interface{}{
+				"type":        "number",
+				"description": "How long to wait, in seconds (default 20, maximum 120)",
+			},
+		}, []string{"command"}),
+	},
+}
+
+// Management actions remain available in both input modes.
+var ManagementActionSpecs = []actionSpec{
+	{
+		Name:        CmdMarketplaceSearch,
+		Description: "Search the integration marketplace. Listings explain compatibility, installation steps, and permissions; a listing does not imply an integration is installed or running.",
+		Schema:      neuro.WrapSchema(map[string]interface{}{"query": map[string]interface{}{"type": "string", "description": "Optional name, game, or tag"}}, nil),
+	},
+	{
+		Name:        CmdStageIntegration,
+		Description: "Stage an approved marketplace integration's pinned source for local setup. Needs extensions permission and per-item management delegation. This does not execute an installer or start the integration; the result arrives as a message.",
+		Schema:      neuro.WrapSchema(map[string]interface{}{"item_id": map[string]interface{}{"type": "string", "description": "Marketplace integration id"}}, []string{"item_id"}),
+	},
+	{
+		Name:        CmdViewerVisibility,
+		Description: "Choose whether viewers can see your curated integration activity. Sharing expires automatically; private messages, credentials, and raw desktop capture are excluded.",
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"integration_id": map[string]interface{}{"type": "string"},
+			"actor":          map[string]interface{}{"type": "string", "enum": []string{"neuro", "evil"}},
+			"visible":        map[string]interface{}{"type": "boolean"},
+			"minutes":        map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 60, "default": 15},
+		}, []string{"integration_id", "actor", "visible"}),
+	},
+	{
 		Name:        CmdListCatalogItems,
 		Description: "List available catalog integrations/apps configured for Neuro Desktop",
 		Schema:      nil,
@@ -242,33 +321,6 @@ var HLActionSpecs = []actionSpec{
 				"description": "Catalog item id",
 			},
 		}, []string{"item_id"}),
-	},
-	{
-		Name:        CmdGetDesktopContext,
-		Description: "Collect current desktop context snapshot (window/process/action history + optional screenshot path)",
-		Schema: neuro.WrapSchema(map[string]interface{}{
-			"capture_screenshot": map[string]interface{}{
-				"type":        "boolean",
-				"default":     false,
-				"description": "Capture a screenshot before generating context",
-			},
-		}, nil),
-	},
-	{
-		Name:        CmdSendDesktopContext,
-		Description: "Collect desktop context and send it to Neuro as a context message",
-		Schema: neuro.WrapSchema(map[string]interface{}{
-			"capture_screenshot": map[string]interface{}{
-				"type":        "boolean",
-				"default":     false,
-				"description": "Capture a screenshot before generating context",
-			},
-			"silent": map[string]interface{}{
-				"type":        "boolean",
-				"default":     true,
-				"description": "Send context silently",
-			},
-		}, nil),
 	},
 	{
 		Name:        CmdListInstalledExts,
@@ -318,37 +370,13 @@ var HLActionSpecs = []actionSpec{
 	},
 }
 
-// ShellActionSpecs is registered independently of the high/low level switch:
-// a headless machine has no high-level intents, but it does have a shell.
-var ShellActionSpecs = []actionSpec{
-	{
-		Name: CmdShellCommand,
-		Description: `Run one command line on the controlled machine and return its exit code and output. ` +
-			`Use this on headless/command-line-only machines, or for terminal work. ` +
-			`The program must be on the shell allowlist. Example: {"command": "ls -la"}`,
-		Schema: neuro.WrapSchema(map[string]interface{}{
-			"command": map[string]interface{}{
-				"type":        "string",
-				"description": "The full command line to run, e.g. \"ls -la\" or \"python3 --version\"",
-			},
-			"cwd": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional working directory; defaults to NEURO_SHELL_CWD or the executor's directory",
-			},
-			"timeout": map[string]interface{}{
-				"type":        "number",
-				"description": "How long to wait, in seconds (default 20, maximum 120)",
-			},
-		}, []string{"command"}),
-	},
-}
-
 // alwaysRegisteredSpecs are registered whatever the high- or low-level mode.
 // The shell is the main capability on a headless machine, the guide is the
 // cheapest way to make a small model behave, and request_permission is how
 // Neuro asks the operator for a permission it does not have.
 func alwaysRegisteredSpecs() []actionSpec {
 	specs := append([]actionSpec{}, ShellActionSpecs...)
+	specs = append(specs, ManagementActionSpecs...)
 	specs = append(specs, guideActionSpecs()...)
 	specs = append(specs, escapeHatchSpecs()...)
 	return append(specs, permissionRequestSpecs()...)
@@ -613,6 +641,38 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		return nil, a.integration.sendDesktopContext(capture, silent)
 	case CmdListInstalledExts:
 		return nil, a.integration.listInstalledExtensions()
+	case CmdMarketplaceSearch:
+		query, _ := params["query"].(string)
+		return nil, a.integration.marketplaceSearch(query)
+	case CmdStageIntegration:
+		id, _ := params["item_id"].(string)
+		id, err := normalizeExtensionID(id)
+		if err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
+		if err := a.integration.checkExtensionManagement(id); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
+		return pendingWork{extension: &extensionJob{op: "stage", id: id}}, neuro.NewSuccessResult("accepted: staging " + id + "; the outcome arrives as a message")
+	case CmdViewerVisibility:
+		id, _ := params["integration_id"].(string)
+		actor, _ := params["actor"].(string)
+		visible, visibleOK := params["visible"].(bool)
+		minutes := 15
+		if value, exists := params["minutes"]; exists {
+			number, ok := value.(float64)
+			if !ok || number < 1 || number > 60 || number != float64(int(number)) {
+				return nil, neuro.NewFailureResult("minutes must be an integer from 1 through 60")
+			}
+			minutes = int(number)
+		}
+		if _, err := normalizeExtensionID(id); err != nil || (actor != "neuro" && actor != "evil") || !visibleOK {
+			return nil, neuro.NewFailureResult("integration_id, actor (neuro or evil), and visible (boolean) are required")
+		}
+		if err := a.integration.setViewerVisibility(id, actor, visible, minutes); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
+		return nil, neuro.NewSuccessResult(fmt.Sprintf("Viewer visibility for %s (%s) is %t", id, actor, visible))
 	case CmdRequestPermission:
 		// Filing a request never changes the policy; the decision comes later
 		// as a message from the operator.
@@ -629,6 +689,9 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		if _, err := normalizeExtensionID(itemID); err != nil {
 			return nil, neuro.NewFailureResult(err.Error())
 		}
+		if err := a.integration.checkExtensionManagement(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
 		a.integration.audit.record("action", map[string]interface{}{
 			"action": name, "decision": "accepted", "item": itemID,
 		})
@@ -640,6 +703,9 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		if itemID == "" {
 			return nil, neuro.NewFailureResult("item_id is required")
 		}
+		if err := a.integration.checkExtensionManagement(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
 		return nil, a.integration.uninstallExtension(itemID)
 	case CmdEnableExtension:
 		itemID, _ := params["item_id"].(string)
@@ -647,12 +713,18 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		if itemID == "" {
 			return nil, neuro.NewFailureResult("item_id is required")
 		}
+		if err := a.integration.checkExtensionManagement(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
 		return nil, a.integration.setExtensionEnabled(itemID, true)
 	case CmdDisableExtension:
 		itemID, _ := params["item_id"].(string)
 		itemID = strings.TrimSpace(itemID)
 		if itemID == "" {
 			return nil, neuro.NewFailureResult("item_id is required")
+		}
+		if err := a.integration.checkExtensionManagement(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
 		}
 		return nil, a.integration.setExtensionEnabled(itemID, false)
 	}

@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -142,6 +143,17 @@ class CommandCoverageTest(unittest.TestCase):
         for key in ("headless", "platform", "open_windows", "running_processes"):
             self.assertIn(key, data)
         self.assertIsInstance(data["headless"], bool)
+
+    def test_missing_input_driver_does_not_report_stub_geometry_as_a_screen(self):
+        from controller.gui_stub import StubPyAutoGUI
+
+        self.agent.headless = False
+        with mock.patch("controller.agent.keyboard_driver.pyautogui", StubPyAutoGUI("driver unavailable")):
+            data = self.agent.status({})
+        self.assertFalse(data["input_available"])
+        self.assertEqual(data["input_error"], "driver unavailable")
+        self.assertIsNone(data["screen"])
+        self.assertIsNone(data["mouse_position"])
 
     def test_shell_command_returns_exit_code_and_output(self):
         result = self.agent.execute(

@@ -31,6 +31,7 @@ type AdminServer struct {
 	integration *NDIntegration
 	addr        string
 	credential  dashboardCredential
+	delegation  delegatedManagerStore
 	// credentialProblem says why the dashboard token could not be loaded (for
 	// example, NEURO_ADMIN_TOKEN disagrees with the stored one). The 503 answer
 	// shows it, so the sign-in page can say what to fix.
@@ -57,6 +58,8 @@ func (a *AdminServer) routes() *http.ServeMux {
 	// Public: liveness and the version only. Every other /api route is guarded.
 	mux.HandleFunc("/health", a.handleHealth)
 	mux.HandleFunc("/api/session", a.guard(a.handleSession))
+	mux.HandleFunc("/api/delegation/token", a.guard(a.handleDelegationToken))
+	mux.HandleFunc("/api/delegation/session", a.guard(a.handleDelegatedSession))
 	mux.HandleFunc("/api/status", a.guard(a.handleStatus))
 	mux.HandleFunc("/api/runtime", a.guard(a.handleRuntime))
 	mux.HandleFunc("/api/permissions", a.guard(a.handlePermissions))
@@ -65,6 +68,12 @@ func (a *AdminServer) routes() *http.ServeMux {
 	mux.HandleFunc("/api/catalog", a.guard(a.handleCatalog))
 	mux.HandleFunc("/api/extensions", a.guard(a.handleExtensions))
 	mux.HandleFunc("/api/extensions/", a.guard(a.handleExtensionAction))
+	mux.HandleFunc("/api/integrations", a.handleIntegrations)
+	mux.HandleFunc("/api/integrations/", a.handleIntegrationAdapter)
+	mux.HandleFunc("/api/marketplace", a.guard(a.handleMarketplace))
+	mux.HandleFunc("/api/marketplace/", a.guard(a.handleMarketplaceAction))
+	mux.HandleFunc("/api/viewer/", a.handleViewerFeed)
+	mux.HandleFunc("/viewer/", a.handleViewerOverlay)
 	mux.HandleFunc("/api/permission-requests", a.guard(a.handlePermissionRequests))
 	mux.HandleFunc("/api/permission-requests/", a.guard(a.handlePermissionRequestAction))
 	mux.HandleFunc("/api/permissions/grants/", a.guard(a.handlePermissionGrant))
@@ -137,8 +146,20 @@ func (a *AdminServer) guard(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusServiceUnavailable, message)
 			return
 		}
+		if recognized, err := a.authorizeDelegated(r); recognized {
+			if err != nil {
+				writeError(w, http.StatusForbidden, err.Error())
+				return
+			}
+			next(w, r)
+			return
+		}
 		if !a.credential.matches(requestToken(r)) {
 			a.writeAudit("rejected: bad dashboard token", true)
+			a.integration.audit.record("dashboard_auth", map[string]interface{}{
+				"decision": "denied", "reason": "invalid or missing dashboard token",
+				"method": r.Method, "path": r.URL.Path,
+			})
 			writeError(w, http.StatusUnauthorized, "invalid or missing dashboard token")
 			return
 		}
@@ -162,11 +183,14 @@ func requestToken(r *http.Request) string {
 }
 
 // handleSession lets the dashboard check a token before it shows anything else.
-func (a *AdminServer) handleSession(w http.ResponseWriter, _ *http.Request) {
+func (a *AdminServer) handleSession(w http.ResponseWriter, r *http.Request) {
+	role, expiresAt := a.managerSessionRole(r)
 	writeJSON(w, map[string]interface{}{
 		"ok":           true,
 		"version":      Version,
 		"token_source": a.credential.source,
+		"role":         role,
+		"expires_at":   expiresAt,
 	})
 }
 
@@ -225,6 +249,7 @@ func (a *AdminServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		"uptime":      int(time.Since(integration.startedAt).Seconds()),
 		"started_at":  integration.startedAt.UTC().Format(time.RFC3339),
 		"executor":    executor,
+		"neuro":       integration.neuroConnection.snapshot(),
 		"negotiation": map[string]interface{}{
 			"executor_connected": executor.Connected,
 			"file_ipc_path":      integration.ipcFilePath,
@@ -469,6 +494,9 @@ func (a *AdminServer) handlePermissions(w http.ResponseWriter, r *http.Request) 
 		_, _ = w.Write(data)
 
 	case http.MethodPut, http.MethodPost:
+		if !a.requireOperatorReentry(w, r) {
+			return
+		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "could not read request body")
@@ -511,6 +539,7 @@ func (a *AdminServer) handlePermissions(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		a.integration.setPolicy(policy)
+		go a.integration.syncMCPServers()
 		a.writeAudit("permissions updated", false)
 		log.Printf("Operator updated the permission policy (%s)", path)
 
@@ -589,7 +618,7 @@ func (a *AdminServer) handleExtensions(w http.ResponseWriter, _ *http.Request) {
 		entry["commit"] = install.Commit
 		if item := findCatalogItemByID(CatalogIndex{Items: items}, id); item != nil {
 			entry["name"] = item.Name
-			entry["description"] = item.Description
+			entry["description"] = catalogPresentationItem(*item, true).Description
 			entry["type"] = item.Type
 			entry["repository"] = item.Repository
 			entry["signature_state"] = verifyCatalogItem(*item, publishers).State
@@ -618,11 +647,6 @@ func (a *AdminServer) handleExtensions(w http.ResponseWriter, _ *http.Request) {
 
 // handleExtensionAction implements POST /api/extensions/{id}/{action}
 func (a *AdminServer) handleExtensionAction(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	rest := strings.TrimPrefix(r.URL.Path, "/api/extensions/")
 	parts := strings.SplitN(rest, "/", 2)
 	if len(parts) != 2 {
@@ -632,9 +656,23 @@ func (a *AdminServer) handleExtensionAction(w http.ResponseWriter, r *http.Reque
 
 	id := strings.TrimSpace(parts[0])
 	action := strings.ToLower(strings.TrimSpace(parts[1]))
+	if action == "permissions" {
+		a.handleExtensionPermissions(w, r, id)
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "extension id is required")
 		return
+	}
+	if !a.credential.matches(strings.TrimSpace(r.Header.Get("X-ND-Operator-Token"))) {
+		if err := a.integration.checkExtensionManagement(id); err != nil {
+			writeError(w, http.StatusForbidden, err.Error()+"; re-enter your operator token to manage it directly")
+			return
+		}
 	}
 
 	var result permissiveResult
@@ -706,6 +744,7 @@ func (a *AdminServer) handleGames(w http.ResponseWriter, _ *http.Request) {
 		"registry_source": a.integration.games.RegistrySource(),
 		"detected":        detected,
 		"session":         a.integration.games.Session(),
+		"integrations":    a.integration.adapterSnapshot(),
 	})
 }
 

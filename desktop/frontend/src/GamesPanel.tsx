@@ -99,12 +99,6 @@ export default function GamesPanel({ executor }: { executor: ExecutorInfo | null
       return result.message;
     });
 
-  const releaseInput = () =>
-    run(async () => {
-      const result = await api.releaseInput();
-      return result.message;
-    });
-
   const observe = () =>
     run(async () => {
       const result = await api.observe();
@@ -130,9 +124,6 @@ export default function GamesPanel({ executor }: { executor: ExecutorInfo | null
           </button>
           <button className="secondary" onClick={() => void observe()} disabled={busy || !executorOnline}>
             Show me what Neuro sees
-          </button>
-          <button className="secondary danger" onClick={() => void releaseInput()} disabled={busy}>
-            Release all input
           </button>
         </div>
       </header>

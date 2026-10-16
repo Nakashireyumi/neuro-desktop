@@ -92,9 +92,12 @@ func (n *NDIntegration) Start() error {
 
 	attempt := 0
 	for {
+		n.neuroConnection.connecting()
 		if err := n.client.Connect(); err == nil {
+			n.neuroConnection.connected()
 			break
 		} else {
+			n.neuroConnection.disconnected()
 			attempt++
 			log.Printf("Connect attempt %d failed: %v", attempt, err)
 
@@ -109,6 +112,7 @@ func (n *NDIntegration) Start() error {
 
 	go func() {
 		for err := range n.client.Errors() {
+			n.neuroConnection.disconnected()
 			log.Printf("SDK error: %v", err)
 			n.stats.noteReconnect()
 			n.markDone()
@@ -148,6 +152,7 @@ func (n *NDIntegration) Start() error {
 }
 
 func (n *NDIntegration) Close() error {
+	n.neuroConnection.disconnected()
 	n.stopAllMCPServers()
 
 	if err := n.client.SendContext(

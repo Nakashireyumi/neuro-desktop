@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Headless runners must never drive a real display / mouse / keyboard. The
 # controller treats these exactly like a command-line-only OS, so CI doubles as
 # the headless regression test.
@@ -25,8 +28,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Checkout pinned canonical catalog
+        uses: actions/checkout@v4
+        with:
+          repository: Nakashireyumi/neuro-desktop
+          ref: 7d4504c9ba063ffd41df3fe8bca7928bfb353e48
+          path: .catalog-source
+          persist-credentials: false
+
+      - name: Verify catalog index and application snapshot
+        run: |
+          python3 .catalog-source/marketplace/validate.py
+          python3 -m unittest discover -s .catalog-source/marketplace/tests
+          python3 desktop/tools/ci/check_catalog_snapshot.py .catalog-source
+
       - name: Run repository checks
         run: python3 desktop/tools/ci/repo_checks.py
+
+      - name: Repository checker regression tests
+        run: python3 -m unittest discover -s desktop/tools/ci -p 'test_*.py'
 
   build-and-test:
     permissions:
@@ -177,6 +197,7 @@ jobs:
         working-directory: desktop/frontend
         run: |
           npm ci
+          npm test
           npm run build
 
       # The bridge serves the bundle from /ui/, so every asset URL must stay
@@ -190,6 +211,272 @@ jobs:
             exit 1
           fi
 
+      - name: Windows bundle rebuilds keep operator state
+        if: runner.os == 'Windows'
+        working-directory: desktop
+        shell: pwsh
+        env:
+          NEURO_BUNDLE_NO_LAUNCH: "1"
+          NEURO_BUNDLE_SKIP_CLIENT: "1"
+          NEURO_MANAGER_SOURCE_ONLY: "1"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $preserved = @{
+            'dashboard-token' = 'fixture-dashboard-token'
+            'relay-token' = 'fixture-relay-token'
+            'permissions.json' = '{"default_allow":false,"metadata":{"owner":"fixture"}}'
+            'catalog/extensions-state.json' = '{"installed":{"fixture":{"enabled":true}}}'
+            'catalog/games/custom.json' = '{"id":"custom","name":"Custom fixture"}'
+            'catalog/games/minecraft.json' = '{"id":"minecraft","name":"Edited fixture"}'
+            'config/custom.json' = '{"fixture":true}'
+          }
+          foreach ($bundle in @('dist/dev', 'dist/neuro-desktop')) {
+            foreach ($entry in $preserved.GetEnumerator()) {
+              $target = Join-Path $bundle $entry.Key
+              New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null
+              Set-Content -LiteralPath $target -Value $entry.Value -NoNewline
+            }
+          }
+          & ./scripts/bundle/dev.ps1
+          & ./scripts/bundle/prod.ps1 -SkipVenv
+          foreach ($bundle in @('dist/dev', 'dist/neuro-desktop')) {
+            foreach ($entry in $preserved.GetEnumerator()) {
+              if ((Get-Content -LiteralPath (Join-Path $bundle $entry.Key) -Raw) -cne $entry.Value) {
+                throw "Rebuild replaced operator state: $bundle/$($entry.Key)"
+              }
+            }
+            foreach ($expected in @('start.bat', 'manager/neuro-manager.cmd', 'agent/requirements-windows.txt', 'frontend/index.html')) {
+              if (!(Test-Path (Join-Path $bundle $expected))) { throw "Missing $bundle/$expected" }
+            }
+          }
+
+  # A native manager build includes GTK and Python. Build on each target OS:
+  # PyInstaller does not cross-compile, and a Linux run cannot verify Win32 or
+  # macOS windowing. These tests create only their own widgets and fake API.
+  native-manager:
+    name: Native GTK manager (${{ matrix.os }})
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: desktop/apps/neuro-manager
+      # Use software rendering in CI rather than depending on a runner GPU.
+      GSK_RENDERER: cairo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GTK and its system Python bindings (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-4.0 python3-venv xvfb xauth dbus-x11
+          echo 'NEURO_MANAGER_PYTHON=/usr/bin/python3' >> "$GITHUB_ENV"
+
+      - name: Install GTK and its Homebrew Python bindings (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install pygobject3 gtk4
+          manager_python="$(brew --prefix)/bin/python3"
+          "$manager_python" -c 'import gi; gi.require_version("Gtk", "4.0"); from gi.repository import Gtk'
+          echo "NEURO_MANAGER_PYTHON=$manager_python" >> "$GITHUB_ENV"
+
+      - name: Install GTK, Python and PyInstaller (Windows UCRT64)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-gobject
+            mingw-w64-ucrt-x86_64-pyinstaller
+
+      - name: Test actual GTK views and controls (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          xvfb-run -a env NEURO_MANAGER_GUI_TESTS=1 "$NEURO_MANAGER_PYTHON" -m unittest discover -s desktop/apps/neuro-manager/tests -v
+
+      - name: Test actual GTK views and controls (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          NEURO_MANAGER_GUI_TESTS: "1"
+        run: '"$NEURO_MANAGER_PYTHON" -m unittest discover -s desktop/apps/neuro-manager/tests -v'
+
+      - name: Test actual GTK views and controls (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          NEURO_MANAGER_GUI_TESTS: "1"
+        run: python -m unittest discover -s desktop/apps/neuro-manager/tests -v
+
+      - name: Package the native Python and GTK runtime (Linux and macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: '"$NEURO_MANAGER_PYTHON" desktop/scripts/build-manager.py --standalone'
+
+      - name: Package the native Python and GTK runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: python desktop/scripts/build-manager.py --standalone
+
+      - name: Start the standalone native app (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: xvfb-run -a timeout 30 desktop/dist/neuro-manager/neuro-manager --smoke-test --diagnostics
+
+      - name: Start the standalone native app (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: '"$NEURO_MANAGER_PYTHON" -c "import subprocess; subprocess.run([''desktop/dist/neuro-manager/neuro-manager'', ''--smoke-test''], check=True, timeout=30)"'
+
+      - name: Start the standalone native app (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: python -c "import subprocess; subprocess.run(['desktop/dist/neuro-manager/neuro-manager.exe', '--smoke-test'], check=True, timeout=30)"
+
+      # Archive first: upload-artifact alone does not preserve executable modes
+      # or the symlinks inside macOS application bundles.
+      - name: Archive the tested native manager (Linux and macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tar -czf "$RUNNER_TEMP/neuro-manager-${{ runner.os }}-${{ runner.arch }}.tar.gz" -C desktop/dist neuro-manager
+
+      - name: Archive the tested native manager (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: python -c "import os, tarfile; archive = tarfile.open(os.path.join(os.environ['RUNNER_TEMP'], 'neuro-manager-Windows-${{ runner.arch }}.tar.gz'), 'w:gz'); archive.add('desktop/dist/neuro-manager', arcname='neuro-manager'); archive.close()"
+
+      - name: Save the tested native manager
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuro-manager-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/neuro-manager-${{ runner.os }}-${{ runner.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  # These source packages also have workflows for their eventual standalone
+  # repositories. Root CI must test them now; GitHub ignores nested workflows.
+  ecosystem:
+    name: SDK wheel and Vencord transport (${{ matrix.os }})
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout the pinned standalone SDK
+        uses: actions/checkout@v4
+        with:
+          repository: cassitly/neuro-desktop-sdk
+          ref: ae5e0aba797dfe08ccba7100e117acefa6701c6b
+          path: ecosystem/neuro-desktop-sdk
+
+      - name: Checkout the pinned standalone Vencord adapter
+        uses: actions/checkout@v4
+        with:
+          repository: cassitly/neuro-desktop-vencord
+          ref: e0f9c3755a305f72dcf1118b36e173e0a5bd9a3c
+          path: ecosystem/neuro-desktop-vencord
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build and install the SDK wheel
+        shell: bash
+        run: |
+          python -m pip wheel --no-deps --wheel-dir sdk-wheel ./ecosystem/neuro-desktop-sdk
+          python -m pip install --no-deps sdk-wheel/*.whl
+
+      - name: SDK tests against the installed wheel
+        run: python -m unittest discover -s ecosystem/neuro-desktop-sdk/tests -v
+
+      - name: Existing Minecraft and osu adapter manifest examples
+        run: |
+          python ecosystem/neuro-desktop-sdk/examples/existing_game_bridge.py minecraft
+          python ecosystem/neuro-desktop-sdk/examples/existing_game_bridge.py osu
+
+      - name: Validate the Vencord manifest through the packaged SDK
+        run: python -c "from neuro_desktop_sdk import load_manifest; assert load_manifest('ecosystem/neuro-desktop-vencord/manifest.json')['id'] == 'vencord-discord'"
+
+      - name: Scoped Vencord transport and opt-in tests
+        working-directory: ecosystem/neuro-desktop-vencord
+        run: npm test
+
+      - name: Save the tested platform-independent SDK wheel
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: neuro-desktop-sdk-wheel
+          path: sdk-wheel/*.whl
+          if-no-files-found: error
+
+  vencord-build:
+    name: Vencord adapter (real upstream typecheck and desktop build)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Neuro Desktop
+        uses: actions/checkout@v4
+
+      - name: Checkout the pinned standalone Vencord adapter
+        uses: actions/checkout@v4
+        with:
+          repository: cassitly/neuro-desktop-vencord
+          ref: e0f9c3755a305f72dcf1118b36e173e0a5bd9a3c
+          path: ecosystem/neuro-desktop-vencord
+
+      - name: Checkout the reviewed Vencord API target
+        uses: actions/checkout@v4
+        with:
+          repository: Vendicated/Vencord
+          ref: 32c90633ce6a95d7e56c95479efbb431bacf1eac
+          path: .ci/Vencord
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.9.0"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: .ci/Vencord/pnpm-lock.yaml
+
+      - name: Install Vencord's locked build dependencies
+        working-directory: .ci/Vencord
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck and compile the native adapter with Vencord
+        working-directory: ecosystem/neuro-desktop-vencord
+        env:
+          VENCORD_SOURCE: ${{ github.workspace }}/.ci/Vencord
+        run: npm run check:vencord
 
   # The server and the agent are two languages and two processes; a unit test on
   # each side cannot see a protocol regression between them. This job starts
@@ -494,6 +781,8 @@ jobs:
           NEURO_BUNDLE_SKIP_VENV: "1"
           # neuro-client is built (and smoke-tested) by its own job below.
           NEURO_BUNDLE_SKIP_CLIENT: "1"
+          # Standalone GTK packaging and real GUI tests run in native-manager.
+          NEURO_MANAGER_SOURCE_ONLY: "1"
         run: |
           set -euo pipefail
           (cd frontend && npm ci && npm run build)
@@ -505,6 +794,8 @@ jobs:
           set -euo pipefail
           test -x neuro-integration
           test -x neuro-dashboard
+          test -x manager/neuro-manager
+          test -f manager/neuro_manager/app.py
           test -f start.sh && bash -n start.sh
           test -f permissions.json
           test -f frontend/index.html
@@ -590,7 +881,7 @@ jobs:
   release-gate:
     name: Release gate (every required job succeeded)
     if: always()
-    needs: [repo-checks, build-and-test, agent-e2e, python-cli-only, relay-host, mcp, vision, catalog-verify, weak-model-eval, bundle, client-build]
+    needs: [repo-checks, build-and-test, native-manager, ecosystem, vencord-build, agent-e2e, python-cli-only, relay-host, mcp, vision, catalog-verify, weak-model-eval, bundle, client-build]
     runs-on: ubuntu-latest
     steps:
       - name: Check the results

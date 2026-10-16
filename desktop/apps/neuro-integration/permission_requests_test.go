@@ -248,6 +248,7 @@ func TestPermissionRequestAdminRoutes(t *testing.T) {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-ND-Token", testDashboardToken)
+		req.Header.Set("X-ND-Operator-Token", testDashboardToken)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		return rec

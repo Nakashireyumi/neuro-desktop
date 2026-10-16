@@ -3,6 +3,8 @@ import time
 import threading
 from typing import List, Tuple, Optional, Dict, Any
 import os
+import shutil
+import subprocess
 import sys
 
 try:
@@ -175,14 +177,41 @@ class DesktopMonitor:
             raise RuntimeError(f"Cannot read screen size (display unavailable): {exc}") from exc
 
     def capture_screen(self) -> "Image.Image":
-        if self.headless or mss is None:
+        if self.headless:
             raise NoDisplayError(
                 "Screenshot unavailable: this machine has no display session, so there is "
                 "nothing to capture. Use shell_command or desktop context instead."
             )
+        if Image is None:
+            raise NoDisplayError("Screenshot unavailable: Pillow is not installed on this machine.")
+        # XGetImage cannot capture native Wayland windows. On wlroots desktops
+        # (including Hyprland), grim captures through the compositor instead.
+        if sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY"):
+            grim = shutil.which("grim")
+            if grim:
+                try:
+                    result = subprocess.run(
+                        [grim, "-t", "png", "-"], stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE, timeout=5, check=True,
+                    )
+                    with Image.open(io.BytesIO(result.stdout)) as image:
+                        return image.convert("RGB")
+                except (OSError, subprocess.SubprocessError, ValueError) as exc:
+                    raise NoDisplayError(
+                        "Wayland screenshot failed. Check that grim can access this compositor: " + str(exc)
+                    ) from exc
+        if mss is None:
+            raise NoDisplayError(
+                "Screenshot unavailable: install mss for X11/Windows/macOS, or grim for a supported Wayland compositor."
+            )
         with mss.mss() as sct:
             monitor = sct.monitors[1]
-            screenshot = sct.grab(monitor)
+            try:
+                screenshot = sct.grab(monitor)
+            except Exception as exc:
+                if os.environ.get("WAYLAND_DISPLAY"):
+                    raise NoDisplayError("Screenshot capture failed under Wayland. Install grim on a supported compositor.") from exc
+                raise
             return Image.frombytes("RGB", screenshot.size, screenshot.rgb)
 
     def capture_screen_png(

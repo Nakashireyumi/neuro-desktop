@@ -14,6 +14,7 @@ What is in this folder
   agent/              the Python agent. It runs on this PC when neuro-client/ is not
                       in the bundle (needs Python 3.9+ with agent/requirements.txt).
   frontend/           dashboard client, served at http://127.0.0.1:8300/ui/
+  manager/            native GTK 4 manager with its own startup splash
   catalog/            game profiles, extension state and the audio/vision catalog
   config/             example policy and integration config
   permissions.json    the active permission policy (edit it, or use the dashboard)
@@ -37,6 +38,12 @@ Run it
 ------
   - Windows: start.bat
   - Linux/macOS: ./start.sh
+
+  The native manager opens automatically. Enter your dashboard token to connect.
+  NEURO_NO_MANAGER=1 disables the manager for headless servers. To connect the
+  manager to another server, set NEURO_MANAGER_SERVER=http://<server-ip>:8300.
+  Production builds include GTK; source builds need the dependencies in
+  manager/README.md. The browser dashboard is also available for remote use.
 
   The dashboard asks for the dashboard token in each new browser session. The token is
   never read from the URL, and the browser keeps it only for that browser session.

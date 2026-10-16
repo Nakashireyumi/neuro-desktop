@@ -232,6 +232,9 @@ type CatalogItem struct {
 	// MCP, when set, makes this an MCP server extension (see mcp.go).
 	MCP *CatalogMCP `json:"mcp,omitempty"`
 
+	Permissions    []ExtensionPermissionDeclaration `json:"permissions,omitempty"`
+	SettingsSchema map[string]interface{}           `json:"settings_schema,omitempty"`
+
 	// Raw is the item exactly as it appeared in the index. It is what the
 	// signature covers, so it is never serialised back out.
 	Raw json.RawMessage `json:"-"`
@@ -323,6 +326,7 @@ func (n *NDIntegration) findCatalogItems(query string, limit int) neuro.Executio
 
 	lines := make([]string, 0, len(matches))
 	for _, item := range matches {
+		item = catalogPresentationItem(item, false)
 		lines = append(lines, fmt.Sprintf("%s (%s): %s", item.ID, item.Name, item.Description))
 	}
 
@@ -344,6 +348,7 @@ func (n *NDIntegration) getCatalogItem(itemID string) neuro.ExecutionResult {
 		if strings.ToLower(strings.TrimSpace(item.ID)) != target {
 			continue
 		}
+		item = catalogPresentationItem(item, false)
 
 		parts := []string{
 			fmt.Sprintf("id=%s", item.ID),

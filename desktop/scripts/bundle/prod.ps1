@@ -9,6 +9,7 @@
 #   neuro-client\           the program for the PC Neuro controls (only if it could be built)
 #   agent\                  the Python agent + its requirements (fallback for neuro-client)
 #   frontend\               dashboard client, served at /ui/
+#   manager\                native GTK manager with its Python/GTK runtime
 #   catalog\, config\       game profiles, policy example, docs
 # Not verified on Windows from the development environment: see docs/PRODUCTION_TODO.md.
 # ============================================================
@@ -19,6 +20,18 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Copy-SeedDirectory([string]$Source, [string]$Destination) {
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    foreach ($Item in Get-ChildItem -LiteralPath $Source -Force) {
+        $Target = Join-Path $Destination $Item.Name
+        if ($Item.PSIsContainer) {
+            Copy-SeedDirectory $Item.FullName $Target
+        } elseif (!(Test-Path -LiteralPath $Target)) {
+            Copy-Item -LiteralPath $Item.FullName -Destination $Target
+        }
+    }
+}
+
 $Root = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 Push-Location $Root
 try {
@@ -28,13 +41,13 @@ try {
 
     Write-Host '=== Building Neuro Desktop bundle ==='
 
-    if (Test-Path $Dist) { Remove-Item -Recurse -Force $Dist }
+    Write-Host "Updating $Dist (keeping credentials, policy, installed extensions and custom profiles)..."
     New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 
     # ----------------------------------------------------------
     # 1. Server (Go)
     # ----------------------------------------------------------
-    Write-Host '[1/3] Building the server and the dashboard program...'
+    Write-Host '[1/4] Building the server and the dashboard program...'
     Push-Location 'apps/neuro-integration'
     try {
         New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
@@ -62,29 +75,29 @@ try {
     # 2. Dashboard client
     # ----------------------------------------------------------
     if (!$SkipFrontend) {
-        Write-Host '[2/3] Building the dashboard client...'
+        Write-Host '[2/4] Building the dashboard client...'
         Push-Location 'frontend'
         try {
-            if (!(Test-Path 'node_modules')) {
-                & npm install
-                if ($LASTEXITCODE -ne 0) { throw 'npm install failed' }
-            }
+            & npm ci
+            if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
             & npm run build
             if ($LASTEXITCODE -ne 0) { throw 'npm run build failed' }
         }
         finally {
             Pop-Location
         }
+        if (Test-Path "$Dist/frontend") { Remove-Item -Recurse -Force "$Dist/frontend" }
         New-Item -ItemType Directory -Force -Path "$Dist/frontend" | Out-Null
         Copy-Item 'frontend/dist/*' "$Dist/frontend" -Recurse -Force
     } else {
-        Write-Host '[2/3] Dashboard client skipped (-SkipFrontend)'
+        Write-Host '[2/4] Dashboard client kept (-SkipFrontend)'
     }
 
     # ----------------------------------------------------------
     # 3. Agent (Python) + config, catalog, docs
     # ----------------------------------------------------------
-    Write-Host '[3/3] Bundling the agent, config and catalog...'
+    Write-Host '[3/4] Bundling the agent, config and catalog...'
+    if (Test-Path $AgentDist) { Remove-Item -Recurse -Force $AgentDist }
     New-Item -ItemType Directory -Force -Path $AgentDist | Out-Null
     Copy-Item 'backend/python/controller' $AgentDist -Recurse -Force
     Get-ChildItem -Path $AgentDist -Recurse -Directory -Filter '__pycache__' |
@@ -101,7 +114,10 @@ try {
     } else {
         try {
             $Venv = 'backend/python/.venv'
-            if (!(Test-Path $Venv)) { & python -m venv $Venv | Out-Null }
+            if (!(Test-Path $Venv)) {
+                & python -m venv $Venv | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw 'agent venv creation failed' }
+            }
             & "$Venv/Scripts/pip.exe" install --quiet --upgrade pip
             & "$Venv/Scripts/pip.exe" install --quiet -r 'backend/python/requirements-windows.txt'
             if ($LASTEXITCODE -ne 0) { throw 'pip install failed' }
@@ -117,25 +133,64 @@ try {
     # neuro-client: the agent as one executable, for the PC Neuro controls. It is
     # built here with PyInstaller. If that fails, the bundle still works: the
     # launcher falls back to agent\.
+    $PreviousClientOut = $env:NEURO_CLIENT_OUT
     try {
-        $env:NEURO_CLIENT_OUT = Join-Path (Resolve-Path $Dist) 'neuro-client'
-        & (Join-Path $PSScriptRoot '..\build-client.ps1')
-        Write-Host '      neuro-client built'
+        if ($env:NEURO_BUNDLE_SKIP_CLIENT -eq '1') {
+            Write-Host '      ! neuro-client skipped (NEURO_BUNDLE_SKIP_CLIENT=1); the bundle uses agent\'
+        } else {
+            $env:NEURO_CLIENT_OUT = Join-Path (Resolve-Path $Dist) 'neuro-client'
+            & (Join-Path $PSScriptRoot '..\build-client.ps1')
+            if ($LASTEXITCODE -ne 0) { throw 'neuro-client build failed' }
+            Write-Host '      neuro-client built'
+        }
     }
     catch {
         Write-Host "      ! neuro-client was not built: $_"
         Write-Host '        The bundle uses agent\ instead.'
     }
     finally {
-        Remove-Item Env:NEURO_CLIENT_OUT -ErrorAction SilentlyContinue
+        $env:NEURO_CLIENT_OUT = $PreviousClientOut
     }
 
-    Copy-Item 'config' "$Dist/config" -Recurse -Force
-    Copy-Item 'catalog' "$Dist/catalog" -Recurse -Force
-    Copy-Item 'apps/neuro-integration/permissions.example.json' "$Dist/permissions.json" -Force
+    Copy-SeedDirectory 'config' "$Dist/config"
+    New-Item -ItemType Directory -Force -Path "$Dist/catalog" | Out-Null
+    foreach ($Item in Get-ChildItem -LiteralPath 'catalog' -Force) {
+        if ($Item.Name -in @('extensions-state.json', 'extension-permissions.json', 'integrations.json')) { continue }
+        if ($Item.PSIsContainer) {
+            Copy-SeedDirectory $Item.FullName (Join-Path "$Dist/catalog" $Item.Name)
+        } else {
+            Copy-Item -LiteralPath $Item.FullName -Destination "$Dist/catalog" -Force
+        }
+    }
+    if (!(Test-Path "$Dist/permissions.json")) {
+        Copy-Item 'apps/neuro-integration/permissions.example.json' "$Dist/permissions.json"
+    }
+    if (Test-Path "$Dist/integration-docs") { Remove-Item -Recurse -Force "$Dist/integration-docs" }
     New-Item -ItemType Directory -Force -Path "$Dist/integration-docs" | Out-Null
     Copy-Item 'apps/neuro-integration/integration-docs/*' "$Dist/integration-docs" -Recurse -Force
     Copy-Item 'docs/*.md' "$Dist/integration-docs" -Force -ErrorAction SilentlyContinue
+
+    Write-Host '[4/4] Building the native GTK manager...'
+    $PreviousManagerPython = $env:NEURO_MANAGER_PYTHON
+    try {
+        # MSYS2's Python and GTK libraries must come from the same installation.
+        # An explicit NEURO_MANAGER_PYTHON always takes precedence.
+        if (!$env:NEURO_MANAGER_PYTHON -and (Test-Path 'C:\msys64\ucrt64\bin\python.exe')) {
+            $env:NEURO_MANAGER_PYTHON = 'C:\msys64\ucrt64\bin\python.exe'
+        }
+        if ($env:NEURO_MANAGER_SOURCE_ONLY -eq '1') {
+            & python 'scripts/build-manager.py' --out "$Dist/manager"
+        } else {
+            & python 'scripts/build-manager.py' --standalone --out "$Dist/manager"
+        }
+        if ($LASTEXITCODE -ne 0) { throw 'native manager build failed; install GTK/PyGObject or explicitly set NEURO_MANAGER_SOURCE_ONLY=1' }
+    } finally {
+        $env:NEURO_MANAGER_PYTHON = $PreviousManagerPython
+    }
+
+    $MarketplaceSource = Join-Path $Root 'catalog/marketplace.json'
+    if ($env:NEURO_MARKETPLACE_SOURCE) { $MarketplaceSource = $env:NEURO_MARKETPLACE_SOURCE }
+    if (Test-Path $MarketplaceSource) { Copy-Item $MarketplaceSource "$Dist/catalog/marketplace.json" -Force }
 
     # ----------------------------------------------------------
     # Templates (launchers + README) — checked in, so they are reviewable

@@ -261,6 +261,9 @@ func newMCPTestIntegration(t *testing.T, policyJSON string) *NDIntegration {
 // successful start does, and returns the handler for its echo tool.
 func attachFakeServer(t *testing.T, integration *NDIntegration, id string) *mcpToolAction {
 	t.Helper()
+	dir := installFixture(t, fmt.Sprintf(`[{"id":%q,"name":"Fake MCP"}]`, id))
+	t.Setenv("NEURO_EXTENSION_PERMISSIONS_FILE", dir+"/extension-permissions.json")
+	grantExtensionFixture(t, id, ExtensionPermissionPolicy{RunAllowed: true})
 	client := startFakeMCP(t)
 	integration.mcp.mu.Lock()
 	integration.mcp.clients[id] = client

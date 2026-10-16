@@ -155,7 +155,7 @@ func TestMetadataInstallRecordsSignatureState(t *testing.T) {
 		t.Fatalf("a metadata install of an unsigned item should succeed: %s", result.Message)
 	}
 	list := (&NDIntegration{}).listInstalledExtensions()
-	if !strings.Contains(list.Message, "notes (enabled) signature=unsigned") {
+	if !strings.Contains(list.Message, "notes (disabled) signature=unsigned") {
 		t.Fatalf("expected the signature state in the listing, got: %s", list.Message)
 	}
 }
@@ -201,6 +201,9 @@ func TestFetchPinnedCommitFromLocalRepository(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 	run("init", "-q")
+	// A disposable fixture must not use the developer's signing key or hooks.
+	run("config", "commit.gpgsign", "false")
+	run("config", "core.hooksPath", t.TempDir())
 	run("config", "uploadpack.allowAnySHA1InWant", "true")
 	if err := os.WriteFile(filepath.Join(src, "README.md"), []byte("hello"), 0644); err != nil {
 		t.Fatal(err)
@@ -235,6 +238,7 @@ func TestInstallFromNeuroIsQueuedNotRunInline(t *testing.T) {
 	policy := defaultPermissionPolicy()
 	policy.scopes[ScopeExtensions] = ScopeConfig{Allowed: true}
 	integration.setPolicy(policy)
+	grantExtensionFixture(t, "mcp-bridge", ExtensionPermissionPolicy{ManageAllowed: true})
 
 	var spec actionSpec
 	for _, candidate := range allActionSpecs() {

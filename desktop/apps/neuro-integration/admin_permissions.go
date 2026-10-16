@@ -32,13 +32,40 @@ func readJSONBody(r *http.Request, v interface{}) error {
 // fields plus the signature state, computed on the spot from the publisher file.
 func catalogItemView(item CatalogItem, publishers publisherFile) map[string]interface{} {
 	view := map[string]interface{}{}
-	if raw, err := json.Marshal(item); err == nil {
+	if raw, err := json.Marshal(catalogPresentationItem(item, true)); err == nil {
 		_ = json.Unmarshal(raw, &view)
 	}
 	status := verifyCatalogItem(item, publishers)
 	view["signature_state"] = status.State
 	view["signature_detail"] = status.Detail
 	return view
+}
+
+// A display-only compatibility transform corrects the shipped Memory entry's
+// old wording without altering signed catalog bytes or installation metadata.
+// Signature checks always use the original item, before presentation.
+func catalogPresentationItem(item CatalogItem, operator bool) CatalogItem {
+	if item.ID != "memory" {
+		return item
+	}
+	if operator {
+		item.Description = strings.ReplaceAll(item.Description, "once Vedal enables this extension", "when you enable this extension")
+	} else {
+		item.Description = strings.ReplaceAll(item.Description, "once Vedal enables this extension", "after runtime approval and enabling")
+	}
+	hints := make([]string, len(item.LaunchHints))
+	copy(hints, item.LaunchHints)
+	for i, hint := range hints {
+		if hint == "Installs disabled. Vedal turns it on in the Extensions page; Neuro cannot start it herself." {
+			if operator {
+				hints[i] = "Installs disabled. Enable it here, or allow Neuro and Evil to manage it with per-extension permissions."
+			} else {
+				hints[i] = "Installs disabled. You can enable it after its runtime permissions are approved and management is delegated to you."
+			}
+		}
+	}
+	item.LaunchHints = hints
+	return item
 }
 
 // handlePermissionRequests returns the operator's queue: what Neuro asked for,
@@ -58,6 +85,9 @@ func (a *AdminServer) handlePermissionRequests(w http.ResponseWriter, r *http.Re
 func (a *AdminServer) handlePermissionRequestAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !a.requireOperatorReentry(w, r) {
 		return
 	}
 
@@ -110,6 +140,7 @@ func (a *AdminServer) handlePermissionRequestAction(w http.ResponseWriter, r *ht
 		verb = "approved"
 	}
 	a.writeAudit(fmt.Sprintf("permission request %s %s for %s", id, verb, decided.Scope), false)
+	go a.integration.syncMCPServers()
 	writeJSON(w, map[string]interface{}{"ok": true, "request": decided})
 }
 
@@ -117,6 +148,9 @@ func (a *AdminServer) handlePermissionRequestAction(w http.ResponseWriter, r *ht
 func (a *AdminServer) handlePermissionGrant(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !a.requireOperatorReentry(w, r) {
 		return
 	}
 
@@ -138,5 +172,6 @@ func (a *AdminServer) handlePermissionGrant(w http.ResponseWriter, r *http.Reque
 	}
 
 	a.writeAudit(fmt.Sprintf("permission approval for %s revoked", scope), false)
+	go a.integration.syncMCPServers()
 	writeJSON(w, map[string]interface{}{"ok": true, "scope": scope})
 }

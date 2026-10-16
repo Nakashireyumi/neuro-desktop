@@ -1,20 +1,27 @@
 import RuntimePanel from "./RuntimePanel";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import OperatorControls from "./OperatorControls";
+import ActivityPanel from "./ActivityPanel";
+import ExtensionPolicyEditor from "./ExtensionPolicyEditor";
 import GamesPanel from "./GamesPanel";
+import MarketplacePanel from "./MarketplacePanel";
 import PermissionsPage from "./PermissionsPage";
 import SignIn from "./SignIn";
 import {
   ApiError,
+  AUTH_REQUIRED_EVENT,
   api,
+  safeExternalURL,
   setAdminToken,
   type CatalogItem,
   type ConfigPayload,
   type InstalledExtension,
+  type ManagerSession,
   type RelayStatus,
   type StatusPayload,
 } from "./api";
 
-type Tab = "extensions" | "games" | "permissions" | "settings";
+type Tab = "extensions" | "marketplace" | "games" | "permissions" | "activity" | "settings";
 
 const INSTALL_MODE_LABELS: Record<string, string> = {
   metadata_only: "Metadata only (records the install)",
@@ -23,8 +30,8 @@ const INSTALL_MODE_LABELS: Record<string, string> = {
 };
 
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("extensions");
+  const [session, setSession] = useState<ManagerSession | null>(null);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [config, setConfig] = useState<ConfigPayload | null>(null);
   const [extensions, setExtensions] = useState<InstalledExtension[]>([]);
@@ -34,34 +41,90 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [connectionError, setConnectionError] = useState("");
+  const [extensionsError, setExtensionsError] = useState("");
+  const [editingPolicy, setEditingPolicy] = useState(false);
+  const [operatorActionToken, setOperatorActionToken] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState<"pause" | "release" | "">("");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const loadVersion = useRef(0);
+  const authVersion = useRef(0);
+  const sessionRef = useRef<ManagerSession | null>(null);
+  const configLoaded = useRef(false);
+  const failedRefreshes = useRef(0);
   // "ok" shows the dashboard. "signin" and "setup" show the gate instead, and
   // the reason is the server's own text when it gave one.
-  const [gate, setGate] = useState<{ kind: "ok" } | { kind: "signin" | "setup"; reason?: string }>({
-    kind: "ok",
+  const [gate, setGate] = useState<{ kind: "ok" | "checking" } | { kind: "signin" | "setup"; reason?: string }>({
+    kind: "checking",
   });
-  const signedOut = gate.kind !== "ok";
+  const polling = gate.kind === "ok" || gate.kind === "checking";
+
+  const signOut = useCallback(() => {
+    loadVersion.current++;
+    authVersion.current++;
+    sessionRef.current = null;
+    configLoaded.current = false;
+    setSession(null);
+    setActiveTab("extensions");
+    setSelectedId("");
+    setEditingPolicy(false);
+    setOperatorActionToken("");
+    setBusy(false);
+    setRecoveryBusy("");
+    setAdminToken("");
+    setStatus(null);
+    setConfig(null);
+    setExtensions([]);
+    setCatalog([]);
+    setMessage(null);
+    setConnectionError("");
+    setExtensionsError("");
+    setLastUpdated(null);
+    setGate({ kind: "signin" });
+  }, []);
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     try {
-      const [statusPayload, extensionsPayload, configPayload] = await Promise.all([
+      const sessionPayload = sessionRef.current ?? await api.session();
+      if (sessionPayload.role !== "operator" && sessionPayload.role !== "neuro") {
+        throw new ApiError(0, "The bridge did not identify this session's role. Update the bridge before using the manager.");
+      }
+      const [statusPayload, extensionsResult, configPayload] = await Promise.all([
         api.status(),
-        api.extensions(),
-        api.config().catch(() => null),
+        activeTab === "extensions" ? api.extensions().then((value) => ({ value, error: undefined })).catch((error) => ({ value: undefined, error })) : Promise.resolve(null),
+        configLoaded.current ? Promise.resolve(null) : api.config().catch(() => null),
       ]);
+      if (version !== loadVersion.current) return;
+      sessionRef.current = sessionPayload;
+      setSession(sessionPayload);
       setStatus(statusPayload);
-      setExtensions(extensionsPayload.installed);
-      setCatalog(extensionsPayload.catalog);
-      setInstallMode(extensionsPayload.install_mode);
-      setExtensionDir(extensionsPayload.extension_dir);
-      setConfig(configPayload);
+      if (extensionsResult?.value) {
+        const extensionsPayload = extensionsResult.value;
+        setExtensions(extensionsPayload.installed);
+        setCatalog(extensionsPayload.catalog);
+        setInstallMode(extensionsPayload.install_mode);
+        setExtensionDir(extensionsPayload.extension_dir);
+        setExtensionsError("");
+        setSelectedId((current) => {
+          if (current && (extensionsPayload.installed.some((item) => item.id === current) || extensionsPayload.catalog.some((item) => item.id === current))) return current;
+          return extensionsPayload.installed[0]?.id ?? extensionsPayload.catalog[0]?.id ?? "";
+        });
+      } else if (extensionsResult?.error) {
+        setExtensions([]);
+        setCatalog([]);
+        setExtensionsError(extensionsResult.error instanceof Error ? extensionsResult.error.message : "Could not read the extension catalog.");
+      }
+      if (configPayload) {
+        setConfig(configPayload);
+        configLoaded.current = true;
+      }
+      failedRefreshes.current = 0;
+      setConnectionError("");
+      setLastUpdated(new Date());
       setGate({ kind: "ok" });
-      setSelectedId((current) => {
-        if (current && (extensionsPayload.installed.some((item) => item.id === current) || extensionsPayload.catalog.some((item) => item.id === current))) {
-          return current;
-        }
-        return extensionsPayload.installed[0]?.id ?? extensionsPayload.catalog[0]?.id ?? "";
-      });
     } catch (error) {
+      if (version !== loadVersion.current) return;
       if (error instanceof ApiError && error.status === 401) {
         setGate({ kind: "signin" });
         return;
@@ -70,40 +133,55 @@ export default function App() {
         setGate({ kind: "setup", reason: error.message });
         return;
       }
-      setMessage({
-        kind: "error",
-        text:
-          error instanceof ApiError
-            ? `${error.message} — the dashboard talks to the Go bridge over HTTP; make sure it is running.`
-            : "Could not reach the bridge",
-      });
+      failedRefreshes.current++;
+      setConnectionError(error instanceof Error ? error.message : "Could not reach the bridge");
     }
-  }, []);
+  }, [activeTab]);
+
+  const operator = session?.role === "operator";
+  useEffect(() => {
+    if (session && !operator && (activeTab === "permissions" || activeTab === "activity")) setActiveTab("extensions");
+  }, [activeTab, operator, session]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setShowSplash(false), 900);
-    return () => window.clearTimeout(timer);
-  }, []);
+    setEditingPolicy(false);
+    setOperatorActionToken("");
+  }, [selectedId, activeTab]);
 
   useEffect(() => {
-    // Signed out: stop polling. Polling would send a rejected request every few
-    // seconds, and the audit log would fill with them. Signing in calls load() again.
-    if (signedOut) {
-      return;
-    }
-    void load();
-    const timer = window.setInterval(() => void load(), 5000);
-    return () => window.clearInterval(timer);
-  }, [load, signedOut]);
+    window.addEventListener(AUTH_REQUIRED_EVENT, signOut);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, signOut);
+  }, [signOut]);
+
+  useEffect(() => {
+    if (!polling) return;
+    let cancelled = false;
+    let timer: number;
+    const refresh = async () => {
+      await load();
+      if (!cancelled) timer = window.setTimeout(() => void refresh(), document.hidden ? 30000 : Math.min(60000, 5000 * 2 ** Math.min(failedRefreshes.current, 4)));
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      loadVersion.current++;
+    };
+  }, [load, polling]);
 
   async function extensionAction(id: string, action: "install" | "enable" | "disable" | "uninstall") {
+    const generation = authVersion.current;
+    const freshToken = operatorActionToken;
+    setOperatorActionToken("");
     setBusy(true);
     setMessage(null);
     try {
-      const result = await api.extensionAction(id, action);
+      const result = await api.extensionAction(id, action, operator ? freshToken : undefined);
+      if (generation !== authVersion.current) return;
       setMessage({ kind: "ok", text: result.message || `${action} ok` });
       await load();
     } catch (error) {
+      if (generation !== authVersion.current) return;
       setMessage({
         kind: "error",
         text:
@@ -112,7 +190,23 @@ export default function App() {
             : `${action} failed`,
       });
     } finally {
-      setBusy(false);
+      if (generation === authVersion.current) setBusy(false);
+    }
+  }
+
+  async function delegatedRecovery(action: "pause" | "release") {
+    const generation = authVersion.current;
+    setRecoveryBusy(action);
+    setMessage(null);
+    try {
+      const result = await (action === "pause" ? api.pause() : api.releaseInput());
+      if (generation !== authVersion.current) return;
+      setMessage({ kind: "ok", text: result.message });
+      if (action === "pause") await load();
+    } catch (failure) {
+      if (generation === authVersion.current) setMessage({ kind: "error", text: failure instanceof Error ? failure.message : "Could not complete recovery." });
+    } finally {
+      if (generation === authVersion.current) setRecoveryBusy("");
     }
   }
 
@@ -142,23 +236,22 @@ export default function App() {
   const installedPlugins = extensions.filter((item) => !core.includes(item));
 
   const relay: RelayStatus | undefined = status?.relay;
-  const executorOnline = Boolean(status?.executor.connected);
+  const executorOnline = !connectionError && Boolean(status?.executor.connected);
 
-  if (showSplash) {
-    return (
-      <div className="splash-screen">
-        <div className="splash-overlay" />
-        <div className="splash-content">
-          <h1>Neuro Desktop</h1>
-          <p>Integration Manager</p>
-          <span>{status?.version ?? ""}</span>
-        </div>
-      </div>
-    );
+  if (gate.kind === "signin" || gate.kind === "setup") {
+    return <SignIn mode={gate.kind} reason={gate.reason} onSignedIn={() => void load()} />;
   }
 
-  if (gate.kind !== "ok") {
-    return <SignIn mode={gate.kind} reason={gate.reason} onSignedIn={() => void load()} />;
+  if (gate.kind === "checking") {
+    return (
+      <div className="signin-root">
+        <section className="signin-card" aria-live="polite">
+          <h1>Neuro Desktop</h1>
+          <p>{connectionError || "Connecting to the bridge…"}</p>
+          {connectionError && <button className="primary" onClick={() => void load()}>Try again</button>}
+        </section>
+      </div>
+    );
   }
 
   return (
@@ -167,7 +260,7 @@ export default function App() {
         <div className="titlebar-left">
           <h1>Neuro Desktop</h1>
           <nav className="titlebar-nav">
-            {(["extensions", "games", "permissions", "settings"] as Tab[]).map((tab) => (
+            {(["extensions", "marketplace", "games", ...(operator ? ["permissions", "activity"] : []), "settings"] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 className={`nav-tab ${activeTab === tab ? "active" : ""}`}
@@ -181,14 +274,32 @@ export default function App() {
         <div className="titlebar-right">
           <span className={`status-indicator ${executorOnline ? "online" : "offline"}`}>●</span>
           <span className="status-text">
-            {status
+            {connectionError ? "bridge unreachable · reconnecting…" : status
               ? `bridge ${status.version} · executor ${executorOnline ? "online" : "offline"} · ${
                   status.actions.actions_received ?? 0
                 } actions`
               : "connecting to the bridge…"}
           </span>
+          <button className="secondary" onClick={signOut}>Sign out</button>
         </div>
       </header>
+
+      {connectionError && (
+        <div className="scope-warning" role="alert">
+          {connectionError} {lastUpdated && `Showing data from ${lastUpdated.toLocaleTimeString()}. `}
+          Retrying automatically. <button className="secondary" onClick={() => void load()}>Retry now</button>
+        </div>
+      )}
+
+      {operator ? <OperatorControls control={status?.control ?? null} connected={!connectionError && Boolean(status)} onChanged={load} /> : (
+        <section className="operator-controls" aria-label="Delegated controls">
+          <div><strong>Delegated session</strong><p className="hint">You can use your granted abilities, pause and release input. Permission changes and resuming require your operator session.{session?.expires_at && ` Expires ${new Date(session.expires_at).toLocaleTimeString()}.`}</p></div>
+          <div className="button-row">
+            <button className="danger" disabled={Boolean(recoveryBusy) || Boolean(connectionError) || !status || Boolean(status.control?.paused)} onClick={() => void delegatedRecovery("pause")}>{status?.control?.paused ? "Actions paused" : "Pause actions"}</button>
+            <button className="secondary" disabled={recoveryBusy === "release" || Boolean(connectionError) || !status} onClick={() => void delegatedRecovery("release")}>{recoveryBusy === "release" ? "Releasing…" : "Release all input"}</button>
+          </div>
+        </section>
+      )}
 
       {message && (
         <div className={message.kind === "ok" ? "save-notice" : "scope-warning"}>
@@ -196,22 +307,25 @@ export default function App() {
         </div>
       )}
 
-      {activeTab === "permissions" && <PermissionsPage />}
+      {operator && activeTab === "permissions" && <PermissionsPage />}
 
-      {activeTab === "games" && <GamesPanel executor={status?.executor ?? null} />}
+      {activeTab === "marketplace" && <MarketplacePanel operator={operator} />}
+
+      {activeTab === "games" && <GamesPanel executor={executorOnline ? status?.executor ?? null : null} />}
+
+      {operator && activeTab === "activity" && <ActivityPanel />}
 
       {activeTab === "extensions" && (
         <>
-        <RuntimePanel />
+        {extensionsError && <p className="scope-warning" role="alert">{extensionsError}</p>}
         <main className="manager-main manager-main--extensions">
           <aside className="manager-sidebar">
             <section>
               <h2>Core Services</h2>
-              {core.map((item, index) => (
+              {core.map((item) => (
                 <button
                   key={item.id}
                   className={`sidebar-item ${selectedId === item.id ? "selected" : ""}`}
-                  style={{ animationDelay: `${index * 0.04}s` }}
                   onClick={() => setSelectedId(item.id)}
                 >
                   <div>
@@ -224,11 +338,10 @@ export default function App() {
 
             <section>
               <h2>Extensions</h2>
-              {installedPlugins.map((item, index) => (
+              {installedPlugins.map((item) => (
                 <button
                   key={item.id}
                   className={`sidebar-item ${selectedId === item.id ? "selected" : ""}`}
-                  style={{ animationDelay: `${index * 0.05 + 0.12}s` }}
                   onClick={() => setSelectedId(item.id)}
                 >
                   <div>
@@ -267,14 +380,18 @@ export default function App() {
                 <div className="panel-header">
                   <div>
                     <h1>{selected.name || selected.id}</h1>
-                    <p>{selected.description || "No description in the catalog."}</p>
+                    <p>{selected.description?.replace("once Vedal enables this extension", "after you enable this extension") || "No description in the catalog."}</p>
                   </div>
-                  {selected.repository && (
-                    <a href={selected.repository} target="_blank" rel="noreferrer">
+                  {safeExternalURL(selected.repository) && (
+                    <a href={safeExternalURL(selected.repository)} target="_blank" rel="noreferrer">
                       Open Repository ↗
                     </a>
                   )}
                 </div>
+
+                {operator && <label style={{ display: "block", marginTop: "1rem" }}>Operator token for your next direct action (optional when management is delegated)
+                  <input type="password" value={operatorActionToken} autoComplete="new-password" onChange={(event) => setOperatorActionToken(event.target.value)} style={{ display: "block", width: "100%", maxWidth: "34rem", boxSizing: "border-box" }} />
+                </label>}
 
                 <div className="status-row">
                   <span className={`pill ${selectedInstalled ? "ok" : "warn"}`}>
@@ -285,6 +402,9 @@ export default function App() {
                   </span>
                   <span className="pill neutral">{INSTALL_MODE_LABELS[installMode] ?? installMode}</span>
                 </div>
+
+                {operator && <div className="button-row"><button className="secondary" onClick={() => setEditingPolicy(!editingPolicy)}>{editingPolicy ? "Hide permissions and settings" : "Permissions and settings"}</button></div>}
+                {operator && editingPolicy && <ExtensionPolicyEditor key={selected.id} id={selected.id} onClose={() => setEditingPolicy(false)} onSaved={() => void load()} />}
 
                 <div className="button-row">
                   <button
@@ -332,9 +452,7 @@ export default function App() {
                 </div>
 
                 <p className="hint">
-                  Extensions are recorded in the bridge's extension state file and listed to Neuro as
-                  installed plugins. Installation obeys the install mode above and the filesystem
-                  permission scope.
+                  Installation follows the mode shown above. Grant management and runtime access separately in Permissions and settings. Metadata-only entries do not fetch code.
                 </p>
               </>
             ) : (
@@ -352,6 +470,7 @@ export default function App() {
 
       {activeTab === "settings" && (
         <section className="settings-panel">
+          {operator && <RuntimePanel />}
           <h1>Bridge Status</h1>
           <div className="settings-grid">
             <article>
@@ -359,6 +478,13 @@ export default function App() {
               <p>Version {status?.version ?? "unknown"}</p>
               <p>Uptime {status ? Math.round(status.uptime / 60) : 0} minutes</p>
               <p>Started {status?.started_at ?? "—"}</p>
+            </article>
+            <article>
+              <h3>Neuro API</h3>
+              <p>{status?.neuro?.connected ? "Connected" : "Waiting for Neuro API"}</p>
+              <p>{status?.neuro?.attempts ?? 0} connection attempt(s)</p>
+              {status?.neuro?.last_error && <p className="denied">{status.neuro.last_error}</p>}
+              {!status?.neuro?.connected && <p className="hint">Start Neuro's API server or a local test brain at the configured WebSocket address.</p>}
             </article>
             <article>
               <h3>Executor</h3>
@@ -410,11 +536,7 @@ export default function App() {
               <div className="button-row">
                 <button
                   className="secondary"
-                  onClick={() => {
-                    setAdminToken("");
-                    setMessage({ kind: "ok", text: "Signed out of this browser session." });
-                    void load();
-                  }}
+                  onClick={signOut}
                 >
                   Sign out
                 </button>

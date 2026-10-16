@@ -5,9 +5,12 @@ These tests pin the status reply to base64 PNG, and check the size limits.
 """
 
 import base64
+import os
 import pathlib
+import subprocess
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -20,6 +23,14 @@ FAKE_PNG = b"\x89PNG\r\n\x1a\nfake-image-bytes"
 
 
 class ScreenshotIsBytesTest(unittest.TestCase):
+    def test_capture_failure_is_explained_in_telemetry(self):
+        agent = agent_module.Agent()
+        agent.headless = False
+        with mock.patch.object(agent.monitor, "capture_screen_png", side_effect=RuntimeError("compositor denied capture")):
+            data = agent.status({"capture_screenshot": True})
+        self.assertIsNone(data["screenshot_png_b64"])
+        self.assertEqual(data["screenshot_error"], "compositor denied capture")
+
     def test_status_returns_base64_png_and_no_path(self):
         agent = agent_module.Agent()
         agent.headless = False
@@ -54,6 +65,20 @@ class ScreenshotIsBytesTest(unittest.TestCase):
 
 @unittest.skipUnless(desktop.Image is not None, "Pillow is not installed")
 class ScreenshotSizeTest(unittest.TestCase):
+    def test_wayland_capture_uses_compositor_even_without_mss(self):
+        image = desktop.Image.new("RGB", (80, 60), (1, 2, 3))
+        png = desktop._encode_png(image)
+        monitor = desktop.DesktopMonitor(track_mouse=False)
+        with mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-test"}), mock.patch.object(desktop.sys, "platform", "linux"), mock.patch.object(desktop, "mss", None), mock.patch.object(desktop.shutil, "which", return_value="/usr/bin/grim"), mock.patch.object(desktop.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, png, b"")):
+            captured = monitor.capture_screen_png()
+        self.assertTrue(captured.startswith(b"\x89PNG"))
+
+    def test_wayland_capture_timeout_is_actionable(self):
+        monitor = desktop.DesktopMonitor(track_mouse=False)
+        with mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-test"}), mock.patch.object(desktop.sys, "platform", "linux"), mock.patch.object(desktop.shutil, "which", return_value="/usr/bin/grim"), mock.patch.object(desktop.subprocess, "run", side_effect=subprocess.TimeoutExpired("grim", 5)):
+            with self.assertRaisesRegex(desktop.NoDisplayError, "Wayland screenshot failed"):
+                monitor.capture_screen_png()
+
     def test_a_large_screen_is_scaled_to_the_side_limit(self):
         image = desktop.Image.new("RGB", (3840, 2160), (10, 20, 30))
         small = desktop._fit_within(image, desktop.SCREENSHOT_MAX_SIDE)

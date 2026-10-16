@@ -28,6 +28,12 @@ type NDIntegration struct {
 	permissionsMu sync.RWMutex
 	permissions   *PermissionPolicy
 
+	// Per-extension approvals are separate from model-accessible install state.
+	extensionPermissionsMu sync.RWMutex
+	extensionMu            sync.Mutex
+	adaptersMu             sync.Mutex
+	adapters               *adapterRuntime
+
 	// games holds the profile registry plus the live game session.
 	games *GameRuntime
 
@@ -36,7 +42,8 @@ type NDIntegration struct {
 	relay *RelayState
 
 	// stats powers the dashboard's counters.
-	stats *BridgeStats
+	stats           *BridgeStats
+	neuroConnection neuroConnectionState
 
 	// stop is the operator's brake: pause flag plus an optional kill-switch file.
 	stop *stopSwitch

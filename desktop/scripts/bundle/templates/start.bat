@@ -17,7 +17,7 @@ set NEURO_PERMISSIONS_FILE=%~dp0permissions.json
 set NEURO_CATALOG_FILE=%~dp0catalog\index.json
 set NEURO_GAME_PROFILES_DIR=%~dp0catalog\games
 set NEURO_EXTENSIONS_STATE_FILE=%~dp0catalog\extensions-state.json
-set PYTHONPATH=%~dp0agent;%PYTHONPATH%
+set PYTHONPATH=%~dp0agent;%~dp0agent\Lib;%PYTHONPATH%
 
 if not exist "%~dp0@SERVER@" (
   echo Cannot find the server binary at %~dp0@SERVER@
@@ -55,5 +55,13 @@ echo On the PC Neuro controls run:
 echo   neuro-client.exe --bridge ^<server-ip^>:9876 --token ^<executor token^>
 
 :run_server
+if "%NEURO_NO_MANAGER%"=="1" goto server
+if not defined NEURO_MANAGER_SERVER set NEURO_MANAGER_SERVER=http://127.0.0.1:8300
+if exist "%~dp0manager\neuro-manager.exe" (
+  start "Neuro Desktop Manager" "%~dp0manager\neuro-manager.exe" --server "%NEURO_MANAGER_SERVER%"
+) else if exist "%~dp0manager\neuro-manager.cmd" (
+  start "Neuro Desktop Manager" cmd /c ""%~dp0manager\neuro-manager.cmd" --server "%NEURO_MANAGER_SERVER%""
+)
+:server
 "%~dp0@SERVER@" %*
 pause

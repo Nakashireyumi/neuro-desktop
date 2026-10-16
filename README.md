@@ -2,9 +2,9 @@
 
 > **An AI-powered desktop control system that gives Neuro-sama the ability to control a computer through natural language commands.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/cassitly/neuro-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/cassitly/neuro-desktop/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.0.3b--dev-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-0.2.0--dev-blue.svg)]()
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Neuro Desktop is a multi-language integration system that enables [Neuro-sama](h
 
 ### What Makes Neuro Desktop Special?
 
-- **Three programs, split so the controlled PC stays light**: the server (Go: Neuro API, permissions, audit, dashboard API, vision, relay host), the dashboard program (Go, optional: serves the dashboard page and forwards its API), and the client for the PC Neuro controls (the Python agent, packaged as one program with PyInstaller). The Rust and C++ parts were removed; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- **Separate native manager, server and controlled-PC client**: the GTK 4 manager uses native widgets and a startup splash; the Go server handles the Neuro API, permissions, audit, relay and vision; the Python client executes actions. An optional browser dashboard supports remote use. See [architecture](docs/ARCHITECTURE.md) and [native manager setup](desktop/apps/neuro-manager/README.md).
 - **Human-Like Mouse Movement**: Advanced algorithmic pathfinding that mimics natural human mouse movements with Bézier curves and Perlin noise
 - **Powerful Script Language**: Simple yet expressive action scripting for complex automation tasks
 - **Automatic Recovery**: Built-in crash detection and automatic process restart capabilities
@@ -130,6 +130,9 @@ http://127.0.0.1:8300/ui/
   vision), per-scope actions-per-minute limits, and explicit allow/deny lists.
   `Save` applies the policy to the running bridge immediately.
 - **Status** — version, executor connection, relay peers, reserved actions, paths.
+- **Operator controls** — pause/resume and release held input from every tab.
+  The Activity tab shows recent action decisions when `NEURO_AUDIT_LOG` is set.
+  Neuro API connectivity is reported separately from the server and client.
 
 Every dashboard request needs the dashboard token, reads included. Run
 `neuro-integration setup` once. It prints the token and keeps only its hash. The
@@ -273,7 +276,7 @@ export NEURO_DENY_ACTIONS="type_text,key_press"     # a hard deny list the dashb
 # Python 3.10+ — the client, from source (PyInstaller builds neuro-client)
 python3 --version
 
-# Node.js 18+ — only to build the dashboard client
+# Node.js 22.12+ — to build and test the dashboard client
 node --version
 
 ```
@@ -663,7 +666,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project retains the upstream GPL-3.0 license; see [LICENSE](LICENSE).
+Bundled third-party components retain their own licenses.
 
 ## Acknowledgments
 

@@ -1,6 +1,6 @@
 # Production TODO
 
-Last updated: 2026-10-09. Each status below was checked against the code in this
+Last updated: 2026-10-15. Each status below was checked against the code in this
 repository. `[x]` done, `[~]` partly done (what is missing is written next to it),
 `[ ]` open, `[-]` declined with the reason.
 
@@ -66,13 +66,16 @@ Check these directly; this file does not keep a copy of their issue lists.
   the same way. Not built. The executor link is plain TCP today (`docs/SAFETY.md`,
   section 6).
 
-- [ ] **Log failed dashboard sign-ins.** A `401` for a wrong dashboard token is counted in
-  memory only. It is not written to the audit log, and it is not logged.
+- [x] **Log failed dashboard sign-ins.** Rejected requests write `dashboard_auth`
+  decisions to `NEURO_AUDIT_LOG`, with the method and path. Headers, tokens and
+  query parameters are excluded. The Activity tab shows these alongside actions
+  and pause/resume events. Test: `TestDashboardRejectedTokenIsAuditedWithoutSecrets`.
 
-- [ ] **Check a real screenshot end to end.** The screenshot travels as PNG bytes and is
-  tested with a fake capture and with Pillow's size limits, but no real screen has been
-  captured through the server and a vision service in one run. Also not run: the vision
-  summary against a live `nd-vision-server`.
+- [x] **Check a real screenshot end to end on Linux.** Verified on Hyprland using
+  `grim`: the real Python client sent PNG bytes through the Go server to a local
+  `nd-vision-server` (`stats` backend), and the dashboard's observation showed the
+  capture and analysis. Native capture on Windows/macOS and semantic analysis
+  against a vision model remain unverified.
 
 - [ ] **License file.** The README says the project is MIT-licensed and links to a
   `LICENSE` file. The repository has no `LICENSE` file. The maintainer must add it,
@@ -96,11 +99,11 @@ Check these directly; this file does not keep a copy of their issue lists.
   and signed extensions. Missing: signed release bundles and an integrity check on the
   configuration files.
 
-- [-] **Native tray / minimize-to-notification-area shell. Declined.** The dashboard is
-  served by the server at `/ui/` and works on a headless machine, which is the target.
-  A tray needs a GUI toolkit for each OS, and none of them can be built or run from this
-  environment. Adding it would put untested code on the shipping path. It can be
-  reconsidered once there are Windows and macOS machines to verify it on.
+- [~] **Native manager and splash.** GTK 4 desktop application implemented and
+  exercised on Linux, including all pages, pause/release/resume, sign-in and policy
+  editing. Standalone GTK packaging and three-OS CI are provided. Windows/macOS
+  desktop execution still needs those runners and real devices. A notification-area
+  tray is separate optional work; it is not required to run the native manager.
 
 - [~] **Release quality gates.** Done: the `release-gate` job in CI, which fails unless
   every required job succeeded; repository checks; the race detector; cross-compiles for

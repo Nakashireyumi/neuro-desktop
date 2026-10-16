@@ -30,6 +30,7 @@ func (a *AdminServer) handleRuntime(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"ok":         true,
 		"checked_at": now.Format(time.RFC3339),
+		"neuro":      integration.neuroConnection.snapshot(),
 		"bridge": map[string]interface{}{
 			"state":          "running",
 			"pid":            os.Getpid(),

@@ -5,7 +5,7 @@ package main
 //
 // Safety rules, all enforced here rather than trusted to the caller:
 //   - A server only starts when it is an enabled, installed catalog item whose
-//     signature is acceptable (see mcpTrustAllowed). Neuro cannot enable one.
+//     signature is acceptable and its operator-owned runtime grants allow it.
 //   - The child process gets a minimal environment. Only the variables the
 //     catalog item names are passed through, and never NEURO_* variables, so the
 //     bridge's own tokens stay in the bridge.
@@ -559,6 +559,18 @@ type mcpCallJob struct {
 
 func (job *mcpCallJob) run() {
 	defer close(job.done)
+	if reason := job.action.integration.stop.blockReason(job.action.name); reason != "" {
+		job.text, job.failed = reason, true
+		return
+	}
+	if policy := job.action.integration.policy(); policy == nil || !policy.IsAllowed(job.action.name) {
+		job.text, job.failed = "the tool is no longer allowed by the permission policy", true
+		return
+	}
+	if err := job.action.integration.extensionItemRuntimeAllowed(job.action.serverID); err != nil {
+		job.text, job.failed = err.Error(), true
+		return
+	}
 	client := job.action.integration.mcp.client(job.action.serverID)
 	if client == nil {
 		job.text, job.failed = "the MCP server stopped before the call", true
@@ -625,6 +637,11 @@ func (a *mcpToolAction) Validate(data json.RawMessage) (interface{}, neuro.Execu
 	}
 	if state, lastError, _, _ := client.status(); state != "running" {
 		return nil, neuro.NewFailureResult(fmt.Sprintf("the %s MCP server is %s: %s", a.serverID, state, lastError))
+	}
+	if err := n.extensionItemRuntimeAllowed(a.serverID); err != nil {
+		n.stats.noteDenied(a.name)
+		n.audit.record("action", map[string]interface{}{"action": a.name, "decision": "refused", "reason": "extension permissions"})
+		return nil, neuro.NewFailureResult(err.Error())
 	}
 
 	job := &mcpCallJob{action: a, args: args, done: make(chan struct{})}
@@ -934,6 +951,9 @@ func (n *NDIntegration) desiredMCPServers() map[string]desiredMCP {
 		}
 		status := verifyCatalogItem(*item, publishers)
 		if !mcpTrustAllowed(status.State) {
+			continue
+		}
+		if err := n.extensionRuntimeAllowed(id, item.Permissions); err != nil {
 			continue
 		}
 		out[id] = desiredMCP{spec: *item.MCP, trust: status.State}

@@ -7,6 +7,7 @@ serve as a smoke test that importing the controller never needs a GUI session.
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -79,6 +80,39 @@ class HeadlessLoadingTest(unittest.TestCase):
         self.assertIsNone(load_pynput_mouse())
         self.assertIsNone(load_mss())
         self.assertIsNone(load_pygetwindow())
+
+    def test_gui_dependency_system_exit_does_not_kill_the_client(self):
+        os.environ["NEURO_HEADLESS"] = "0"
+        with mock.patch("builtins.__import__", side_effect=SystemExit("MouseInfo needs tkinter")):
+            backend = load_pyautogui()
+        self.assertIsInstance(backend, StubPyAutoGUI)
+        with self.assertRaisesRegex(NoDisplayError, "MouseInfo needs tkinter"):
+            backend.press("a")
+
+    def test_missing_gui_dependency_is_named_in_the_refusal(self):
+        os.environ["NEURO_HEADLESS"] = "0"
+        with mock.patch("builtins.__import__", side_effect=ImportError("No module named pyautogui")):
+            backend = load_pyautogui()
+        with self.assertRaisesRegex(NoDisplayError, "No module named pyautogui"):
+            backend.moveTo(10, 10)
+
+    def test_missing_tk_only_skips_the_optional_mouseinfo_window(self):
+        os.environ["NEURO_HEADLESS"] = "0"
+        existing_mouseinfo = object()
+        real_backend = object()
+
+        def import_driver(name, *args, **kwargs):
+            if name == "tkinter":
+                raise ImportError("libtk8.6.so is missing")
+            if name == "pyautogui":
+                self.assertIsNone(sys.modules["mouseinfo"])
+                return real_backend
+            raise AssertionError("unexpected import: " + name)
+
+        with mock.patch.dict(sys.modules, {"mouseinfo": existing_mouseinfo}):
+            with mock.patch("builtins.__import__", side_effect=import_driver):
+                self.assertIs(load_pyautogui(), real_backend)
+            self.assertIs(sys.modules["mouseinfo"], existing_mouseinfo)
 
     def test_stub_geometry_is_plausible_but_input_raises(self):
         stub = StubPyAutoGUI()

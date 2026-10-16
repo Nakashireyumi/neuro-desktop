@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -177,11 +178,26 @@ func requireHTTPSRepo(raw string) (string, error) {
 // runGit runs git and returns trimmed stdout. Stderr is folded into the error,
 // and terminal prompts are disabled so a bad URL cannot hang the bridge.
 func runGit(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	gitArgs := append([]string{"-c", "core.hooksPath=" + os.DevNull, "-c", "init.templateDir="}, args...)
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
+	cmd.WaitDelay = 3 * time.Second
+	// Source staging must not inherit user hooks, filter commands, credential
+	// helpers, alternate work trees, or command-line config from its parent.
+	for _, pair := range os.Environ() {
+		name := strings.SplitN(pair, "=", 2)[0]
+		if !strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+			cmd.Env = append(cmd.Env, pair)
+		}
+	}
+	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("git %s exceeded the two-minute timeout", gitSubcommand(args))
+	}
 	if err != nil {
 		return "", fmt.Errorf("git %s failed: %v (%s)", gitSubcommand(args), err, strings.TrimSpace(stderr.String()))
 	}
@@ -272,6 +288,8 @@ func (n *NDIntegration) listInstalledExtensions() neuro.ExecutionResult {
 }
 
 func (n *NDIntegration) installExtension(itemID string) neuro.ExecutionResult {
+	n.extensionMu.Lock()
+	defer n.extensionMu.Unlock()
 	id, err := normalizeExtensionID(itemID)
 	if err != nil {
 		return neuro.NewFailureResult(err.Error())
@@ -311,9 +329,8 @@ func (n *NDIntegration) installExtension(itemID string) neuro.ExecutionResult {
 		source = "catalog"
 	}
 	install := ExtensionInstallState{
-		// A server that runs a process is never enabled by Neuro's install:
-		// Vedal turns it on in the dashboard.
-		Enabled:     item.MCP == nil,
+		// Installation never grants permission to start an extension.
+		Enabled:     false,
 		InstalledAt: time.Now().UTC().Format(time.RFC3339),
 		Source:      source,
 		Publisher:   item.Publisher,
@@ -356,15 +373,12 @@ func (n *NDIntegration) installExtension(itemID string) neuro.ExecutionResult {
 		return neuro.NewFailureResult(err.Error())
 	}
 
-	if item.MCP != nil {
-		return neuro.NewSuccessResult(fmt.Sprintf(
-			"Installed extension %s (mode %s, signature %s). It is installed but DISABLED: an MCP server only starts after Vedal enables it in the dashboard.",
-			id, mode, trust.State))
-	}
-	return neuro.NewSuccessResult(fmt.Sprintf("Installed extension %s (mode %s, signature %s)", id, mode, trust.State))
+	return neuro.NewSuccessResult(fmt.Sprintf("Installed extension %s (mode %s, signature %s). It is disabled until its run permission and required capabilities are approved.", id, mode, trust.State))
 }
 
 func (n *NDIntegration) uninstallExtension(itemID string) neuro.ExecutionResult {
+	n.extensionMu.Lock()
+	defer n.extensionMu.Unlock()
 	id, err := normalizeExtensionID(itemID)
 	if err != nil {
 		return neuro.NewFailureResult(err.Error())
@@ -401,6 +415,8 @@ func (n *NDIntegration) uninstallExtension(itemID string) neuro.ExecutionResult 
 }
 
 func (n *NDIntegration) setExtensionEnabled(itemID string, enabled bool) neuro.ExecutionResult {
+	n.extensionMu.Lock()
+	defer n.extensionMu.Unlock()
 	id, err := normalizeExtensionID(itemID)
 	if err != nil {
 		return neuro.NewFailureResult(err.Error())
@@ -415,6 +431,11 @@ func (n *NDIntegration) setExtensionEnabled(itemID string, enabled bool) neuro.E
 	install, exists := state.Installed[id]
 	if !exists {
 		return neuro.NewFailureResult("Extension is not installed")
+	}
+	if enabled {
+		if err := n.extensionItemRuntimeAllowed(id); err != nil {
+			return neuro.NewFailureResult(err.Error())
+		}
 	}
 
 	install.Enabled = enabled
@@ -442,16 +463,30 @@ type extensionJob struct {
 
 func (n *NDIntegration) runExtensionJob(job *extensionJob) {
 	var result neuro.ExecutionResult
-	switch job.op {
-	case "install":
-		result = n.installExtension(job.id)
-	default:
-		result = neuro.NewFailureResult("unknown extension operation " + job.op)
+	action := string(CmdInstallExtension)
+	if job.op == "stage" {
+		action = string(CmdStageIntegration)
+	}
+	if err := n.checkExtensionManagement(job.id); err != nil {
+		result = neuro.NewFailureResult(err.Error())
+	} else if policy := n.policy(); policy == nil || !policy.IsAllowed(action) {
+		result = neuro.NewFailureResult("the action is no longer allowed by the permission policy")
+	} else if reason := n.stop.blockReason(action); reason != "" {
+		result = neuro.NewFailureResult(reason)
+	} else {
+		switch job.op {
+		case "install":
+			result = n.installExtension(job.id)
+		case "stage":
+			result = n.stageMarketplaceSource(job.id)
+		default:
+			result = neuro.NewFailureResult("unknown extension operation " + job.op)
+		}
 	}
 
 	if result.Successful {
-		n.sendToNeuro(fmt.Sprintf("## install_extension finished\n\n- item: `%s`\n- result: %s", job.id, result.Message), false)
+		n.sendToNeuro(fmt.Sprintf("## %s finished\n\n- item: `%s`\n- result: %s", action, job.id, result.Message), false)
 		return
 	}
-	n.sendToNeuro(fmt.Sprintf("## install_extension failed\n\n- item: `%s`\n- error: %s", job.id, result.Message), false)
+	n.sendToNeuro(fmt.Sprintf("## %s failed\n\n- item: `%s`\n- error: %s", action, job.id, result.Message), false)
 }

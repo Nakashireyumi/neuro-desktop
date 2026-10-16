@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT"
+
 echo "=== Building Neuro Desktop Bundle ==="
 
 # --------------------------------------------------
@@ -38,8 +41,18 @@ SERVER="neuro-integration$BIN_EXT"
 # --------------------------------------------------
 # CLEAN
 # --------------------------------------------------
-rm -rf dist
+# Rebuilding must not erase credentials, the operator's policy, extensions, or
+# other bundles under dist/. Replace generated assets only.
 mkdir -p "$DIST/"
+rm -rf "$DIST/frontend" "$DIST/agent" "$DIST/integration-docs"
+
+# Releases include the native runtime. Source staging is explicit for CI/dev
+# machines without GTK; it never silently substitutes a browser application.
+if [[ "${NEURO_MANAGER_SOURCE_ONLY:-0}" == "1" ]]; then
+  python3 scripts/build-manager.py --out "$DIST/manager"
+else
+  python3 scripts/build-manager.py --standalone --out "$DIST/manager"
+fi
 
 # --------------------------------------------------
 # ABOUT THE SHIPPED LAYOUT (three programs; see docs/ARCHITECTURE.md)
@@ -88,7 +101,7 @@ echo "      ✓ server built"
 # --------------------------------------------------
 echo "[2/3] Building the dashboard client (frontend)..."
 pushd frontend > /dev/null
-npm install # install the npm dependencies before building.
+if [[ -f package-lock.json ]]; then npm ci; else npm install; fi
 npm run build
 popd > /dev/null
 
@@ -100,9 +113,24 @@ echo "      ✓ dashboard client built"
 # COPY CONFIG / CATALOG / DOCS
 # --------------------------------------------------
 echo "Copying configuration, catalog and docs..."
-cp -r config "$DIST/config"
-cp -r catalog "$DIST/catalog"
-cp apps/neuro-integration/permissions.example.json "$DIST/permissions.json"
+mkdir -p "$DIST/config"
+cp -Rn config/. "$DIST/config/"
+mkdir -p "$DIST/catalog"
+for item in catalog/*; do
+  name="$(basename "$item")"
+  case "$name" in extensions-state.json|extension-permissions.json|integrations.json) continue ;; esac
+  if [[ -d "$item" ]]; then
+    mkdir -p "$DIST/catalog/$name"
+    cp -Rn "$item/." "$DIST/catalog/$name/"
+  else
+    cp "$item" "$DIST/catalog/"
+  fi
+done
+MARKETPLACE_INDEX="${NEURO_MARKETPLACE_SOURCE:-$ROOT/catalog/marketplace.json}"
+if [[ -f "$MARKETPLACE_INDEX" ]]; then cp "$MARKETPLACE_INDEX" "$DIST/catalog/marketplace.json"; fi
+if [[ ! -f "$DIST/permissions.json" ]]; then
+  cp apps/neuro-integration/permissions.example.json "$DIST/permissions.json"
+fi
 cp apps/neuro-integration/integration-docs/action-schema.run_script.json "$DIST/integration-docs/" 2>/dev/null || true
 cp docs/*.md "$DIST/integration-docs/" 2>/dev/null || true
 echo "  ✓ config, catalog and docs copied"

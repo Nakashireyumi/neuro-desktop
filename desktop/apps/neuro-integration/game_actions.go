@@ -382,6 +382,9 @@ func (n *NDIntegration) detectGame(refresh bool) (GameDetected, error) {
 
 // resolveAutoMode decides who drives a game when the profile says "auto".
 func (n *NDIntegration) resolveAutoMode(profile *GameProfile) GameControlMode {
+	if n.adapterOwnsGame(profile) {
+		return ControlModeExternal
+	}
 	owner := strings.ToLower(strings.TrimSpace(profile.Control.ExternalName))
 	if owner == "" || n.relay == nil {
 		return ControlModeND
@@ -970,6 +973,10 @@ func (n *NDIntegration) buildGameObservation(vision bool, prompt string) (string
 	}
 	if hasShot {
 		lines = append(lines, fmt.Sprintf("- Screenshot: captured (PNG, %d KB)", len(shot)/1024))
+	} else if shotErr != nil {
+		lines = append(lines, fmt.Sprintf("- Screenshot: unusable (%v)", shotErr))
+	} else if reason, _ := status["screenshot_error"].(string); reason != "" {
+		lines = append(lines, "- Screenshot: unavailable ("+reason+")")
 	}
 	if summary != "" {
 		lines = append(lines, fmt.Sprintf("- Vision summary: %s", summary))

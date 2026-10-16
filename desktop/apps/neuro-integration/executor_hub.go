@@ -105,9 +105,10 @@ type executorResult struct {
 
 // executorConn wraps a single connected executor client.
 type executorConn struct {
-	conn   net.Conn
-	reader *bufio.Reader
-	remote string
+	conn    net.Conn
+	reader  *bufio.Reader
+	remote  string
+	version string
 
 	writeMu sync.Mutex
 
@@ -314,6 +315,7 @@ func (h *ExecutorHub) Info() ExecutorInfo {
 	}
 	if client != nil {
 		info.Remote = client.remote
+		info.Version = client.version
 	}
 	if !h.lastSeen.IsZero() {
 		info.LastSeen = h.lastSeen.UTC().Format(time.RFC3339)
@@ -409,6 +411,7 @@ func (h *ExecutorHub) handleConnection(conn net.Conn) {
 		conn:    conn,
 		reader:  reader,
 		remote:  remote,
+		version: hello.Version,
 		pending: map[string]chan executorResult{},
 		closed:  make(chan struct{}),
 	}

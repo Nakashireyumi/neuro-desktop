@@ -39,6 +39,24 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 failures: list[str] = []
 
 
+def tracked_files(root: str) -> list[str] | None:
+    """Check repository content, leaving local archives and runtime files alone.
+
+    Source archives without Git still use the filesystem walker below.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", root, "ls-files", "--cached", "-z"],
+            check=True, capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [os.path.join(root, os.fsdecode(name)) for name in result.stdout.split(b"\0") if name]
+
+
+TRACKED_FILES = tracked_files(REPO_ROOT)
+
+
 def fail(message: str) -> None:
     failures.append(message)
     print(f"FAIL  {message}")
@@ -49,6 +67,16 @@ def ok(message: str) -> None:
 
 
 def walk(root: str):
+    if TRACKED_FILES is not None:
+        for path in TRACKED_FILES:
+            relative = os.path.relpath(path, root)
+            if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+                continue
+            if any(part in SKIP_DIRS for part in relative.split(os.sep)[:-1]):
+                continue
+            if os.path.isfile(path):
+                yield path
+        return
     for current, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for name in files:
@@ -289,27 +317,23 @@ def check_no_stale_paths() -> None:
         "recassity/neuro-relay",
         "Ubuntufanboy/neuro-desktop",
     )
-    skip_dirs = {".git", "node_modules", "dist", "__pycache__", ".venv", "target"}
     # This file contains the needles on purpose; it is the check, not a reference.
     # CHANGELOG.md is the history of those removals, so it is allowed to name them.
     skip_files = {os.path.relpath(__file__, REPO_ROOT), "CHANGELOG.md"}
     hits = []
-    for root, dirs, files in os.walk(REPO_ROOT):
-        dirs[:] = [d for d in dirs if d not in skip_dirs]
-        for name in files:
-            path = os.path.join(root, name)
-            if os.path.relpath(path, REPO_ROOT) in skip_files:
-                continue
-            if os.path.splitext(name)[1] in {".png", ".jpg", ".ico", ".woff", ".woff2", ".ttf", ".so", ".a"}:
-                continue
-            try:
-                with open(path, "r", encoding="utf-8", errors="ignore") as handle:
-                    body = handle.read()
-            except OSError:
-                continue
-            for needle in stale:
-                if needle in body:
-                    hits.append(f"{os.path.relpath(path, REPO_ROOT)} -> {needle}")
+    for path in walk(REPO_ROOT):
+        if os.path.relpath(path, REPO_ROOT) in skip_files:
+            continue
+        if os.path.splitext(path)[1] in {".png", ".jpg", ".ico", ".woff", ".woff2", ".ttf", ".so", ".a"}:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                body = handle.read()
+        except OSError:
+            continue
+        for needle in stale:
+            if needle in body:
+                hits.append(f"{os.path.relpath(path, REPO_ROOT)} -> {needle}")
 
     if hits:
         for hit in hits[:10]:
@@ -329,15 +353,14 @@ def check_no_legacy_toolchains() -> None:
     """
     banned_ext = {".rs", ".cpp", ".cc", ".cxx", ".c", ".h", ".hpp"}
     banned_names = {"Cargo.toml", "Cargo.lock", "CMakeLists.txt"}
-    skip_dirs = {".git", "node_modules", "dist", "__pycache__", ".venv", "third_party"}
     hits = []
-    for root, dirs, files in os.walk(REPO_ROOT):
-        dirs[:] = [d for d in dirs if d not in skip_dirs]
-        if os.path.basename(root) == ".cargo":
-            hits.append(os.path.relpath(root, REPO_ROOT) + "/")
-        for name in files:
-            if os.path.splitext(name)[1] in banned_ext or name in banned_names:
-                hits.append(os.path.relpath(os.path.join(root, name), REPO_ROOT))
+    for path in walk(REPO_ROOT):
+        relative = os.path.relpath(path, REPO_ROOT)
+        if "third_party" in relative.split(os.sep):
+            continue
+        name = os.path.basename(path)
+        if os.path.splitext(name)[1] in banned_ext or name in banned_names or ".cargo" in relative.split(os.sep):
+            hits.append(relative)
     if hits:
         for hit in hits[:10]:
             fail(f"legacy Rust/C++ artifact is back: {hit}")

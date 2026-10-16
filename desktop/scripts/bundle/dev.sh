@@ -48,8 +48,7 @@ if [[ -e "$DIST" && ! -w "$DIST" ]]; then
   exit 1
 fi
 
-echo "Cleaning $DIST..."
-rm -rf "$DIST"
+echo "Updating $DIST (keeping tokens, permissions and installed extensions)..."
 mkdir -p "$DIST"
 
 echo "Building the server (apps/neuro-integration)..."
@@ -75,10 +74,13 @@ echo "Building the dashboard client (frontend)..."
   if [[ -f package-lock.json ]]; then npm ci; else npm install; fi
   npm run build
 )
+rm -rf "$DIST/frontend"
 mkdir -p "$DIST/frontend"
 cp -r frontend/dist/. "$DIST/frontend/"
 
 echo "Staging the agent (backend/python/controller)..."
+python3 scripts/build-manager.py --out "$DIST/manager"
+rm -rf "$DIST/agent"
 mkdir -p "$DIST/agent"
 cp -r backend/python/controller "$DIST/agent/controller"
 rm -rf "$DIST/agent/controller/__pycache__"
@@ -87,21 +89,39 @@ cp backend/python/requirements-windows.txt "$DIST/agent/requirements-windows.txt
 
 echo "Staging config, catalog and docs..."
 mkdir -p "$DIST/integration-docs"
-cp -r config "$DIST/config"
-cp -r catalog "$DIST/catalog"
-cp apps/neuro-integration/permissions.example.json "$DIST/permissions.json"
+mkdir -p "$DIST/config"
+cp -Rn config/. "$DIST/config/"
+mkdir -p "$DIST/catalog"
+for item in catalog/*; do
+  name="$(basename "$item")"
+  case "$name" in extensions-state.json|extension-permissions.json|integrations.json) continue ;; esac
+  if [[ -d "$item" ]]; then
+    mkdir -p "$DIST/catalog/$name"
+    cp -Rn "$item/." "$DIST/catalog/$name/"
+  else
+    cp "$item" "$DIST/catalog/"
+  fi
+done
+MARKETPLACE_INDEX="${NEURO_MARKETPLACE_SOURCE:-$ROOT/catalog/marketplace.json}"
+if [[ -f "$MARKETPLACE_INDEX" ]]; then cp "$MARKETPLACE_INDEX" "$DIST/catalog/marketplace.json"; fi
+if [[ ! -f "$DIST/permissions.json" ]]; then
+  cp apps/neuro-integration/permissions.example.json "$DIST/permissions.json"
+fi
 cp "apps/neuro-integration/integration-docs/Action Script Documentation.md" \
    "$DIST/integration-docs/" 2>/dev/null || true
+
+sed "s|@SERVER@|$SERVER|g" scripts/bundle/templates/start.sh > "$DIST/start.sh"
+chmod +x "$DIST/start.sh"
 
 echo
 echo "=== Dev bundle complete ==="
 echo "Location: $DIST"
 echo
-echo "1. Set up, then start the server (dashboard API + Neuro client):"
-echo "     cd $DIST && ./$SERVER setup && NEURO_UI_DIR=\$PWD/frontend ./$SERVER --ws-url ws://localhost:8000"
+echo "1. Start the server and local client together:"
+echo "     cd $DIST && ./start.sh --ws-url ws://localhost:8000"
 echo "   setup prints the dashboard token once: copy it. It is the sign-in token."
 echo
-echo "2. Start the agent on the PC Neuro controls (same machine here):"
+echo "2. For a remote client, use NEURO_NO_AGENT=1 ./start.sh on the server, then:"
 echo "     cd $DIST/agent && python3 -m controller.agent --bridge 127.0.0.1:9876"
 echo
 echo "   Split machines: run step 1 with --executor-listen 0.0.0.0:9876 and set"
@@ -110,7 +130,9 @@ echo "   The executor link is plain TCP for now: on an untrusted network, tunnel
 echo "   The relay host and the server on this machine share ./relay-token, so nothing is copied."
 echo "   A relay on another machine needs the same token value: copy the file's value there."
 echo
-echo "3. Dashboard: http://127.0.0.1:8300/ui/"
+echo "3. The native manager opens automatically (GTK 4 + PyGObject required for source builds)."
+echo "   Standalone manager: python3 scripts/build-manager.py --standalone"
+echo "   Optional browser dashboard: http://127.0.0.1:8300/ui/"
 echo "   Split: ./neuro-dashboard --server http://<server>:8300 --listen 127.0.0.1:8310"
 echo "   serves the same UI from another program and forwards only the API."
 echo
@@ -120,16 +142,10 @@ if [[ "${NEURO_BUNDLE_NO_LAUNCH:-0}" == "1" ]]; then
   exit 0
 fi
 
-echo "Launching the server (Ctrl-C to stop)..."
+echo "Launching the server and local client (Ctrl-C to stop)..."
+if [[ -z "${NEURO_AGENT_PYTHON:-}" && -x "$ROOT/backend/python/.venv/bin/python" ]]; then
+  export NEURO_AGENT_PYTHON="$ROOT/backend/python/.venv/bin/python"
+fi
 cd "$DIST"
-export NEURO_UI_DIR="$PWD/frontend"
-export NEURO_IPC_FILE="$PWD/neuro_ipc.json"
-export NEURO_PERMISSIONS_FILE="$PWD/permissions.json"
-export NEURO_CATALOG_FILE="$PWD/catalog/index.json"
-export NEURO_GAME_PROFILES_DIR="$PWD/catalog/games"
-export NEURO_EXTENSIONS_STATE_FILE="$PWD/catalog/extensions-state.json"
 chmod +x "$SERVER"
-# First-run step. Idempotent: it prints the dashboard token only the first time.
-# A failed check stops the launch here, with the reason printed.
-"./$SERVER" setup
-exec "./$SERVER"
+exec ./start.sh

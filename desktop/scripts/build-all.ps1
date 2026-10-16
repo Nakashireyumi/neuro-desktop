@@ -22,7 +22,7 @@ function Invoke-Checked([string]$What, [scriptblock]$Block) {
 
 Write-Host '=== neuro-desktop build (windows) ==='
 
-Write-Host '[1/4] Server (apps/neuro-integration)'
+Write-Host '[1/5] Server (apps/neuro-integration)'
 Push-Location 'apps/neuro-integration'
 try {
     if (-not $NoTest) {
@@ -36,7 +36,7 @@ try {
 }
 Write-Host '      -> apps/neuro-integration/dist/neuro-integration.exe'
 
-Write-Host '[2/4] Dashboard program (apps/neuro-dashboard)'
+Write-Host '[2/5] Dashboard program (apps/neuro-dashboard)'
 Push-Location 'apps/neuro-dashboard'
 try {
     if (-not $NoTest) {
@@ -50,7 +50,7 @@ try {
 }
 Write-Host '      -> apps/neuro-dashboard/dist/neuro-dashboard.exe'
 
-Write-Host '[3/4] Dashboard (frontend)'
+Write-Host '[3/5] Dashboard (frontend)'
 Push-Location 'frontend'
 try {
     if (Test-Path 'package-lock.json') {
@@ -58,23 +58,38 @@ try {
     } else {
         Invoke-Checked 'npm install' { npm install }
     }
+    if (-not $NoTest) { Invoke-Checked 'frontend tests' { npm test } }
     Invoke-Checked 'npm run build' { npm run build }
 } finally {
     Pop-Location
 }
 Write-Host '      -> frontend/dist'
 
-Write-Host '[4/4] Agent (backend/python/controller)'
+Write-Host '[4/5] Agent (backend/python/controller)'
 Push-Location 'backend/python'
 try {
     Invoke-Checked 'python compileall' { python -m compileall -q controller | Out-Null }
     if (-not $NoTest) {
-        Invoke-Checked 'agent tests' { python -m unittest discover -s tests -t . | Out-Null }
+        $PreviousHeadless = $env:NEURO_HEADLESS
+        try {
+            $env:NEURO_HEADLESS = '1'
+            Invoke-Checked 'agent tests' { python -m unittest discover -s tests -t . | Out-Null }
+        } finally { $env:NEURO_HEADLESS = $PreviousHeadless }
     }
 } finally {
     Pop-Location
 }
 Write-Host '      -> backend/python/controller'
+
+Write-Host '[5/5] Native manager (GTK 4)'
+if (-not $NoTest) {
+    $PreviousPath = $env:PYTHONPATH
+    try {
+        $env:PYTHONPATH = 'apps/neuro-manager'
+        Invoke-Checked 'manager tests' { python -m unittest discover -s apps/neuro-manager/tests }
+    } finally { $env:PYTHONPATH = $PreviousPath }
+}
+Invoke-Checked 'native manager staging' { python scripts/build-manager.py --out dist/manager-source }
 
 Write-Host ''
 Write-Host 'Build complete.'

@@ -74,7 +74,7 @@ function defaultPolicy(): PermissionPolicyFile {
     scopes: Object.fromEntries(
       ALL_SCOPES.map((scope) => [
         scope,
-        { allowed: !(scope === "filesystem" || scope === "system") },
+        { allowed: !["filesystem", "system", "shell", "extensions"].includes(scope) },
       ]),
     ),
   };
@@ -115,8 +115,10 @@ export default function PermissionsPage() {
   const [isDirty, setIsDirty] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const [knownActions, setKnownActions] = useState<ActionInfo[]>([]);
+  const [operatorToken, setOperatorToken] = useState("");
 
   const load = useCallback(async () => {
+    setOperatorToken("");
     setSource("loading…");
     try {
       const [incoming, actions] = await Promise.all([
@@ -150,9 +152,12 @@ export default function PermissionsPage() {
   }, [load]);
 
   async function save() {
+    if (!operatorToken.trim() || saveState.kind === "saving") return;
+    const freshToken = operatorToken;
+    setOperatorToken("");
     setSaveState({ kind: "saving" });
     try {
-      const result = await api.savePermissions(policy);
+      const result = await api.savePermissions(policy, freshToken);
       setIsDirty(false);
       setSaveState({
         kind: "saved",
@@ -166,7 +171,7 @@ export default function PermissionsPage() {
         message:
           error instanceof ApiError
             ? error.status === 401
-              ? `${error.message}. Paste the admin token in Settings if this bridge requires one.`
+              ? `${error.message}. Sign in again to continue.`
               : error.message
             : "Could not save the policy",
       });
@@ -288,13 +293,16 @@ export default function PermissionsPage() {
           <button className="secondary" onClick={() => setShowJsonPreview(!showJsonPreview)}>
             {showJsonPreview ? "Hide" : "Preview"} JSON
           </button>
-          <button className="primary" onClick={() => void save()} disabled={saveState.kind === "saving"}>
+          <label style={{ fontSize: "0.85rem" }}>Re-enter your operator token to save
+            <input type="password" autoComplete="new-password" value={operatorToken} onChange={(event) => setOperatorToken(event.target.value)} disabled={saveState.kind === "saving"} style={{ display: "block" }} />
+          </label>
+          <button className="primary" onClick={() => void save()} disabled={saveState.kind === "saving" || !operatorToken.trim()}>
             {saveState.kind === "saving" ? "Saving…" : "Save"}
           </button>
         </div>
       </header>
 
-      <PermissionRequests onChanged={() => void load()} />
+      <PermissionRequests onChanged={() => { if (!isDirty) void load(); }} />
 
       {saveState.kind === "error" && <div className="scope-warning">⚠️ {saveState.message}</div>}
       {saveState.kind === "saved" && <div className="save-notice">✅ {saveState.message}</div>}

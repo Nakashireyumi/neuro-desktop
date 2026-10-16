@@ -15,6 +15,7 @@ const TONES: Record<string, Tone> = {
   idle: "warn",
   waiting: "warn",
   starting: "warn",
+  connecting: "warn",
   disconnected: "bad",
   unreachable: "bad",
   failed: "bad",
@@ -86,7 +87,7 @@ export default function RuntimePanel() {
     );
   }
 
-  const { bridge, executor, relay, vision, mcp } = runtime;
+  const { bridge, neuro, executor, relay, vision, mcp } = runtime;
   const mcpRunning = mcp.servers.filter((server) => server.state === "running").map((server) => server.id);
 
   return (
@@ -96,6 +97,11 @@ export default function RuntimePanel() {
           title="Bridge"
           state={bridge.state}
           lines={[`up ${Math.round(bridge.uptime_seconds / 60)} min`, bridge.paused ? "paused by the operator" : ""]}
+        />
+        <Card
+          title="Neuro API"
+          state={neuro?.state ?? "waiting"}
+          lines={[neuro?.connected ? "ready to receive actions" : "waiting for Neuro's API server", neuro?.last_error ?? ""]}
         />
         <Card
           title="Executor (the PC agent)"

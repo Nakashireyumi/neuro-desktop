@@ -35,7 +35,7 @@ esac
 
 echo "=== neuro-desktop build ($OS_UNAME) ==="
 
-echo "[1/4] Server (apps/neuro-integration)"
+echo "[1/5] Server (apps/neuro-integration)"
 (
   cd apps/neuro-integration
   if [[ "$RUN_TESTS" == "1" ]]; then
@@ -47,7 +47,7 @@ echo "[1/4] Server (apps/neuro-integration)"
 )
 echo "      -> apps/neuro-integration/dist/neuro-integration${BIN_EXT}"
 
-echo "[2/4] Dashboard program (apps/neuro-dashboard)"
+echo "[2/5] Dashboard program (apps/neuro-dashboard)"
 (
   cd apps/neuro-dashboard
   if [[ "$RUN_TESTS" == "1" ]]; then
@@ -59,7 +59,7 @@ echo "[2/4] Dashboard program (apps/neuro-dashboard)"
 )
 echo "      -> apps/neuro-dashboard/dist/neuro-dashboard${BIN_EXT}"
 
-echo "[3/4] Dashboard (frontend)"
+echo "[3/5] Dashboard (frontend)"
 (
   cd frontend
   if [[ -f package-lock.json ]]; then
@@ -67,21 +67,32 @@ echo "[3/4] Dashboard (frontend)"
   else
     npm install
   fi
+  if [[ "$RUN_TESTS" == "1" ]]; then npm test; fi
   npm run build
 )
 echo "      -> frontend/dist"
 
-echo "[4/4] Agent (backend/python/controller)"
+echo "[4/5] Agent (backend/python/controller)"
 (
   cd backend/python
   python3 -m compileall -q controller >/dev/null
   if [[ "$RUN_TESTS" == "1" ]]; then
-    python3 -m unittest discover -s tests -t . >/dev/null
+    NEURO_HEADLESS=1 python3 -m unittest discover -s tests -t . >/dev/null
   fi
 )
-echo "      -> backend/python/controller (syntax checked${RUN_TESTS:+, tests run})"
+if [[ "$RUN_TESTS" == "1" ]]; then
+  echo "      -> backend/python/controller (syntax checked, tests run)"
+else
+  echo "      -> backend/python/controller (syntax checked)"
+fi
 
 echo
+echo "[5/5] Native manager (GTK 4)"
+if [[ "$RUN_TESTS" == "1" ]]; then
+  PYTHONPATH=apps/neuro-manager python3 -m unittest discover -s apps/neuro-manager/tests
+fi
+python3 scripts/build-manager.py --out dist/manager-source
+
 echo "Build complete."
 echo "  Run from source:      ./scripts/bundle/dev.sh"
 echo "  Release bundle:       ./scripts/bundle/prod.sh"

@@ -128,6 +128,10 @@ func buildDesktopContextMessage(status map[string]interface{}, visionSummary str
 
 	var lines []string
 	lines = append(lines, "## Desktop context snapshot")
+	if available, ok := status["input_available"].(bool); ok && !available {
+		reason, _ := status["input_error"].(string)
+		lines = append(lines, "- Desktop input: unavailable ("+reason+"). Use shell_command for command-line work.")
+	}
 	if strings.TrimSpace(activeWindow) == "" {
 		lines = append(lines, "- Active window: unavailable")
 	} else {
@@ -148,6 +152,8 @@ func buildDesktopContextMessage(status map[string]interface{}, visionSummary str
 		lines = append(lines, fmt.Sprintf("- Screenshot: unusable (%v)", shotErr))
 	} else if ok {
 		lines = append(lines, fmt.Sprintf("- Screenshot: captured (PNG, %d KB)", len(shot)/1024))
+	} else if reason, _ := status["screenshot_error"].(string); reason != "" {
+		lines = append(lines, "- Screenshot: unavailable ("+reason+")")
 	}
 
 	if strings.TrimSpace(visionSummary) != "" {

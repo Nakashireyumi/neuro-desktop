@@ -108,6 +108,11 @@ func sendJSON(t *testing.T, method string, url string, body string, headers map[
 		t.Fatalf("failed to build request: %v", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
+	// These helpers represent an explicitly approving operator. Tests for an
+	// ordinary signed-in session set this header to an empty string instead.
+	if _, explicit := headers["X-ND-Operator-Token"]; !explicit && (strings.Contains(url, "/api/permissions") || strings.Contains(url, "/api/permission-requests/")) {
+		request.Header.Set("X-ND-Operator-Token", testDashboardToken)
+	}
 	for name, value := range withDefaultToken(headers) {
 		request.Header.Set(name, value)
 	}
@@ -266,7 +271,7 @@ func TestAdminTokenGuardsWrites(t *testing.T) {
 
 	// Bearer is accepted as well.
 	status, _ = sendJSON(t, http.MethodPut, server.URL+"/api/permissions", policy,
-		map[string]string{"Authorization": "Bearer letmein-long-enough"})
+		map[string]string{"Authorization": "Bearer letmein-long-enough", "X-ND-Operator-Token": "letmein-long-enough"})
 	if status != http.StatusOK {
 		t.Fatalf("expected the token to be accepted, got %d", status)
 	}
@@ -406,6 +411,8 @@ func TestAdminSessionChecksTheToken(t *testing.T) {
 
 func TestAdminExtensionManagement(t *testing.T) {
 	integration := testIntegration(t)
+	installFixture(t, `[{"id":"nd-vision-server","name":"Vision"}]`)
+	integration.policy().scopes[ScopeExtensions] = ScopeConfig{Allowed: true}
 
 	statePath := filepath.Join(t.TempDir(), "extensions-state.json")
 	state := `{"installed": {"nd-vision-server": {"enabled": false, "installed_at": "2026-01-01T00:00:00Z", "source": "test"}}}`
@@ -413,6 +420,9 @@ func TestAdminExtensionManagement(t *testing.T) {
 		t.Fatalf("failed to write extension state: %v", err)
 	}
 	t.Setenv("NEURO_EXTENSIONS_STATE_FILE", statePath)
+	t.Setenv("NEURO_EXTENSION_PERMISSIONS_FILE", statePath+".permissions")
+	grantExtensionFixture(t, "nd-vision-server", ExtensionPermissionPolicy{RunAllowed: true})
+	approval := map[string]string{"X-ND-Operator-Token": testDashboardToken}
 
 	server := newTestAdmin(t, integration, testDashboardToken)
 
@@ -425,7 +435,7 @@ func TestAdminExtensionManagement(t *testing.T) {
 		t.Fatalf("expected one installed extension, got %v", payload["installed"])
 	}
 
-	status, payload = sendJSON(t, http.MethodPost, server.URL+"/api/extensions/nd-vision-server/enable", "", nil)
+	status, payload = sendJSON(t, http.MethodPost, server.URL+"/api/extensions/nd-vision-server/enable", "", approval)
 	if status != http.StatusOK {
 		t.Fatalf("enable failed: %d %v", status, payload)
 	}
@@ -438,7 +448,7 @@ func TestAdminExtensionManagement(t *testing.T) {
 		t.Fatal("the extension should be enabled in the state file")
 	}
 
-	status, _ = sendJSON(t, http.MethodPost, server.URL+"/api/extensions/nd-vision-server/uninstall", "", nil)
+	status, _ = sendJSON(t, http.MethodPost, server.URL+"/api/extensions/nd-vision-server/uninstall", "", approval)
 	if status != http.StatusOK {
 		t.Fatalf("uninstall failed: %d", status)
 	}
@@ -448,7 +458,7 @@ func TestAdminExtensionManagement(t *testing.T) {
 	}
 
 	// Unknown actions are refused, not silently ignored.
-	status, _ = sendJSON(t, http.MethodPost, server.URL+"/api/extensions/nd-vision-server/frobnicate", "", nil)
+	status, _ = sendJSON(t, http.MethodPost, server.URL+"/api/extensions/nd-vision-server/frobnicate", "", approval)
 	if status != http.StatusBadRequest {
 		t.Fatalf("expected 400 for an unknown action, got %d", status)
 	}

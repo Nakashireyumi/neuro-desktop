@@ -1,0 +1,687 @@
+{
+  "schema_version": 1,
+  "revision": 1,
+  "updated_at": "2026-10-15",
+  "repository": "https://github.com/Nakashireyumi/neuro-desktop",
+  "branch": "catalog",
+  "items": [
+    {
+      "id": "neuratro",
+      "name": "Neuratro",
+      "kind": "game-integration",
+      "description": "Connect Balatro game state and high-level actions through a Lua mod and Rust bridge.",
+      "repository": "https://github.com/VX1D/neuro-sdk-neuratro",
+      "source_ref": "main",
+      "source_commit": "12a558e5f9ad5e49ab6442a5fbc519b088620d4a",
+      "license": {
+        "spdx": "LicenseRef-Neuratro",
+        "status": "custom",
+        "notes": "MIT-derived text includes an additional condition restricting modification. GitHub reports NOASSERTION.",
+        "url": "https://github.com/VX1D/neuro-sdk-neuratro/blob/12a558e5f9ad5e49ab6442a5fbc519b088620d4a/LICENSE"
+      },
+      "platforms": {
+        "documented": [
+          "windows"
+        ],
+        "tested": [],
+        "notes": "Upstream setup documents Windows paths, version.dll, and a PowerShell launcher. Other operating systems are not verified."
+      },
+      "game_ids": [
+        "balatro"
+      ],
+      "neuro_api": {
+        "transport": "websocket",
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
+      },
+      "install": {
+        "mode": "manual",
+        "readiness": "license-review",
+        "instructions_url": "https://github.com/VX1D/neuro-sdk-neuratro/blob/12a558e5f9ad5e49ab6442a5fbc519b088620d4a/README.md",
+        "requirements": [
+          "Balatro (Steam)",
+          "Lovely injector 0.9.0",
+          "Steamodded",
+          "Rust toolchain for the bridge"
+        ],
+        "notes": [
+          "Install the Lua mod into the Balatro Mods directory and build the Rust bridge separately.",
+          "The README MIT badge does not describe the additional modification condition in LICENSE. Review the actual license before distributing modified code."
+        ]
+      },
+      "permissions": {
+        "review_status": "inferred-from-source",
+        "enforcement": "upstream",
+        "capabilities": [
+          {
+            "id": "game.state",
+            "reason": "Read Balatro state from the mod."
+          },
+          {
+            "id": "game.actions",
+            "reason": "Choose game actions exposed by the mod."
+          },
+          {
+            "id": "filesystem.game",
+            "reason": "Read and write the game mod and file-based IPC directories."
+          },
+          {
+            "id": "process.start",
+            "reason": "Start the local Rust bridge."
+          },
+          {
+            "id": "network.local",
+            "reason": "Connect the bridge to your configured Neuro WebSocket endpoint."
+          }
+        ]
+      },
+      "settings": [
+        {
+          "key": "neuro_websocket_url",
+          "upstream_key": "NEURO_SDK_WS_URL",
+          "type": "string",
+          "description": "WebSocket URL for the Neuro API or your compatible relay."
+        },
+        {
+          "key": "ipc_directory",
+          "upstream_key": "NEURO_IPC_DIR",
+          "type": "string",
+          "description": "Directory shared by the bridge and Balatro mod."
+        }
+      ],
+      "verification": {
+        "reviewed_at": "2026-10-15",
+        "source_links": [
+          "https://github.com/VX1D/neuro-sdk-neuratro/blob/12a558e5f9ad5e49ab6442a5fbc519b088620d4a/README.md",
+          "https://github.com/VX1D/neuro-sdk-neuratro/blob/12a558e5f9ad5e49ab6442a5fbc519b088620d4a/LICENSE"
+        ],
+        "unverified": [
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
+          "No managed install/uninstall recipe or per-platform end-to-end certification."
+        ]
+      }
+    },
+    {
+      "id": "neurocompanion",
+      "name": "Neuro Companion",
+      "kind": "game-integration",
+      "description": "Add a controllable companion to Terraria through tModLoader, with optional Neuro API actions.",
+      "repository": "https://github.com/Pekotaker/NeuroCompanion",
+      "source_ref": "master",
+      "source_commit": "645181e7ff9b92ee0066537b5a05a214e0d42649",
+      "license": {
+        "spdx": "NOASSERTION",
+        "status": "missing",
+        "notes": "No license detected by the GitHub repository API or root README.",
+        "url": "https://github.com/Pekotaker/NeuroCompanion"
+      },
+      "platforms": {
+        "documented": [],
+        "tested": [],
+        "notes": "The project requires Terraria and tModLoader; its README does not verify an OS matrix."
+      },
+      "game_ids": [
+        "terraria"
+      ],
+      "neuro_api": {
+        "transport": "websocket",
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
+      },
+      "install": {
+        "mode": "manual",
+        "readiness": "license-review",
+        "instructions_url": "https://github.com/Pekotaker/NeuroCompanion/blob/645181e7ff9b92ee0066537b5a05a214e0d42649/README.md",
+        "requirements": [
+          "Terraria",
+          "tModLoader",
+          "Neuro Companion mod"
+        ],
+        "notes": [
+          "Enable the mod in tModLoader, enter a world, summon the companion, and configure the WebSocket endpoint.",
+          "The mod can work without a Neuro API connection.",
+          "No repository license was detected at review; this index links to the project and does not redistribute its code or assets."
+        ]
+      },
+      "permissions": {
+        "review_status": "inferred-from-source",
+        "enforcement": "upstream",
+        "capabilities": [
+          {
+            "id": "game.state",
+            "reason": "Read player, companion and nearby game state."
+          },
+          {
+            "id": "game.actions",
+            "reason": "Control the companion and transfer allowed inventory items."
+          },
+          {
+            "id": "network.local",
+            "reason": "Connect to your configured Neuro WebSocket endpoint."
+          }
+        ]
+      },
+      "settings": [
+        {
+          "key": "neuro_websocket_url",
+          "upstream_key": "tModLoader mod config: Randy websocket URL",
+          "type": "string",
+          "description": "WebSocket URL configured in the mod menu."
+        },
+        {
+          "key": "auto_connect",
+          "upstream_key": "tModLoader mod config: Auto-connect on world load",
+          "type": "boolean",
+          "description": "Connect when a world loads."
+        }
+      ],
+      "verification": {
+        "reviewed_at": "2026-10-15",
+        "source_links": [
+          "https://github.com/Pekotaker/NeuroCompanion/blob/645181e7ff9b92ee0066537b5a05a214e0d42649/README.md",
+          "https://github.com/Pekotaker/NeuroCompanion"
+        ],
+        "unverified": [
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
+          "No managed install/uninstall recipe or per-platform end-to-end certification."
+        ]
+      }
+    },
+    {
+      "id": "dont-starve-neuro",
+      "name": "Don't Starve Neuro",
+      "kind": "game-integration",
+      "description": "Connect Don't Starve single-player game state and actions through its mod and Node.js bridge.",
+      "repository": "https://github.com/EthLeigh/dont-starve-neuro",
+      "source_ref": "single",
+      "source_commit": "500892a001a57d3bef017b0075ec80ac8ec2501c",
+      "license": {
+        "spdx": "MIT",
+        "status": "standard",
+        "notes": "Repository metadata identifies MIT; dependencies and game assets keep their own licenses.",
+        "url": "https://github.com/EthLeigh/dont-starve-neuro/blob/500892a001a57d3bef017b0075ec80ac8ec2501c/LICENSE"
+      },
+      "platforms": {
+        "documented": [],
+        "tested": [],
+        "notes": "The single branch documents game mod and Node.js setup without an OS support matrix."
+      },
+      "game_ids": [
+        "dont-starve"
+      ],
+      "neuro_api": {
+        "transport": "websocket",
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
+      },
+      "install": {
+        "mode": "manual",
+        "readiness": "upstream-setup-required",
+        "instructions_url": "https://github.com/EthLeigh/dont-starve-neuro/blob/500892a001a57d3bef017b0075ec80ac8ec2501c/README.md",
+        "requirements": [
+          "Don't Starve single-player (base DS world)",
+          "Node.js and npm",
+          "Game mod and its API bridge"
+        ],
+        "notes": [
+          "Use the single branch and single-* releases. The default main branch is the discontinued co-op implementation.",
+          "The bridge and game mod port configuration must agree.",
+          "Start your Neuro API endpoint, then the bridge, then the game; the startup message is sent once."
+        ]
+      },
+      "permissions": {
+        "review_status": "inferred-from-source",
+        "enforcement": "upstream",
+        "capabilities": [
+          {
+            "id": "game.state",
+            "reason": "Read single-player game state."
+          },
+          {
+            "id": "game.actions",
+            "reason": "Perform actions exposed by the game mod."
+          },
+          {
+            "id": "filesystem.game",
+            "reason": "Install mod files in the game mods directory."
+          },
+          {
+            "id": "process.start",
+            "reason": "Run the Node.js API bridge."
+          },
+          {
+            "id": "network.local",
+            "reason": "Connect the game bridge and configured Neuro WebSocket endpoint."
+          }
+        ]
+      },
+      "settings": [
+        {
+          "key": "bridge_environment",
+          "upstream_key": "dont_starve_neuro/bridge/.env",
+          "type": "string",
+          "description": "Local bridge configuration file based on the upstream example; keep secrets out of this index."
+        }
+      ],
+      "verification": {
+        "reviewed_at": "2026-10-15",
+        "source_links": [
+          "https://github.com/EthLeigh/dont-starve-neuro/blob/500892a001a57d3bef017b0075ec80ac8ec2501c/README.md",
+          "https://github.com/EthLeigh/dont-starve-neuro/blob/500892a001a57d3bef017b0075ec80ac8ec2501c/LICENSE"
+        ],
+        "unverified": [
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
+          "No managed install/uninstall recipe or per-platform end-to-end certification."
+        ]
+      }
+    },
+    {
+      "id": "neuro-stardew",
+      "name": "Stardew Valley Neuro Integration",
+      "kind": "game-integration",
+      "description": "Connect Stardew Valley through a SMAPI mod with dedicated game actions.",
+      "repository": "https://github.com/pandapanda135/neuro-stardew-integration",
+      "source_ref": "main",
+      "source_commit": "183fe203119bae2b3ea3236a0b5c9373f3f6bc01",
+      "license": {
+        "spdx": "MIT",
+        "status": "standard",
+        "notes": "Repository metadata identifies MIT; dependencies and game assets keep their own licenses.",
+        "url": "https://github.com/pandapanda135/neuro-stardew-integration/blob/183fe203119bae2b3ea3236a0b5c9373f3f6bc01/LICENSE"
+      },
+      "platforms": {
+        "documented": [],
+        "tested": [],
+        "notes": "SMAPI is a prerequisite; this integration does not document a tested OS matrix."
+      },
+      "game_ids": [
+        "stardew-valley"
+      ],
+      "neuro_api": {
+        "transport": "websocket",
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
+      },
+      "install": {
+        "mode": "manual",
+        "readiness": "upstream-setup-required",
+        "instructions_url": "https://github.com/pandapanda135/neuro-stardew-integration/blob/183fe203119bae2b3ea3236a0b5c9373f3f6bc01/README.md",
+        "requirements": [
+          "Stardew Valley",
+          "SMAPI 4.3.2",
+          "Build/install the C# mod using upstream instructions"
+        ],
+        "notes": [
+          "Upstream describes the integration as incomplete and needing more testing.",
+          "Multiplayer is not officially supported or tested.",
+          "No published upstream releases were available at review."
+        ]
+      },
+      "permissions": {
+        "review_status": "inferred-from-source",
+        "enforcement": "upstream",
+        "capabilities": [
+          {
+            "id": "game.state",
+            "reason": "Read Stardew Valley state exposed by the mod."
+          },
+          {
+            "id": "game.actions",
+            "reason": "Choose dedicated in-game actions."
+          },
+          {
+            "id": "filesystem.game",
+            "reason": "Install the mod into the SMAPI mod directory."
+          },
+          {
+            "id": "network.local",
+            "reason": "Connect to the configured Neuro API endpoint."
+          }
+        ]
+      },
+      "settings": [],
+      "verification": {
+        "reviewed_at": "2026-10-15",
+        "source_links": [
+          "https://github.com/pandapanda135/neuro-stardew-integration/blob/183fe203119bae2b3ea3236a0b5c9373f3f6bc01/README.md",
+          "https://github.com/pandapanda135/neuro-stardew-integration/blob/183fe203119bae2b3ea3236a0b5c9373f3f6bc01/LICENSE"
+        ],
+        "unverified": [
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
+          "No managed install/uninstall recipe or per-platform end-to-end certification."
+        ]
+      }
+    },
+    {
+      "id": "neuro-skyrim",
+      "name": "Neuro Skyrim Integration",
+      "kind": "game-integration",
+      "description": "Connect Skyrim through an SKSE plugin with dedicated world state and game actions.",
+      "repository": "https://github.com/vituha230/Neuro-Skyrim-Integration",
+      "source_ref": "main",
+      "source_commit": "cff51c45afe9a6e69983bb0f9609208cced1e445",
+      "license": {
+        "spdx": "MIT",
+        "status": "standard",
+        "notes": "Repository metadata identifies MIT; dependencies and game assets keep their own licenses.",
+        "url": "https://github.com/vituha230/Neuro-Skyrim-Integration/blob/cff51c45afe9a6e69983bb0f9609208cced1e445/LICENSE"
+      },
+      "platforms": {
+        "documented": [
+          "windows"
+        ],
+        "tested": [],
+        "notes": "Upstream requires Skyrim SE 1.6.1170, Windows compilers, and the SKSE Windows loader; Linux/Proton and macOS are unverified."
+      },
+      "game_ids": [
+        "skyrim"
+      ],
+      "neuro_api": {
+        "transport": "websocket",
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
+      },
+      "install": {
+        "mode": "manual",
+        "readiness": "upstream-setup-required",
+        "instructions_url": "https://github.com/vituha230/Neuro-Skyrim-Integration/blob/cff51c45afe9a6e69983bb0f9609208cced1e445/README.md",
+        "requirements": [
+          "Skyrim Special Edition 1.6.1170",
+          "SKSE runtime matching game 1.6.1170",
+          "XMake 2.8.2 or later",
+          "C++23 compiler (MSVC or Clang-CL)",
+          "Git submodules"
+        ],
+        "notes": [
+          "Game version 1.6.1170 is not the latest Steam version.",
+          "Deployment writes an SKSE plugin, scripts, an ESP, and Plugins.txt; some vanilla scripts may be replaced. Back up your game configuration before following upstream deployment.",
+          "Launch through skse64_loader.exe and enable general/dialogue subtitles."
+        ]
+      },
+      "permissions": {
+        "review_status": "inferred-from-source",
+        "enforcement": "upstream",
+        "capabilities": [
+          {
+            "id": "game.state",
+            "reason": "Read Skyrim world, NPC and dialogue state."
+          },
+          {
+            "id": "game.actions",
+            "reason": "Perform dedicated game actions."
+          },
+          {
+            "id": "filesystem.game",
+            "reason": "Deploy plugin, script, ESP and load-order files to the game installation."
+          },
+          {
+            "id": "process.start",
+            "reason": "Build and launch the SKSE game loader."
+          },
+          {
+            "id": "network.local",
+            "reason": "Connect to your configured Neuro API endpoint."
+          }
+        ]
+      },
+      "settings": [
+        {
+          "key": "game_directory",
+          "upstream_key": "SKYRIM_PATH",
+          "type": "string",
+          "description": "Skyrim installation directory used by upstream build/deploy tooling."
+        }
+      ],
+      "verification": {
+        "reviewed_at": "2026-10-15",
+        "source_links": [
+          "https://github.com/vituha230/Neuro-Skyrim-Integration/blob/cff51c45afe9a6e69983bb0f9609208cced1e445/README.md",
+          "https://github.com/vituha230/Neuro-Skyrim-Integration/blob/cff51c45afe9a6e69983bb0f9609208cced1e445/LICENSE"
+        ],
+        "unverified": [
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
+          "No managed install/uninstall recipe or per-platform end-to-end certification."
+        ]
+      }
+    },
+    {
+      "id": "neuromcp",
+      "name": "NeuroMCP",
+      "kind": "tool-bridge",
+      "description": "Connect MCP servers over Streamable HTTP and expose their tools as Neuro API actions.",
+      "repository": "https://github.com/ECHO-HELLO-WORLD424/NeuroMCP",
+      "source_ref": "streamable-http",
+      "source_commit": "2ef4ab8bf9f05a2beff885e64671d5293808c65f",
+      "license": {
+        "spdx": "MIT",
+        "status": "standard",
+        "notes": "Repository metadata identifies MIT; dependencies and game assets keep their own licenses.",
+        "url": "https://github.com/ECHO-HELLO-WORLD424/NeuroMCP/blob/2ef4ab8bf9f05a2beff885e64671d5293808c65f/LICENSE"
+      },
+      "platforms": {
+        "documented": [],
+        "tested": [],
+        "notes": "Python tooling is portable, but upstream does not publish a verified Windows/macOS/Linux test matrix."
+      },
+      "game_ids": [],
+      "neuro_api": {
+        "transport": "websocket",
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
+      },
+      "install": {
+        "mode": "manual",
+        "readiness": "upstream-setup-required",
+        "instructions_url": "https://github.com/ECHO-HELLO-WORLD424/NeuroMCP/blob/2ef4ab8bf9f05a2beff885e64671d5293808c65f/README.md",
+        "requirements": [
+          "Python 3.10 or later",
+          "uv or a compatible Python package installer",
+          "Configured MCP Streamable HTTP endpoint",
+          "Configured Neuro API WebSocket endpoint"
+        ],
+        "notes": [
+          "Use the streamable-http branch captured by this listing.",
+          "The configured MCP server determines the actual file, network and tool access; review its permissions separately.",
+          "This is an independent bridge, rather than a stdio MCP server for Neuro Desktop to launch as an MCP tool."
+        ]
+      },
+      "permissions": {
+        "review_status": "inferred-from-source",
+        "enforcement": "upstream",
+        "capabilities": [
+          {
+            "id": "tools.execute",
+            "reason": "Call tools exposed by your selected MCP server."
+          },
+          {
+            "id": "network.local",
+            "reason": "Connect to your configured MCP HTTP and Neuro WebSocket endpoints."
+          },
+          {
+            "id": "process.start",
+            "reason": "Start the Python bridge."
+          }
+        ]
+      },
+      "settings": [
+        {
+          "key": "neuro_websocket_url",
+          "upstream_key": "--neuro-url",
+          "type": "string",
+          "description": "WebSocket URL of the Neuro API or compatible relay."
+        },
+        {
+          "key": "mcp_url",
+          "upstream_key": "--mcp-url",
+          "type": "string",
+          "description": "Streamable HTTP endpoint of your chosen MCP server."
+        },
+        {
+          "key": "game_name",
+          "upstream_key": "--game-name",
+          "type": "string",
+          "description": "Stable Neuro API display name for this bridge."
+        }
+      ],
+      "verification": {
+        "reviewed_at": "2026-10-15",
+        "source_links": [
+          "https://github.com/ECHO-HELLO-WORLD424/NeuroMCP/blob/2ef4ab8bf9f05a2beff885e64671d5293808c65f/README.md",
+          "https://github.com/ECHO-HELLO-WORLD424/NeuroMCP/blob/2ef4ab8bf9f05a2beff885e64671d5293808c65f/LICENSE"
+        ],
+        "unverified": [
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
+          "No managed install/uninstall recipe or per-platform end-to-end certification."
+        ]
+      }
+    },
+    {
+      "id": "neurontainer",
+      "name": "neurontainer",
+      "kind": "docker-extension",
+      "description": "Control a Docker daemon through a Docker Desktop extension connected to the Neuro API.",
+      "repository": "https://github.com/VSC-NeuroPilot/neurontainer",
+      "source_ref": "main",
+      "source_commit": "c7e6b59f12825c5b6189783653ca5f617168973e",
+      "license": {
+        "spdx": "MIT",
+        "status": "standard",
+        "notes": "Repository metadata identifies MIT; dependencies and game assets keep their own licenses.",
+        "url": "https://github.com/VSC-NeuroPilot/neurontainer/blob/c7e6b59f12825c5b6189783653ca5f617168973e/LICENSE"
+      },
+      "platforms": {
+        "documented": [],
+        "tested": [],
+        "notes": "Docker Desktop is required. A standalone headless binary is planned upstream but is not released."
+      },
+      "game_ids": [],
+      "neuro_api": {
+        "transport": "websocket",
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
+      },
+      "install": {
+        "mode": "manual",
+        "readiness": "upstream-setup-required",
+        "instructions_url": "https://github.com/VSC-NeuroPilot/neurontainer/blob/c7e6b59f12825c5b6189783653ca5f617168973e/README.md",
+        "requirements": [
+          "Docker Desktop with extensions enabled",
+          "Docker CLI for manual image installation",
+          "Configured Neuro API WebSocket endpoint"
+        ],
+        "notes": [
+          "Install through Docker Desktop or follow upstream image installation instructions.",
+          "Upstream sample commands use mutable latest tags; a digest-pinned managed installer has not been verified.",
+          "The Docker daemon can create containers and mount host resources. Review Docker access before enabling."
+        ]
+      },
+      "permissions": {
+        "review_status": "inferred-from-source",
+        "enforcement": "upstream",
+        "capabilities": [
+          {
+            "id": "docker.manage",
+            "reason": "Control Docker resources through the Docker Engine API."
+          },
+          {
+            "id": "network.local",
+            "reason": "Connect from the Docker Desktop VM to your configured Neuro endpoint."
+          }
+        ]
+      },
+      "settings": [
+        {
+          "key": "neuro_websocket_url",
+          "upstream_key": "Docker Desktop neurontainer control panel",
+          "type": "string",
+          "description": "Neuro endpoint reachable from the Docker VM; upstream defaults to host.docker.internal."
+        }
+      ],
+      "verification": {
+        "reviewed_at": "2026-10-15",
+        "source_links": [
+          "https://github.com/VSC-NeuroPilot/neurontainer/blob/c7e6b59f12825c5b6189783653ca5f617168973e/README.md",
+          "https://github.com/VSC-NeuroPilot/neurontainer/blob/c7e6b59f12825c5b6189783653ca5f617168973e/LICENSE"
+        ],
+        "unverified": [
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
+          "No managed install/uninstall recipe or per-platform end-to-end certification."
+        ]
+      }
+    },
+    {
+      "id": "neuropilot",
+      "name": "NeuroPilot",
+      "kind": "editor-extension",
+      "description": "Use VS Code through dedicated Neuro API actions, including companion and autonomous modes.",
+      "repository": "https://github.com/VSC-NeuroPilot/neuropilot",
+      "source_ref": "master",
+      "source_commit": "0b0abd373a440d13614080b4767a284cca17e538",
+      "license": {
+        "spdx": "MIT",
+        "status": "standard",
+        "notes": "Repository metadata identifies MIT; dependencies and game assets keep their own licenses.",
+        "url": "https://github.com/VSC-NeuroPilot/neuropilot/blob/0b0abd373a440d13614080b4767a284cca17e538/LICENSE"
+      },
+      "platforms": {
+        "documented": [],
+        "tested": [],
+        "notes": "Requires a compatible VS Code host. Package metadata includes desktop and web entry points; no integration-wide OS certification is assumed."
+      },
+      "game_ids": [],
+      "neuro_api": {
+        "transport": "websocket",
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
+      },
+      "install": {
+        "mode": "manual",
+        "readiness": "upstream-setup-required",
+        "instructions_url": "https://github.com/VSC-NeuroPilot/neuropilot/blob/0b0abd373a440d13614080b4767a284cca17e538/.github/README.md",
+        "requirements": [
+          "VS Code 1.95 or compatible extension host",
+          "NeuroPilot extension",
+          "Configured Neuro API WebSocket endpoint"
+        ],
+        "notes": [
+          "Install through the upstream marketplace/distribution process. Building from source requires upstream Node.js/pnpm dependencies.",
+          "Review NeuroPilot permissions in VS Code; they remain authoritative for editor and terminal actions.",
+          "Upstream develops on dev and publishes from master through GitHub Actions."
+        ]
+      },
+      "permissions": {
+        "review_status": "inferred-from-source",
+        "enforcement": "upstream",
+        "capabilities": [
+          {
+            "id": "editor.read",
+            "reason": "Read source files and editor state."
+          },
+          {
+            "id": "editor.write",
+            "reason": "Edit workspace files when permitted by NeuroPilot."
+          },
+          {
+            "id": "process.execute",
+            "reason": "Run terminal or execution actions when permitted by NeuroPilot."
+          },
+          {
+            "id": "network.local",
+            "reason": "Connect the editor extension to your configured Neuro endpoint."
+          }
+        ]
+      },
+      "settings": [
+        {
+          "key": "neuro_websocket_url",
+          "upstream_key": "neuropilot.connection.websocketUrl",
+          "type": "string",
+          "description": "Neuro API WebSocket endpoint in VS Code settings."
+        }
+      ],
+      "verification": {
+        "reviewed_at": "2026-10-15",
+        "source_links": [
+          "https://github.com/VSC-NeuroPilot/neuropilot/blob/0b0abd373a440d13614080b4767a284cca17e538/.github/README.md",
+          "https://github.com/VSC-NeuroPilot/neuropilot/blob/0b0abd373a440d13614080b4767a284cca17e538/LICENSE"
+        ],
+        "unverified": [
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
+          "No managed install/uninstall recipe or per-platform end-to-end certification."
+        ]
+      }
+    }
+  ]
+}

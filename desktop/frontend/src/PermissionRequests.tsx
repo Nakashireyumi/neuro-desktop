@@ -41,27 +41,38 @@ export default function PermissionRequests({ onChanged }: { onChanged?: () => vo
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [durations, setDurations] = useState<Record<string, number>>({});
+  const [operatorToken, setOperatorToken] = useState("");
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
-      setData(await api.permissionRequests());
+      const incoming = await api.permissionRequests(signal);
+      if (signal?.aborted) return;
+      setData(incoming);
       setError("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (!signal?.aborted) setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
+    const controller = new AbortController();
+    let timer: number;
+    const poll = async () => {
+      await refresh(controller.signal);
+      if (!controller.signal.aborted) timer = window.setTimeout(() => void poll(), document.hidden ? 30000 : POLL_MS);
+    };
+    void poll();
+    return () => { controller.abort(); window.clearTimeout(timer); };
   }, [refresh]);
 
   async function decide(request: PermissionRequest, approve: boolean) {
+    if (busy || !operatorToken.trim()) return;
+    const freshToken = operatorToken;
+    setOperatorToken("");
     setBusy(request.id);
     try {
       const minutes = durations[request.id] ?? (request.minutes > 0 ? request.minutes : 15);
-      const result = await api.decidePermissionRequest(request.id, approve, minutes);
+      const result = await api.decidePermissionRequest(request.id, approve, minutes, freshToken);
       setError(result.ok === false ? result.message ?? "The request could not be decided." : "");
       await refresh();
       onChanged?.();
@@ -73,9 +84,12 @@ export default function PermissionRequests({ onChanged }: { onChanged?: () => vo
   }
 
   async function revoke(grant: PermissionGrant) {
+    if (busy || !operatorToken.trim()) return;
+    const freshToken = operatorToken;
+    setOperatorToken("");
     setBusy(`grant:${grant.scope}`);
     try {
-      await api.revokePermissionGrant(grant.scope);
+      await api.revokePermissionGrant(grant.scope, freshToken);
       await refresh();
       onChanged?.();
     } catch (err) {
@@ -102,6 +116,11 @@ export default function PermissionRequests({ onChanged }: { onChanged?: () => vo
       </div>
 
       {error && <p className="scope-warning">{error}</p>}
+
+      <label style={{ display: "block", marginTop: "1rem" }}>Re-enter your operator token for the next decision or revocation
+        <input type="password" autoComplete="new-password" value={operatorToken} disabled={Boolean(busy)} onChange={(event) => setOperatorToken(event.target.value)} style={{ display: "block", width: "100%", maxWidth: "34rem", boxSizing: "border-box" }} />
+      </label>
+      <p className="hint">This field clears after each action. Your signed-in session does not approve new rights by itself.</p>
 
       <h3>Waiting for you</h3>
       {pending.length === 0 && <p className="hint">Nothing is waiting.</p>}
@@ -131,14 +150,14 @@ export default function PermissionRequests({ onChanged }: { onChanged?: () => vo
               </label>
               <button
                 className="primary"
-                disabled={busy === request.id}
+                disabled={Boolean(busy) || !operatorToken.trim()}
                 onClick={() => void decide(request, true)}
               >
                 Approve
               </button>
               <button
                 className="secondary"
-                disabled={busy === request.id}
+                disabled={Boolean(busy) || !operatorToken.trim()}
                 onClick={() => void decide(request, false)}
               >
                 Deny
@@ -159,7 +178,7 @@ export default function PermissionRequests({ onChanged }: { onChanged?: () => vo
             </div>
             <button
               className="secondary"
-              disabled={busy === `grant:${grant.scope}`}
+              disabled={Boolean(busy) || !operatorToken.trim()}
               onClick={() => void revoke(grant)}
             >
               Revoke

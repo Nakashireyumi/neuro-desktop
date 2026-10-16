@@ -98,6 +98,19 @@ class StubPyAutoGUI:
     FAILSAFE = False
     PAUSE = 0.0
 
+    def __init__(self, reason: str = "") -> None:
+        self.reason = reason
+
+    def _unavailable(self, *_args: Any, **_kwargs: Any) -> None:
+        if not self.reason:
+            return _no_display()
+        raise NoDisplayError(
+            "Desktop input is unavailable because its GUI driver could not load: "
+            + self.reason
+            + ". Install the client requirements and check display access on the controlled PC. "
+            "The shell_command action is still available for command-line work."
+        )
+
     def __getattr__(self, name: str) -> Any:
         # size()/position() are used for coordinate maths; give plausible values
         # so context and geometry code keeps working without a display.
@@ -107,7 +120,7 @@ class StubPyAutoGUI:
             return lambda: (0, 0)
         if name in {"KEYBOARD_KEYS", "FAILSAFE", "PAUSE"}:
             return getattr(type(self), name)
-        return _no_display
+        return self._unavailable
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return "<pyautogui stub: no display session>"
@@ -117,14 +130,34 @@ def load_pyautogui() -> Any:
     """Import the real pyautogui, or return the stub when that is impossible."""
     if is_headless():
         return StubPyAutoGUI()
+    missing = object()
+    saved_mouseinfo = missing
+    blocked_mouseinfo = False
+    # MouseInfo is PyAutoGUI's optional coordinate-inspector window. Its import
+    # calls sys.exit when Tk is missing, although input itself does not need Tk.
+    # Let PyAutoGUI take its supported ImportError branch for this unused tool.
+    # Restore the import cache immediately; do not disable it for the process.
+    try:
+        import tkinter  # noqa: WPS433 - detect missing native Tk library too
+    except (ImportError, SystemExit):
+        saved_mouseinfo = sys.modules.get("mouseinfo", missing)
+        sys.modules["mouseinfo"] = None
+        blocked_mouseinfo = True
     try:
         import pyautogui  # noqa: WPS433 - runtime optional dependency
 
         return pyautogui
-    except Exception:
+    except (Exception, SystemExit) as exc:
         # Import can fail on Linux without X even when DISPLAY is set to a
-        # dead socket; degrade instead of refusing to start.
-        return StubPyAutoGUI()
+        # dead socket. MouseInfo also calls sys.exit when optional Tk is absent.
+        # Neither should take down the client, its shell, or its telemetry.
+        return StubPyAutoGUI(reason=str(exc) or type(exc).__name__)
+    finally:
+        if blocked_mouseinfo:
+            if saved_mouseinfo is missing:
+                sys.modules.pop("mouseinfo", None)
+            else:
+                sys.modules["mouseinfo"] = saved_mouseinfo
 
 
 def load_pynput_mouse() -> Any | None:
