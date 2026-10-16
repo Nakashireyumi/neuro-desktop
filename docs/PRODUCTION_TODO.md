@@ -1,6 +1,6 @@
 # Production TODO
 
-Last updated: 2026-10-15. Each status below was checked against the code in this
+Last updated: 2026-10-16. Each status below was checked against the code in this
 repository. `[x]` done, `[~]` partly done (what is missing is written next to it),
 `[ ]` open, `[-]` declined with the reason.
 
@@ -34,19 +34,21 @@ Check these directly; this file does not keep a copy of their issue lists.
   `setup --check` confirms that the two sides agree. The dashboard asks for its token on a
   sign-in page, and every `/api` route needs it. Tests: `setup_test.go`,
   `relay_token_test.go`, `dashboard_token_test.go`, `admin_server_test.go`. CI runs a
-  setup smoke test. Not checked here: the sign-in page in a real browser, and the
-  Windows and macOS bundles.
+  setup smoke test. Native and browser sign-in and delegated management were
+  exercised on Linux. Windows/macOS packaging and GTK checks are CI requirements;
+  real input and capture on those desktops still need device validation.
 
-- [x] **Three separate programs: the server, the dashboard program, and the client.**
+- [x] **Separate server, native manager, web dashboard, and controlled-PC client.**
   The server (`neuro-integration`, Go) keeps the policy, the Neuro connection, the
   dashboard API, and the vision client. The dashboard program (`neuro-dashboard`, Go,
   stdlib only) serves the page and forwards only `/api` and `/health`, with no secret of
   its own. The client (`neuro-client`) is the Python agent packaged with PyInstaller by
   `scripts/build-client.sh` (`build-client.ps1` for Windows). It holds no policy, no
-  dashboard, and no vision, so Neuro cannot change her own permissions from the
-  controlled PC. The split is at the process boundary; the server still serves `/ui/` for
-  single-machine use. Tests: `apps/neuro-dashboard/dashboard_test.go`. Not verified: the
-  PyInstaller build on Windows and macOS, and a built client running on a real desktop.
+  dashboard, and no vision. The native GTK manager is its own process with a splash
+  and no embedded browser. A delegated manager session lets Neuro manage approved
+  integrations without granting new capabilities. The server still serves `/ui/` for
+  single-machine use. Tests cover the dashboard proxy, scoped sessions, the actual GTK
+  controls, and executor transport. Real Windows/macOS desktop input remains unverified.
 
 - [~] **Client rewrite in Go, in progress.** The maintainer chose to start it now. Slice 1
   is in `desktop/apps/neuro-client-go` (Go, standard library only; cross-compiles for
@@ -63,10 +65,11 @@ Check these directly; this file does not keep a copy of their issue lists.
   Windows and macOS before they are trusted. The Python client is retired only when steps
   1 to 4 pass on all three systems.
 
-- [ ] **Verify the Windows and macOS client builds and the Windows launchers.** Not run
-  anywhere yet: `scripts/build-client.ps1`, `scripts/bundle/prod.ps1` and `dev.ps1` (the
-  new dashboard and client steps), `templates/start.bat`, and the PyInstaller build on
-  macOS. CI builds only the Linux client.
+- [~] **Verify the Windows and macOS bundles and launchers.** CI now requires native
+  GTK builds/tests on all three operating systems and Windows bundle state-preservation
+  checks. The release workflow builds four native targets and checks the packaged
+  client/server transport. These checks do not establish that input permissions,
+  screen capture, signing, or installation work on a viewer's actual desktop.
 
 - [ ] **Authenticated reverse connections, and pinned TLS for the executor link.** The
   design allows the server to dial the client, and it requires that connection to be
@@ -86,17 +89,19 @@ Check these directly; this file does not keep a copy of their issue lists.
   capture and analysis. Native capture on Windows/macOS and semantic analysis
   against a vision model remain unverified.
 
-- [ ] **License file.** The README says the project is MIT-licensed and links to a
-  `LICENSE` file. The repository has no `LICENSE` file. The maintainer must add it,
-  because it needs the copyright holder's name.
+- [x] **License file.** Restored upstream's GPL version 3 license and corrected the
+  README. The independently authored integration SDK is MIT; the Vencord adapter
+  carries GPL-3.0-or-later. Marketplace listings record their own source licenses.
 
 - [~] **Integration manager, marketplace, and signed plugin distribution** (#11/#14/#15).
   Done: a signed catalog (`desktop/catalog/index.json`), publisher keys
   (`publishers.json`), verification on every install, `neuro-integration catalog verify`
-  in CI, and one MCP item (`memory`, pinned). Missing: a public marketplace, more than one
-  publisher, a documented key-rotation procedure, and an install flow for publishers other
-  than the maintainer. The shipped signatures use a key that the maintainer must rotate to
-  their own before relying on them.
+  in CI, one managed MCP item (`memory`, pinned), and a public eight-entry source
+  marketplace on upstream's independent `catalog` branch. The standalone SDK supports
+  existing private backends and Games ownership; grants and settings are per item.
+  Listings with missing/custom licenses remain link-only. Still needed: additional
+  managed publishers and a key-rotation procedure. Rotate the shipped publisher key
+  before relying on it for external distribution.
 
 - [~] **Vision pipeline confidence loop and formalized server contract.** Done: the HTTP
   contract is in `desktop/apps/nd-vision-server/README.md`, and the bridge's client is
@@ -104,9 +109,10 @@ Check these directly; this file does not keep a copy of their issue lists.
   act on).
 
 - [~] **Security hardening: signed bundles, config integrity, least-privilege defaults.**
-  Done: least-privilege defaults (shell, system, filesystem, and extensions are off),
-  and signed extensions. Missing: signed release bundles and an integrity check on the
-  configuration files.
+  Done: least-privilege defaults, signed extensions, scoped adapter/viewer credentials,
+  delegated manager sessions, and fresh operator approval. The draft-release workflow
+  produces checksums and GitHub provenance. Missing: platform code signing/notarization
+  and an integrity check on operator configuration files.
 
 - [~] **Native manager and splash.** GTK 4 desktop application implemented and
   exercised on Linux, including all pages, pause/release/resume, sign-in and policy

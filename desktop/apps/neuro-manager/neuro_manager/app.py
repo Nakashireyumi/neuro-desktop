@@ -75,7 +75,7 @@ def text_view(text="", editable=False, height=120):
 class ManagerApplication(Gtk.Application):
     def __init__(self, server, diagnostics=False, non_unique=False, smoke=False):
         GLib.set_application_name("Neuro Desktop Manager")
-        super().__init__(application_id="io.neurodesktop.Manager", flags=Gio.ApplicationFlags.NON_UNIQUE if non_unique else Gio.ApplicationFlags.DEFAULT_FLAGS)
+        super().__init__(application_id="io.neurodesktop.Manager", flags=Gio.ApplicationFlags.NON_UNIQUE if non_unique else Gio.ApplicationFlags(0))
         self.server = server
         self.diagnostics = diagnostics
         self.smoke = smoke
