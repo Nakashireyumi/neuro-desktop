@@ -165,6 +165,11 @@ cd desktop
 
 On Windows: `.\scripts\build-client.ps1` -> `dist\neuro-client\neuro-client.exe`.
 
+A Go client is in progress in `desktop/apps/neuro-client-go`. It is not in the bundle yet:
+slice 1 runs the executor link, status, shell and lifecycle commands, and it refuses input and
+screen commands, which still run only in this Python client. Build it with
+`go build -o neuro-client-go .` in that folder, if you want to test it.
+
 Copy the `neuro-client` folder to the PC Neuro controls, then run it with the server's
 address and the executor token. The program contains its own Python, so the PC needs no
 Python install. It holds no policy, no dashboard, and no vision, and it does only what

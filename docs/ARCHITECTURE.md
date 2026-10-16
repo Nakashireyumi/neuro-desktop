@@ -49,6 +49,7 @@ work runs on the server, and that PC only needs the client.
 | Server | `desktop/apps/neuro-integration` | Go | Everything Neuro can reach, and every gate between Neuro and the machine |
 | Client (`neuro-client`) | `desktop/backend/python/controller`, entry `desktop/apps/neuro-client`, packaged by `desktop/scripts/build-client.sh` | Python (stdlib-first), PyInstaller | Executes commands on the PC Neuro controls; reconnects on its own. Also run from source as `python3 -m controller.agent` |
 | Dashboard program | `desktop/apps/neuro-dashboard` | Go (stdlib only) | Serves the dashboard page and forwards `/api` and `/health` to the server. Optional |
+| Go client (slice 1, not shipped) | `desktop/apps/neuro-client-go` | Go (stdlib only) | The port of the client under way: the executor link, status, shell and lifecycle. Input and screen are not ported yet |
 | Dashboard page | `desktop/frontend` | TypeScript | Vedal's controls. The server serves it at `/ui/`; the dashboard program serves it too |
 | Relay host | the server binary, `relay` subcommand | Go | Neuro Relay socket for integrations and watchers |
 | Vision | `desktop/apps/nd-vision-server` | Python (stdlib HTTP) | Optional screen description for `game_observe` |
@@ -89,11 +90,15 @@ Watcher commands from the relay take the same path, with the same gates
 * **Three programs, split at the process boundary.** The server and the dashboard
   program are Go; the client is the Python agent packaged with PyInstaller as
   `neuro-client`. The split puts the power on the server, not on the PC Neuro
-  controls. The alternative, a full rewrite of the client into Go now, was considered
-  and not done. The input and capture code is platform-specific, and it cannot be run
-  on Windows or macOS from the development environment. Rewriting it now would replace
-  code that is in use with code that nobody has run. A Go client is the documented next
-  step (`docs/PRODUCTION_TODO.md`). This decision can be revisited.
+  controls. The first version of this decision deferred a full rewrite of the client
+  into Go, because the input and capture code cannot be run on Windows or macOS from the
+  development environment. **The maintainer then chose to start the Go client now.** That
+  is the work in progress in `desktop/apps/neuro-client-go`: slice 1 covers the executor
+  link, the headless rules, `get_status`, `shell_command` and the lifecycle commands,
+  with the same firewall and messages as the Python client. Input, screen, window and
+  `run_script` commands are refused there and still run only in the Python client. The
+  Go client is not in the bundle yet. The next slices, and the rule for when the Python
+  client can be retired, are in `docs/PRODUCTION_TODO.md`.
 * **Screenshots travel as bytes, never as paths.** The server may run on another PC.
   The old design had the server open the path that the agent named, which was an
   arbitrary-file-read risk. The status reply now carries `screenshot_png_b64`, and the
@@ -151,6 +156,7 @@ Watcher commands from the relay take the same path, with the same gates
 | Agent (client) | `python3 -m unittest discover backend/python/tests` | CI, with no display |
 | Dashboard program | `go vet` and `go test ./...` in `desktop/apps/neuro-dashboard` | CI, all three systems |
 | Client build | `desktop/scripts/build-client.sh`, then `neuro-client --help` | CI on Linux (`client-build` job) |
+| Go client (slice 1) | `go vet` and `go test` in `desktop/apps/neuro-client-go`, including the command-set parity check with `agent.py`; cross-compile for three systems | CI, all three systems |
 | Repository | `python3 desktop/tools/ci/repo_checks.py` | CI, first job |
 | Dashboard | `npm run build` in `desktop/frontend` | CI |
 | End to end | the `agent-e2e` job starts the server and the agent | CI |

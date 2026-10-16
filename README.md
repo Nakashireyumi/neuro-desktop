@@ -258,6 +258,7 @@ export NEURO_DENY_ACTIONS="type_text,key_press"     # a hard deny list the dashb
 | **neuro-integration** | Go | **Server**: Neuro API, permissions, audit, game interface, dashboard API, executor hub, vision client |
 | **neuro-dashboard** (`apps/neuro-dashboard`) | Go | **Dashboard program** (optional): serves the dashboard page and forwards `/api` and `/health` to the server. Stdlib only |
 | **neuro-client** (`apps/neuro-client`, built by `scripts/build-client.sh`) | Python, PyInstaller | **Client** for the PC Neuro controls: the agent as one program. Input, script parsing, shell, telemetry; the only part that touches that machine |
+| **neuro-client-go** (`apps/neuro-client-go`, not shipped yet) | Go | The Go port of the client, in progress: the executor link, status, shell and lifecycle commands. Input and screen still run only in the Python client |
 | **controller/agent.py** | Python | The agent that `neuro-client` runs (also runnable from source as `python3 -m controller.agent`) |
 | **controller/\*** | Python | Drivers the agent uses: `actions`, `desktop`, `shell`, `platform_intents`, `controls/` |
 | **frontend** | TypeScript | **Dashboard page**, served by the server at `/ui/` and by the dashboard program |

@@ -8,6 +8,9 @@ This project aims to follow semantic versioning once stable releases begin.
 
 ### Added
 
+- Native GTK 4 manager with a real startup splash, standalone packaging, bounded visible-page refresh and restricted Neuro/Evil sessions; the browser dashboard remains available.
+- Reviewed marketplace index on a separate catalog branch, pinned source staging, per-extension runtime/management grants and settings, SDK game-presence leases, and opt-in actor-specific viewer feeds.
+- Separate integration SDK and Vencord adapter repositories, cross-platform native UI/package CI, and a gated draft-release workflow with checksums and provenance.
 - Dashboard operator controls on every tab, a filterable Activity log, and separate Neuro API connection status.
 - A Go end-to-end test using the real headless Python client: telemetry, command output, pause enforcement, input release, and resume. Frontend API and shell bundle regression tests run in CI.
 - Browser request deadlines, automatic connection recovery feedback, and in-memory sign-in when session storage is unavailable. Failed dashboard sign-ins are audited without credentials.
@@ -15,6 +18,7 @@ This project aims to follow semantic versioning once stable releases begin.
 - Linux GUI loading tolerates missing Tk for the optional MouseInfo inspector. Other GUI failures report their cause and keep shell/telemetry running; status no longer reports stub geometry as a real screen.
 - Native Wayland screenshots through `grim` on supported compositors, with capture errors included in desktop context. Verified locally on Hyprland; Windows/macOS capture still uses MSS.
 
+- **Go client, slice 1** (`desktop/apps/neuro-client-go`, not shipped yet): the start of the port of the Python client, which the maintainer asked for. It has the executor link (protocol 2, pings, commands, shutdown, reconnects, the same frame limits), the headless rules, `get_status` with the keys the server reads, and `shell_command` with the same firewall, allowlist, deny patterns, timeout and output limit as `shell.py`. Input, screen, window and `run_script` commands are refused with a message that says where they still run. A test fails if the Python agent runs a command the Go client neither handles nor refuses. It cross-compiles for Windows, macOS and Linux, and CI runs its tests on all three.
 - **Three programs** (decision recorded in `docs/ARCHITECTURE.md`): the server, the dashboard program, and the client for the PC Neuro controls. The split is at the process boundary, and the client is not rewritten in Go yet.
 - **Dashboard program** `desktop/apps/neuro-dashboard` (Go, stdlib only): serves the built dashboard page and forwards only `/api/` and `/health` to the server. It adds no token and keeps the caller's. It answers `502` when the server is down. Flags `--listen`, `--server`, and `--ui-dir`, with `NEURO_DASHBOARD_LISTEN`, `NEURO_DASHBOARD_SERVER`, and `NEURO_UI_DIR`. Tests: `dashboard_test.go`.
 - **Client build** `desktop/scripts/build-client.sh` (and `build-client.ps1`): packages the Python agent with PyInstaller (pinned, 6.22.3) as `neuro-client`, with its own Python inside. Entry point `desktop/apps/neuro-client/neuro_client.py`. The release bundle builds it when it can, and the launcher uses the Python agent when it cannot.

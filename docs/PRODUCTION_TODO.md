@@ -48,11 +48,20 @@ Check these directly; this file does not keep a copy of their issue lists.
   single-machine use. Tests: `apps/neuro-dashboard/dashboard_test.go`. Not verified: the
   PyInstaller build on Windows and macOS, and a built client running on a real desktop.
 
-- [ ] **Client rewrite in Go** (the next step, not started). It would replace the Python
-  client with a Go program, so the controlled PC runs one language. It is deferred because
-  the input and screen-capture code is platform-specific: rewriting it now would replace
-  code in use with code that cannot be run on Windows or macOS from the development
-  environment. The decision is recorded in `docs/ARCHITECTURE.md`.
+- [~] **Client rewrite in Go, in progress.** The maintainer chose to start it now. Slice 1
+  is in `desktop/apps/neuro-client-go` (Go, standard library only; cross-compiles for
+  Windows, macOS and Linux). It covers the executor link (hello, ping, commands, shutdown,
+  reconnects, the same frame limits), the headless rules, `get_status` (the same keys the
+  server reads), `shell_command` (the same firewall, allowlist, deny patterns, timeout and
+  output limit as `shell.py`, with the timeout capped at 120 s), and the lifecycle
+  commands. It is not in the bundle. A test fails if the Python agent runs a command that
+  the Go client neither handles nor refuses. Still to port, in this order: (1) mouse and
+  keyboard input with the headless refusal, per platform; (2) screen capture as PNG bytes
+  and window and process telemetry; (3) the action-script runner (`run_script`) and the
+  input queue; (4) file IPC for co-located use; (5) packaging the Go client as
+  `neuro-client` in the bundle, replacing the PyInstaller build. Steps 1 and 2 must be run on
+  Windows and macOS before they are trusted. The Python client is retired only when steps
+  1 to 4 pass on all three systems.
 
 - [ ] **Verify the Windows and macOS client builds and the Windows launchers.** Not run
   anywhere yet: `scripts/build-client.ps1`, `scripts/bundle/prod.ps1` and `dev.ps1` (the

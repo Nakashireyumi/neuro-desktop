@@ -95,7 +95,7 @@ jobs:
         working-directory: desktop/apps/neuro-integration
         shell: bash
         run: |
-          unformatted="$(gofmt -l . ../neuro-dashboard)"
+          unformatted="$(gofmt -l . ../neuro-dashboard ../neuro-client-go)"
           if [[ -n "$unformatted" ]]; then
             echo "Unformatted Go files:"
             echo "$unformatted"
@@ -122,6 +122,28 @@ jobs:
         run: |
           go vet ./...
           go test -count=1 ./...
+
+      # The Go client is the start of the port of the Python client (slice 1: the
+      # executor link, the headless rules, get_status, shell_command, lifecycle). It is
+      # not shipped yet. Its tests include a check that the command list matches the
+      # Python agent's, so a command cannot be missing from one side silently.
+      - name: Go vet and tests (neuro-client-go)
+        working-directory: desktop/apps/neuro-client-go
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+
+      - name: Go cross-compile (neuro-client-go, windows, darwin, linux)
+        working-directory: desktop/apps/neuro-client-go
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in windows/amd64 darwin/amd64 darwin/arm64 linux/amd64; do
+            goos="${target%%/*}"
+            goarch="${target##*/}"
+            echo "building $goos/$goarch"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -o /tmp/nd-client-go-"$goos"-"$goarch" .
+          done
 
       # The server has OS-specific branches (paths, platform keys, tray/shell
       # hints). Compiling for the three shipped platforms on every change is how

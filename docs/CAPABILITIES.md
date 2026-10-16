@@ -195,7 +195,7 @@ Not done:
 
 - A public plugin marketplace. The catalog has one item, the `memory` MCP server, and one publisher key that the maintainer must replace before relying on the signatures.
 - A native tray. This was decided against, not postponed: the dashboard is served by the server and works headless, and a tray could not be built or verified in this environment. See `docs/PRODUCTION_TODO.md`.
-- A Go client. The client is still the Python agent, packaged with PyInstaller. A Go rewrite is the next step, deferred until the input and capture code can be run on Windows and macOS. See `docs/ARCHITECTURE.md`.
+- A complete Go client. The shipped client is still the Python agent, packaged with PyInstaller. The Go client (`desktop/apps/neuro-client-go`) is slice 1 only: the executor link, status, shell and lifecycle commands. Input, screen, windows and `run_script` still run only in the Python client. See `docs/PRODUCTION_TODO.md`.
 - A client build verified on Windows or macOS. The Linux client build is in CI; the Windows and macOS builds have not been run.
 - Process supervision by the server. The server does not start other programs (no relay process, no agent). Operators start each process.
 - An encrypted executor link. The executor token and the commands travel as plain TCP. Tunnel the port over SSH on an untrusted network. Pinned TLS is open in `docs/PRODUCTION_TODO.md`.

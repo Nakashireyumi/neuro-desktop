@@ -106,6 +106,7 @@ desktop/
 │   │                         relay host (`relay` subcommand), MCP bridge, signed catalog
 │   ├── neuro-dashboard/      DASHBOARD PROGRAM (Go, stdlib only): serves the page, forwards /api and /health
 │   ├── neuro-client/         entry point for the PyInstaller build of the CLIENT
+│   ├── neuro-client-go/      the Go port of the CLIENT, slice 1 (not shipped; see its README)
 │   └── nd-vision-server/     optional vision service (Python, stdlib HTTP; Pillow optional)
 ├── backend/python/
 │   ├── controller/           CLIENT / AGENT + drivers (agent.py, actions.py, controls/, shell.py)
