@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+extensions-state.json
+extension-permissions.json
+integrations.json
