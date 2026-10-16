@@ -250,3 +250,13 @@ This project aims to follow semantic versioning once stable releases begin.
   "relay rejected the registration" with the setting to check.
 - `shell_command` output was dropped after the action was acknowledged; the
   transcript is now delivered to Neuro as context.
+
+## Earlier Neuro-OS implementation
+
+The earlier Windows-focused Neuro-OS line included window regionalization, local OCR,
+and an optional Nakurity vision backend. Original development was credited to
+Nakashireyumi, with OCR and backend work credited to the earlier contributors.
+That Python/Flask launcher and its root installation path are retired; use the current
+[architecture](docs/ARCHITECTURE.md), [setup](desktop/README.md), and
+[vision service](desktop/apps/nd-vision-server/README.md) documentation. The historical
+implementation and its original change log remain available in Git history.
