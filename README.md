@@ -672,6 +672,7 @@ Bundled third-party components retain their own licenses.
 
 ## Acknowledgments
 
+- **Nakashireyumi** - Original Neuro Desktop / Neuro-OS development
 - **Neuro-sama** - The AI that makes this all worthwhile
 - **Vedal** - Creator of Neuro-sama
 - The community for testing and feedback
