@@ -1,0 +1,39 @@
+{
+  "id": "generic-keyboard-mouse",
+  "name": "Generic keyboard + mouse game",
+  "description": "Fallback interface for a game with no dedicated integration: WASD-style movement, mouse-look camera, and the usual action keys.",
+  "tags": ["fallback", "mouse-look", "fps", "third-person"],
+  "match": {
+    "default": true
+  },
+  "control": {
+    "mode": "nd",
+    "movement": "both",
+    "mouse_look": { "enabled": true, "sensitivity": 1.0, "max_step": 600 },
+    "move_hold_seconds": 0.6,
+    "max_actions_per_minute": 120
+  },
+  "keys": {
+    "forward": "w",
+    "back": "s",
+    "left": "a",
+    "right": "d",
+    "jump": "space",
+    "crouch": "ctrl",
+    "sprint": "shift",
+    "attack": "left",
+    "use": "right",
+    "reload": "r",
+    "interact": "e",
+    "inventory": "i",
+    "map": "m",
+    "pause": "esc",
+    "confirm": "enter",
+    "cancel": "esc"
+  },
+  "vision": {
+    "recommended": true,
+    "prompt": "Describe the game screen for a player: what is visible, what the HUD says, and what the most likely next action is."
+  },
+  "notes": "This is the generic high-level interface. Use game_observe to see the screen, game_look to aim, game_move to walk, and game_action for named actions. Edit the keybinds to match the game's own settings."
+}

@@ -1,0 +1,10 @@
+{
+  "note": "Publishers whose catalog signatures this build trusts. Only PUBLIC keys belong here. Create a key with 'neuro-integration catalog keygen' and keep the private key out of the repository. Re-sign the index with 'neuro-integration catalog sign' after any change to an item.",
+  "publishers": [
+    {
+      "id": "neuro-desktop",
+      "name": "Neuro Desktop project",
+      "public_key": "54T81o5qHvvfI5anZK/7qGirzV+mgbQyNTLPQfOfLHc="
+    }
+  ]
+}
