@@ -17,7 +17,7 @@ gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, Gio, GLib, Gtk
 
 from . import __version__
-from .client import ApiError, Client, SCOPES, normalise_policy, poll_delay
+from .client import ApiError, Client, SCOPES, external_url, normalise_policy, poll_delay
 
 CSS = b"""
 .nd-splash { background-image: linear-gradient(125deg, #111735 0%, #423ba5 48%, #e92d76 80%, #ff892b 100%); padding: 48px; }
@@ -97,6 +97,7 @@ class ManagerApplication(Gtk.Application):
         self.extension_data = self.game_data = self.audit_data = {}
         self.observation = ""
         self.session_role = "operator"
+        self.session_dialogs = {}
         self.connect("activate", self.on_activate)
         quit_action = Gio.SimpleAction.new("quit", None)
         quit_action.connect("activate", lambda *_: self.quit())
@@ -116,6 +117,9 @@ class ManagerApplication(Gtk.Application):
 
         def deliver(value, error):
             if not self.closed and generation == self.generation:
+                if self.client and isinstance(error, ApiError) and error.status == 401:
+                    self.sign_out("Your manager session expired. Sign in again.")
+                    return GLib.SOURCE_REMOVE
                 callback(value, error)
             return GLib.SOURCE_REMOVE
 
@@ -196,7 +200,7 @@ class ManagerApplication(Gtk.Application):
             return
         try:
             client = Client(self.server_entry.get_text(), token)
-        except ValueError as error:
+        except (ValueError, ApiError) as error:
             self.login_error.set_text(str(error))
             return
         self.login_button.set_sensitive(False)
@@ -226,6 +230,7 @@ class ManagerApplication(Gtk.Application):
     def sign_out(self, reason=""):
         self.generation += 1
         self.cancel_timer()
+        self.close_session_dialogs()
         if self.client:
             self.client.token = ""
         self.client = None
@@ -238,6 +243,26 @@ class ManagerApplication(Gtk.Application):
         self.extension_data = self.game_data = self.audit_data = {}
         self.observation = ""
         self.show_signin(reason)
+
+    def track_session_dialog(self, dialog, cleanup):
+        self.session_dialogs[dialog] = cleanup
+
+        def closed(*_):
+            clean = self.session_dialogs.pop(dialog, None)
+            if clean:
+                clean()
+            return False
+
+        dialog.connect("close-request", closed)
+
+    def close_session_dialogs(self):
+        if hasattr(self, "policy_operator_token"):
+            self.policy_operator_token.set_text("")
+        dialogs = list(self.session_dialogs.items())
+        self.session_dialogs.clear()
+        for dialog, cleanup in dialogs:
+            cleanup()
+            dialog.close()
 
     def build_manager(self):
         for name in ("policy_editor", "request_box", "audit_list"):
@@ -504,7 +529,9 @@ class ManagerApplication(Gtk.Application):
                 details.append(label("• " + requirement))
             for note in install.get("notes") or []:
                 details.append(label(note, "nd-muted"))
-            details.append(Gtk.LinkButton(uri=install.get("instructions_url") or item["repository"], label="Open setup instructions"))
+            setup_url = external_url(install.get("instructions_url")) or external_url(item.get("repository"))
+            if setup_url:
+                details.append(Gtk.LinkButton(uri=setup_url, label="Open setup instructions"))
             details.append(label("Reviewed source: " + item["source_commit"], "nd-muted"))
             if item.get("can_stage_source"):
                 stage = button("Source downloaded" if item.get("source_staged") else "Download pinned source", lambda: self.perform("marketplace", f"/api/marketplace/{quote(item['id'], safe='')}/stage"))
@@ -817,6 +844,7 @@ class ManagerApplication(Gtk.Application):
         self.closed = True
         self.generation += 1
         self.cancel_timer()
+        self.close_session_dialogs()
         if self.client:
             self.client.token = ""
         self.pool.shutdown(wait=False, cancel_futures=True)

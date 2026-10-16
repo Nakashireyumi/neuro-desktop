@@ -4,8 +4,9 @@ This describes how to build, bundle, and run Neuro Desktop. It replaces the olde
 guide, which described the Rust executor and the C++ supervisor; both were removed
 (see `CHANGELOG.md`).
 
-There are three programs, and they can run on one machine or on three:
+The manager, server and controlled-machine client can run together or on separate machines:
 
+* the **native manager** (`neuro-manager`, GTK 4). It has its own startup splash and uses the authenticated server API. The optional browser dashboard remains at `/ui/`;
 * the **server** (`neuro-integration`, Go). It talks to Neuro's API, applies the policy,
   does the vision work, and serves the dashboard at `/ui/`. Give it the spare power;
 * the **dashboard program** (`neuro-dashboard`, Go). It serves the same dashboard page
@@ -14,7 +15,7 @@ There are three programs, and they can run on one machine or on three:
   on the PC Neuro controls, and it carries out the server's commands. It needs no
   Python on that PC when it is built as a program.
 
-The reasons for the split are in `docs/ARCHITECTURE.md`.
+The reasons for the split are in [architecture](ARCHITECTURE.md). Native build dependencies and performance measurements are in the [manager guide](../desktop/apps/neuro-manager/README.md). Set `NEURO_NO_MANAGER=1` for a headless launcher. Existing Neuro/Evil integrations can connect through the [SDK](https://github.com/cassitly/neuro-desktop-sdk) without replacing their private backend.
 
 ## Requirements
 
@@ -22,7 +23,8 @@ The reasons for the split are in `docs/ARCHITECTURE.md`.
 | --- | --- | --- |
 | Go | 1.22 or newer (`go.mod` says 1.22) | the server and the dashboard program |
 | Python | 3.12 is what CI runs; other 3.x versions are untested | running the client from source, and building `neuro-client` |
-| PyInstaller | 6.22.3 (pinned in `scripts/build-client.sh`) | building `neuro-client` only |
+| PyInstaller | 6.22.3 | bundling the client and native manager on their target OS |
+| GTK 4 + PyGObject | system packages for the selected Python | building/source-running the native manager; bundled in standalone releases |
 | Node.js | 22 is what CI runs | building the dashboard only |
 | Git | any | cloning |
 
@@ -115,7 +117,7 @@ This starts the server and the local agent: `neuro-client/` when the bundle has 
 the Python agent in `agent/`. `NEURO_NO_AGENT=1` starts only the server, for a split-machine
 setup where the client runs elsewhere.
 
-Open the dashboard at `http://127.0.0.1:8300/ui/` and sign in with the dashboard token.
+The bundle opens the native manager. Sign in with your operator token, or open the optional web dashboard at `http://127.0.0.1:8300/ui/`. Permission changes require fresh operator reentry. For Neuro/Evil UI use, create a restricted manager token from native Status, then sign out of the operator session on their desktop; see [delegated manager setup](DELEGATED_MANAGER.md).
 
 ### Split machines
 

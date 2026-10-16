@@ -369,6 +369,7 @@ func (a *AdminServer) handleExtensionPermissions(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusInternalServerError, loadErr.Error())
 			return
 		}
+		a.integration.hideAdapter(id)
 		a.integration.audit.record("extension_permissions", map[string]interface{}{"id": id, "decision": "updated", "manage_allowed": policy.ManageAllowed, "run_allowed": policy.RunAllowed})
 		go a.integration.syncMCPServers()
 	} else if r.Method != http.MethodGet {

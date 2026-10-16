@@ -39,6 +39,13 @@ def show_policy(app, item_id):
         content.append(token)
         message = label()
         content.append(message)
+        closed = False
+
+        def cleanup():
+            nonlocal closed
+            closed = True
+            token.set_text("")
+            settings.get_buffer().set_text("")
 
         def save():
             secret = token.get_text().strip()
@@ -59,6 +66,8 @@ def show_policy(app, item_id):
             message.set_text("Saving…")
 
             def saved(_result, failure):
+                if closed:
+                    return
                 save_button.set_sensitive(True)
                 if failure:
                     message.set_text(str(failure))
@@ -72,7 +81,7 @@ def show_policy(app, item_id):
         save_button = button("Approve and save", save, "suggested-action")
         content.append(save_button)
         content.append(button("Cancel", dialog.close))
-        dialog.connect("close-request", lambda *_: token.set_text(""))
+        app.track_session_dialog(dialog, cleanup)
         dialog.set_child(Gtk.ScrolledWindow(child=content, hscrollbar_policy=Gtk.PolicyType.NEVER))
         dialog.present()
 

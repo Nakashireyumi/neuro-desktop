@@ -73,6 +73,8 @@ This project aims to follow semantic versioning once stable releases begin.
 
 ### Changed
 
+- Expiring scope approvals stop affected managed MCP services without polling. Permission changes and pause clear viewer consent/history; reapproval cannot restore previously shared events.
+- Slow SDK request bodies and response streams no longer hold the shared adapter runtime lock. Native manager sign-out clears open approval dialogs and delayed token responses; authentication requests ignore ambient HTTP proxies.
 - **Screenshots travel as bytes, never as paths.** `get_status` returns `screenshot_png_b64` (a PNG scaled to at most 1 600 px and 3 MiB, then base64). The server no longer reads a path that the client names, which was an arbitrary-file read when the server ran on another PC. The server checks the PNG signature, the base64, and the 8 MiB limit. The vision service receives `image_base64`; the server no longer sends `image_path`.
 - **Executor frame limits:** the hello is capped at 64 KiB, because it is read before the token check. Later frames are capped at 8 MiB. A frame over its limit closes the connection, so the hub never buffers without bound.
 - **Launchers** (`start.sh`, `start.bat`): run `neuro-client` when the bundle has it, else the Python agent. The bundle README describes the three programs.

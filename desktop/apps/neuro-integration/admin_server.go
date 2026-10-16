@@ -123,6 +123,10 @@ func (a *AdminServer) Start() error {
 		server := &http.Server{
 			Handler:           a.routes(),
 			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       15 * time.Second,
+			WriteTimeout:      150 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    16 << 10,
 		}
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("Admin server stopped: %v", err)
@@ -987,6 +991,7 @@ func (a *AdminServer) handleControlPause(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	a.integration.stop.setPaused(true)
+	a.integration.hideAllAdapterActivity()
 	a.integration.audit.record("control", map[string]interface{}{"paused": true, "source": "dashboard"})
 	writeJSON(w, map[string]interface{}{
 		"ok":      true,

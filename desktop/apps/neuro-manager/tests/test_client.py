@@ -1,10 +1,11 @@
 import json
+import os
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
-from neuro_manager.client import ApiError, Client, normalise_policy, poll_delay, server_url
+from neuro_manager.client import ApiError, Client, external_url, normalise_policy, poll_delay, server_url
 
 
 class ClientTests(unittest.TestCase):
@@ -56,6 +57,24 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(self.operator_headers, [None, "fresh-approval", None])
         self.assertEqual(self.client.token, "memory-only-token")
 
+    def test_ambient_proxy_cannot_receive_session_or_approval_tokens(self):
+        proxy = self.client.server
+        with mock.patch.dict(os.environ, {"HTTP_PROXY": proxy, "http_proxy": proxy, "HTTPS_PROXY": proxy, "https_proxy": proxy, "NO_PROXY": "", "no_proxy": ""}):
+            client = Client("http://127.0.0.1:1", "private-session-token")
+            with self.assertRaises(ApiError):
+                client.request("/api/status", operator_token="fresh-private-approval")
+        self.assertEqual(self.received, [], "an ambient proxy must receive neither credential")
+
+    def test_invalid_token_headers_never_echo_the_secret(self):
+        secret = "private-fixture-secret\nsecond-line"
+        with self.assertRaises(ApiError) as raised:
+            Client(self.client.server, secret)
+        self.assertNotIn("private-fixture-secret", str(raised.exception))
+        with self.assertRaises(ApiError) as raised:
+            self.client.request("/api/status", operator_token=secret)
+        self.assertNotIn("private-fixture-secret", str(raised.exception))
+        self.assertEqual(self.received, [])
+
     def test_errors_preserve_status_and_reject_malformed_or_large_responses(self):
         with self.assertRaises(ApiError) as raised:
             self.client.request("/api/denied")
@@ -68,6 +87,11 @@ class ClientTests(unittest.TestCase):
 
 
 class ModelTests(unittest.TestCase):
+    def test_setup_links_only_open_explicit_https_destinations(self):
+        self.assertEqual(external_url("https://github.com/owner/project#setup"), "https://github.com/owner/project#setup")
+        for value in (None, "file:///etc/passwd", "javascript:alert(1)", "https://user:secret@example.com", "https://example.com:99999", "http://example.com"):
+            self.assertIsNone(external_url(value))
+
     def test_server_addresses_reject_credentials_and_ambiguous_destinations(self):
         self.assertEqual(server_url(" https://example.com/nd/ "), "https://example.com/nd")
         for value in ["file:///tmp/server", "http://user:secret@example.com", "https://example.com/?token=secret", "https://example.com/#token", "http://localhost:99999"]:

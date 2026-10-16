@@ -7,6 +7,10 @@ available for remote administration and troubleshooting.
 The manager connects to the server over its existing authenticated API. Your
 dashboard token stays in memory until sign-out or exit. No token is written to a
 URL, process argument, or preferences file. The server still enforces permissions.
+Requests connect directly to the configured server; ambient HTTP proxy settings
+are ignored so session and approval headers cannot reach an unrelated proxy.
+Sign-out or an expired session closes approval dialogs and clears their fields,
+including one-time credential output.
 
 ## Run and build
 

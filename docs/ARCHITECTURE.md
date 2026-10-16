@@ -38,7 +38,7 @@ work runs on the server, and that PC only needs the client.
                                                        └───────────────────────────────────┘
 
  NATIVE MANAGER (GTK 4) / OPTIONAL DASHBOARD (TypeScript + Vite):
- Extensions · Games · Permissions · Status (Settings)
+ Extensions · Marketplace · Games · Permissions · Activity · Status
 ```
 
 ## Components
@@ -83,7 +83,9 @@ Watcher commands from the relay take the same path, with the same gates
 | Permission requests and approvals | in memory, shown on the Permissions page | Neuro asks; Vedal approves or denies. A restart clears both |
 | Audit | `NEURO_AUDIT_LOG` (JSON lines) | refusals, accepted actions, relay commands, policy changes |
 | Extension state | `NEURO_EXTENSIONS_STATE_FILE` (runtime, not tracked by Git) | what is installed and enabled |
-| Catalog | `desktop/catalog/index.json`, `publishers.json` | signed; the bridge verifies every item |
+| Catalog snapshot | `desktop/catalog/`, pinned by `snapshot.json` | canonical metadata lives on upstream `catalog`; CI compares the shipped snapshot |
+| Per-extension grants/settings | `NEURO_EXTENSION_PERMISSIONS_FILE` | separate management delegation, runtime approval and capability grants; fresh operator reentry |
+| SDK registrations | `NEURO_INTEGRATIONS_FILE` | manifests and hashed scoped credentials; live leases and viewer visibility are in memory |
 
 ## Decisions
 

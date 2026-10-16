@@ -81,6 +81,17 @@ try {
 }
 Write-Host '      -> backend/python/controller'
 
+Write-Host '[+] Go client, slice 1 (not the shipping desktop client)'
+Push-Location 'apps/neuro-client-go'
+try {
+    if (-not $NoTest) {
+        Invoke-Checked 'go vet (Go client)' { go vet ./... }
+        Invoke-Checked 'go test (Go client)' { go test -count=1 ./... }
+    }
+    New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
+    Invoke-Checked 'go build (Go client)' { go build -o 'dist/neuro-client-go.exe' . }
+} finally { Pop-Location }
+
 Write-Host '[5/5] Native manager (GTK 4)'
 if (-not $NoTest) {
     $PreviousPath = $env:PYTHONPATH

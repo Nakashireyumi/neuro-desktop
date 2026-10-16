@@ -29,6 +29,18 @@ def server_url(value: str) -> str:
     return urllib.parse.urlunsplit(url).rstrip("/")
 
 
+def external_url(value: str) -> str | None:
+    """Only open explicit HTTPS setup links from marketplace metadata."""
+    try:
+        url = urllib.parse.urlsplit(value)
+        if url.scheme == "https" and url.hostname and not url.username and not url.password:
+            url.port
+            return value
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, message, headers, new_url):
         # A redirect must never send the operator's dashboard token elsewhere.
@@ -38,18 +50,18 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 class Client:
     def __init__(self, server: str, token: str = ""):
         self.server = server_url(server)
-        self.token = token
+        self.token = _header_token(token)
         self.requests = 0
-        self._opener = urllib.request.build_opener(_NoRedirect())
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     def request(self, path: str, method: str = "GET", body=None, *, operator_token=""):
         if not (path.startswith("/api/") or path == "/health"):
             raise ValueError("Only Neuro Desktop API routes are supported.")
         headers = {"Accept": "application/json"}
         if self.token:
-            headers["X-ND-Token"] = self.token
+            headers["X-ND-Token"] = _header_token(self.token)
         if operator_token:
-            headers["X-ND-Operator-Token"] = operator_token
+            headers["X-ND-Operator-Token"] = _header_token(operator_token)
         data = None
         if body is not None:
             data = json.dumps(body).encode("utf-8")
@@ -81,6 +93,12 @@ class Client:
         if not isinstance(payload, dict):
             raise ApiError(0, "The server returned an unexpected response.")
         return payload
+
+
+def _header_token(value):
+    if not isinstance(value, str) or len(value) > 512 or any(ord(char) < 32 or ord(char) > 126 for char in value):
+        raise ApiError(0, "The token contains unsupported characters. Paste the single-line token from setup.")
+    return value
 
 
 def normalise_policy(raw: dict) -> dict:

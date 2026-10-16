@@ -1,17 +1,21 @@
 """Opt-in real GTK smoke test. Run under Xvfb in CI; no desktop input is sent."""
 
 import copy
+from contextlib import contextmanager
 import json
 import os
 import threading
 import time
+from types import SimpleNamespace
 import unittest
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 GUI_TESTS = os.environ.get("NEURO_MANAGER_GUI_TESTS") == "1"
 if GUI_TESTS:
-    from gi.repository import GLib
+    from gi.repository import GLib, Gtk
     from neuro_manager.app import ManagerApplication
+    from neuro_manager.operator_dialog import json_action
 
 
 @unittest.skipUnless(GUI_TESTS, "set NEURO_MANAGER_GUI_TESTS=1 inside a graphical session or Xvfb")
@@ -25,6 +29,206 @@ class NativeManagerTests(unittest.TestCase):
                 return
             time.sleep(0.01)
         self.fail("native manager did not reach the expected state")
+
+    def widgets(self, parent, kind):
+        found = [parent] if isinstance(parent, kind) else []
+        child = parent.get_first_child()
+        while child:
+            found.extend(self.widgets(child, kind))
+            child = child.get_next_sibling()
+        return found
+
+    def buffer_text(self, view):
+        buffer = view.get_buffer()
+        return buffer.get_text(*buffer.get_bounds(), True)
+
+    def dialog(self, app, title):
+        windows = Gtk.Window.get_toplevels()
+        for index in range(windows.get_n_items()):
+            window = windows.get_item(index)
+            if window.get_transient_for() is app.window and window.get_title() == title and window.get_visible():
+                return window
+        return None
+
+    def click(self, parent, title):
+        widget = next(button for button in self.widgets(parent, Gtk.Button) if button.get_label() == title)
+        self.assertTrue(widget.get_sensitive())
+        widget.emit("clicked")
+
+    @contextmanager
+    def session_fixture(self, *, sign_in=True):
+        """A real GTK manager with a bounded, isolated credential-test server."""
+        state = SimpleNamespace(
+            valid=True, seen=[], hold_token=False, token_started=threading.Event(),
+            token_release=threading.Event(), token_finished=threading.Event(),
+            minted_token="fixture-once-only-scoped-token-0123456789",
+        )
+        status = {"version": "test", "uptime": 0, "control": {"paused": False}, "executor": {"connected": True}, "neuro": {"connected": True}}
+
+        class Handler(BaseHTTPRequestHandler):
+            def handle_request(self):
+                state.seen.append((self.command, self.path, self.headers.get("X-ND-Operator-Token")))
+                if self.path != "/health" and (not state.valid or self.headers.get("X-ND-Token") != "fixture-token"):
+                    self.send_response(401)
+                    self.end_headers()
+                    self.wfile.write(b'{"error":"fixture session expired"}')
+                    return
+                self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                if self.path == "/api/integrations/fixture/token":
+                    if self.headers.get("X-ND-Operator-Token") != "fixture-token":
+                        self.send_response(403)
+                        self.end_headers()
+                        self.wfile.write(b'{"error":"fresh operator approval required"}')
+                        return
+                    state.token_started.set()
+                    if state.hold_token:
+                        state.token_release.wait(8)
+                    result = {"ok": True, "token": state.minted_token}
+                else:
+                    result = {
+                        "/health": {"ok": True},
+                        "/api/session": {"ok": True, "role": "operator"},
+                        "/api/status": status,
+                        "/api/extensions": {"installed": [], "catalog": [{"id": "memory", "name": "Memory"}]},
+                        "/api/permissions": {"default_allow": False, "scopes": {"input": True}},
+                        "/api/permission-requests": {"pending": [], "grants": []},
+                        "/api/extensions/memory/permissions": {
+                            "ok": True, "policy": {"manage_allowed": False, "run_allowed": False, "grants": {}, "settings": {}},
+                            "permissions": [{"id": "input", "description": "Fixture capability", "required": True}],
+                        },
+                    }.get(self.path, {"ok": True})
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps(result).encode())
+                if self.path == "/api/integrations/fixture/token":
+                    state.token_finished.set()
+
+            do_GET = do_POST = do_PUT = handle_request
+
+            def log_message(self, *_):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        app = ManagerApplication(f"http://127.0.0.1:{server.server_port}", non_unique=True)
+        # GApplication registers an object path even with NON_UNIQUE. Each test
+        # needs its own path on the process's shared desktop-session bus.
+        app.set_application_id("io.neurodesktop.Manager.Test" + uuid.uuid4().hex)
+        app.register(None)
+        app.activate()
+        try:
+            self.pump(lambda: app.window is not None and app.window.get_mapped())
+            if sign_in:
+                app.token_entry.set_text("fixture-token")
+                app.sign_in()
+                self.pump(lambda: app.client is not None and not app.refresh_pending and hasattr(app, "extension_items"))
+            yield app, state
+        finally:
+            state.token_release.set()
+            app.on_close()
+            app.pool.shutdown(wait=True, cancel_futures=True)
+            if app.window:
+                app.window.destroy()
+            if app.splash:
+                app.splash.destroy()
+            server.shutdown()
+            server.server_close()
+            thread.join()
+            while GLib.MainContext.default().pending():
+                GLib.MainContext.default().iteration(False)
+
+    def open_credential_dialog(self, app):
+        title = "Create fixture scoped token"
+        json_action(app, title, "/api/integrations/fixture/token", {"kind": "integration"})
+        dialog = self.dialog(app, title)
+        self.assertIsNotNone(dialog)
+        entry = self.widgets(dialog, Gtk.PasswordEntry)[0]
+        self.assertEqual(entry.get_text(), "", "fresh approval must never copy a signed-in token")
+        output = next(view for view in self.widgets(dialog, Gtk.TextView) if not view.get_editable())
+        return dialog, entry, output
+
+    def test_invalid_pasted_token_is_handled_without_echoing_credentials(self):
+        with self.session_fixture(sign_in=False) as (app, state):
+            for token in ("fixture-private-credential-\u2603", "fixture-private-credential\r\nInjected: secret", "x" * 513):
+                with self.subTest(token_type="unicode" if "\u2603" in token else "multiline" if "\n" in token else "overlong"):
+                    app.token_entry.set_text(token)
+                    app.sign_in()
+                    self.assertIsNone(app.client)
+                    self.assertTrue(app.login_button.get_sensitive())
+                    self.assertIn("single-line token", app.login_error.get_text())
+                    self.assertNotIn("fixture-private-credential", app.login_error.get_text())
+                    self.assertNotIn("x" * 32, app.login_error.get_text())
+            self.assertFalse(any(path == "/api/session" for _, path, _ in state.seen))
+            app.token_entry.set_text("fixture-token")
+            app.sign_in()
+            self.pump(lambda: app.client is not None and not app.refresh_pending)
+            self.assertEqual(app.token_entry.get_text(), "")
+
+    def test_signout_closes_approval_dialogs_and_clears_all_credential_widgets(self):
+        with self.session_fixture() as (app, state):
+            app.pages.set_visible_child_name("permissions")
+            self.pump(lambda: hasattr(app, "policy_operator_token") and not app.refresh_pending)
+            global_entry = app.policy_operator_token
+            global_entry.set_text("fixture-unsaved-global-approval")
+            dialog, approval, output = self.open_credential_dialog(app)
+            approval.set_text("fixture-token")
+            self.click(dialog, "Approve and apply")
+            self.pump(lambda: state.minted_token in self.buffer_text(output))
+            self.assertIn(("POST", "/api/integrations/fixture/token", "fixture-token"), state.seen)
+            approval.set_text("fixture-unsaved-dialog-approval")
+
+            app.extension_permissions("memory")
+            self.pump(lambda: self.dialog(app, "Permissions · memory") is not None)
+            extension_dialog = self.dialog(app, "Permissions · memory")
+            extension_approval = self.widgets(extension_dialog, Gtk.PasswordEntry)[0]
+            extension_approval.set_text("fixture-unsaved-extension-approval")
+            settings = next(view for view in self.widgets(extension_dialog, Gtk.TextView) if view.get_editable())
+            settings.get_buffer().set_text('{"fixture":"unsaved settings"}')
+            previous_client = app.client
+
+            app.sign_out()
+
+            self.assertIsNone(app.client)
+            self.assertEqual(previous_client.token, "")
+            self.assertEqual(global_entry.get_text(), "")
+            self.assertEqual(approval.get_text(), "")
+            self.assertEqual(extension_approval.get_text(), "")
+            self.assertEqual(self.buffer_text(output), "")
+            self.assertEqual(self.buffer_text(settings), "")
+            self.assertFalse(dialog.get_visible())
+            self.assertFalse(extension_dialog.get_visible())
+            self.assertFalse(app.session_dialogs)
+
+    def test_expired_session_closes_modal_and_discards_late_token_response(self):
+        with self.session_fixture() as (app, state):
+            dialog, approval, output = self.open_credential_dialog(app)
+            state.hold_token = True
+            approval.set_text("fixture-token")
+            self.click(dialog, "Approve and apply")
+            self.pump(state.token_started.is_set)
+
+            # Expire the session while a separate, already-authorized credential
+            # request remains in flight. The resulting 401 comes through submit.
+            state.valid = False
+            app.refresh(force=True)
+            self.pump(lambda: app.client is None)
+            self.assertFalse(dialog.get_visible())
+            self.assertEqual(approval.get_text(), "")
+            self.assertEqual(self.buffer_text(output), "")
+            self.assertIn("expired", app.login_error.get_text())
+
+            state.token_release.set()
+            self.pump(state.token_finished.is_set)
+            # Join workers before draining GTK callbacks, so this assertion
+            # actually observes delivery of the delayed successful response.
+            app.pool.shutdown(wait=True, cancel_futures=False)
+            while GLib.MainContext.default().pending():
+                GLib.MainContext.default().iteration(False)
+            self.assertIsNone(app.client)
+            self.assertEqual(self.buffer_text(output), "")
+            self.assertFalse(dialog.get_visible())
+            self.assertFalse(app.session_dialogs)
 
     def test_native_views_controls_and_unsaved_policy(self):
         status = {"version": "test", "uptime": 0, "control": {"paused": False}, "executor": {"connected": True, "version": "2"}, "neuro": {"connected": True}}
@@ -77,6 +281,7 @@ class NativeManagerTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         app = ManagerApplication(f"http://127.0.0.1:{server.server_port}", non_unique=True)
+        app.set_application_id("io.neurodesktop.Manager.Test" + uuid.uuid4().hex)
         app.register(None)
         app.activate()
         try:

@@ -344,7 +344,10 @@ func (n *NDIntegration) decideRequest(id string, approve bool, minutes int, note
 		if minutes > 0 {
 			grant.ExpiresAt = now.Add(time.Duration(minutes) * time.Minute)
 		}
-		policy.grants.put(grant)
+		if !n.putScopeGrant(policy.grants, grant) {
+			book.mu.Unlock()
+			return PermissionRequest{}, fmt.Errorf("permission approvals are unavailable while the integration is shutting down")
+		}
 		req.Status = "approved"
 		req.GrantedMinutes = minutes
 		req.GrantedUntil = grant.ExpiresAt
@@ -366,6 +369,9 @@ func (n *NDIntegration) decideRequest(id string, approve bool, minutes int, note
 	req.Note = note
 	decided := *req
 	book.mu.Unlock()
+	if decided.Status == "approved" {
+		n.hideAllAdapterActivity()
+	}
 
 	n.recordAudit("permission_decision", map[string]interface{}{
 		"request_id": decided.ID, "scope": string(decided.Scope), "decision": decided.Status,
@@ -378,9 +384,10 @@ func (n *NDIntegration) decideRequest(id string, approve bool, minutes int, note
 // revokeGrant ends an operator approval early.
 func (n *NDIntegration) revokeGrant(scope PermissionScope) bool {
 	policy := n.policy()
-	if policy == nil || !policy.grants.revoke(scope) {
+	if policy == nil || !n.revokeScopeGrant(policy.grants, scope) {
 		return false
 	}
+	n.hideAllAdapterActivity()
 	n.recordAudit("permission_revoked", map[string]interface{}{"scope": string(scope)})
 	n.sendToNeuro(fmt.Sprintf("## Permission revoked\n\nThe operator turned the **%s** permission off again. Stop using it.", scope), false)
 	return true

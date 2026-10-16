@@ -52,6 +52,8 @@ type NDIntegration struct {
 
 	// requests holds Neuro's permission requests and the operator's decisions.
 	requests *requestBook
+	// Temporary approvals expire without a permanent background polling loop.
+	grantExpiry grantExpiryTimers
 
 	// mcp runs the enabled MCP servers and tracks the tools they expose.
 	mcp *mcpManager
@@ -84,7 +86,6 @@ func (n *NDIntegration) policy() *PermissionPolicy {
 // the grant store belongs to the running bridge rather than to the policy file.
 func (n *NDIntegration) setPolicy(policy *PermissionPolicy) {
 	n.permissionsMu.Lock()
-	defer n.permissionsMu.Unlock()
 	if policy != nil {
 		if n.permissions != nil && n.permissions.grants != nil {
 			policy.grants = n.permissions.grants
@@ -93,6 +94,8 @@ func (n *NDIntegration) setPolicy(policy *PermissionPolicy) {
 		}
 	}
 	n.permissions = policy
+	n.permissionsMu.Unlock()
+	n.hideAllAdapterActivity()
 }
 
 // BridgeStats are lightweight counters for the operator dashboard. They are

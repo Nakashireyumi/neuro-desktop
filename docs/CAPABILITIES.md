@@ -4,12 +4,13 @@ Honest snapshot of what works today (post bridge/executor split). This is not a
 roadmap; see [VISION.md](../VISION.md) and [PRODUCTION_TODO.md](PRODUCTION_TODO.md)
 for direction and backlog.
 
-Last updated: 2026-10-09
+Last updated: 2026-10-16
 
 ## Architecture (what you actually run)
 
 | Piece | Binary / path | Role |
 |-------|---------------|------|
+| **Native manager** | `desktop/apps/neuro-manager` / `neuro-manager` | GTK 4 application with native splash, extension marketplace, permissions, Games, Activity and Status; no embedded browser |
 | **Bridge (server)** | `neuro-integration` | Neuro WebSocket client, permissions, TCP executor hub `:9876`, admin HTTP `:8300` |
 | **Dashboard program** | `neuro-dashboard` (`desktop/apps/neuro-dashboard`) | Optional. Serves the dashboard page and forwards only `/api` and `/health` to the server. No secret of its own |
 | **Client** (`neuro-client`) | `desktop/backend/python/controller/agent.py`, packaged by `desktop/scripts/build-client.sh` | Mouse/keyboard/scripts/shell on the controlled machine (the only part that touches it). Runs from source too |
@@ -35,9 +36,11 @@ supervisor were removed; see `docs/ARCHITECTURE.md`.
 | Low-level mouse / keyboard (`pyautogui`) | Yes | Yes* | Yes* |
 | High-level desktop intents (start menu, snap, lock, …) | Yes (Win shortcuts) | Best-effort (DE-dependent) | Best-effort (⌘ mappings) |
 | Window enumeration | Yes | Weak / optional | Weak / optional |
-| Screenshots (`mss`) | Yes | Yes* | Yes* |
+| Screenshots | MSS | MSS on X11; `grim` on supported Wayland compositors* | MSS* |
 | Headless / CLI-only OS (no display) | Supported (`NEURO_HEADLESS` or no session) | Supported (no `DISPLAY`) | Supported (forced) |
 | Command lines (`shell_command`) | Yes (allowlist + firewall) | Yes | Yes |
+
+The table describes implemented backends, not certification on every desktop. Linux native manager and Wayland screenshot transport have been exercised locally. Windows/macOS desktop input and capture still require real-device verification; CI checks their builds, protocol and native widgets.
 
 \* Needs a real graphical session. Do **not** run with `sudo` (breaks Wayland/X auth and file ownership). On Omarchy/Hyprland, run from your logged-in desktop session.
 
@@ -126,12 +129,16 @@ Unsupported intents on an OS fail with a clear error (e.g. macOS clipboard histo
 
 ### Catalog / extensions / vision
 
+The [canonical catalog branch](https://github.com/Nakashireyumi/neuro-desktop/tree/catalog) contains reviewed source listings and signed metadata. The application ships a pinned snapshot, checked by CI. Source staging downloads an approved commit without running an installer; game/mod setup remains explicit.
+
+The [standalone SDK](https://github.com/cassitly/neuro-desktop-sdk) links existing private game integrations to Games using expiring scoped presence leases. The [Vencord adapter](https://github.com/cassitly/neuro-desktop-vencord) and curated activity feed are opt-in, actor-specific and empty when hidden, revoked, offline or expired. Live Discord/private-backend behavior remains unverified.
+
 - Catalog list/search/get — metadata from local catalog config
 - Extensions: install (`metadata_only` or `git_clone`), enable/disable, uninstall,
   persisted in the extension state file, driven from the dashboard Extensions tab
 - Desktop context + optional HTTP vision summary (`NEURO_VISION_URL`; `NEURO_VISION_SERVER_URL` is still read as an alias)
-- Extensions come from the signed catalog only. Neuro can install one (`install_extension`) when the `extensions` scope is on, and it can ask for that scope with `request_permission`
-- MCP servers from the catalog run as child processes, only after Vedal enables them. Their tools appear as actions under the `extensions` scope
+- Managed extensions come from the signed catalog. Neuro and Evil can install, enable, disable and remove only the items you delegate, subject to the global `extensions` scope. All new installs start disabled. Runtime approval and required capability grants are separate; see [extension permissions](EXTENSION_PERMISSIONS.md).
+- Approved MCP servers run as child processes. You can enable them directly or delegate management to Neuro/Evil; required grants are checked at startup and tool-call time. Their tools appear under the `extensions` scope.
 - `game_observe` (and the dashboard's “Show me what Neuro sees”) captures a
   screenshot and asks the vision server for a summary. The screenshot travels to the
   server as PNG bytes, not as a path, so the server can run on another PC

@@ -66,6 +66,7 @@ def json_action(app, title, path, body, *, method="POST", description=""):
     content.append(apply_button)
     content.append(button("Close", dialog.close))
     dialog.connect("close-request", close)
+    app.track_session_dialog(dialog, close)
     dialog.set_child(Gtk.ScrolledWindow(child=content, hscrollbar_policy=Gtk.PolicyType.NEVER))
     dialog.present()
 

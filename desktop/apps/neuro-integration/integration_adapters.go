@@ -428,6 +428,21 @@ func (n *NDIntegration) hideAdapter(id string) {
 		p.Items = nil
 	}
 }
+
+func (n *NDIntegration) hideAllAdapterActivity() {
+	n.adaptersMu.Lock()
+	rt := n.adapters
+	n.adaptersMu.Unlock()
+	if rt == nil {
+		return
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	for _, p := range rt.presence {
+		p.VisibleUntil = time.Time{}
+		p.Items = nil
+	}
+}
 func (a *AdminServer) handleScopedAdapter(w http.ResponseWriter, r *http.Request, id, action string) {
 	if (action == "config" && r.Method != http.MethodGet) || (action != "config" && r.Method != http.MethodPost) {
 		writeError(w, 405, "method not allowed")
@@ -462,69 +477,89 @@ func (a *AdminServer) handleScopedAdapter(w http.ResponseWriter, r *http.Request
 		writeError(w, 409, reason)
 		return
 	}
-	configuration, err := a.integration.adapterConfiguration(cfg)
-	if err != nil {
-		writeError(w, 500, err.Error())
-		return
-	}
 	if action == "config" {
+		configuration, err := a.integration.adapterConfiguration(cfg)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
 		writeJSON(w, configuration)
 		return
 	}
+	var body struct {
+		State   string `json:"state"`
+		Message string `json:"message"`
+		Actor   string `json:"actor"`
+		Kind    string `json:"kind"`
+		Summary string `json:"summary"`
+	}
+	// A slow request body must never hold the shared runtime lock.
+	if err := decodeAdapterBody(r, &body); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	if action == "heartbeat" {
+		if (body.State != "ready" && body.State != "busy" && body.State != "offline") || !cleanActivityText(body.Message, 500) {
+			writeError(w, 400, "invalid heartbeat state or message")
+			return
+		}
+	} else {
+		if (body.Actor != "neuro" && body.Actor != "evil") || !cleanActivityText(body.Summary, 500) || strings.TrimSpace(body.Summary) == "" {
+			writeError(w, 400, "invalid curated activity")
+			return
+		}
+		switch body.Kind {
+		case "status", "discord.channel", "discord.message", "discord.voice":
+		default:
+			writeError(w, 400, "unsupported activity kind")
+			return
+		}
+	}
+	if err := a.integration.extensionRuntimeAllowed(id, cfg.Manifest.Permissions); err != nil {
+		a.integration.hideAdapter(id)
+		writeError(w, 403, err.Error())
+		return
+	}
+	if reason := a.integration.stop.blockReason("integration_" + action); reason != "" {
+		a.integration.hideAdapter(id)
+		writeError(w, 409, reason)
+		return
+	}
+	var configuration map[string]interface{}
+	if action == "heartbeat" {
+		// Settings and optional grants may change while the body is arriving.
+		configuration, err = a.integration.adapterConfiguration(cfg)
+		if err != nil {
+			writeError(w, 500, err.Error())
+			return
+		}
+	}
+	viewerAllowed := a.integration.viewerGrantAllowed(id, cfg.Manifest.Permissions)
 	rt := a.integration.adapterRuntime()
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	p := rt.presence[id]
 	if p == nil {
 		p = &adapterPresence{State: "offline"}
 		rt.presence[id] = p
 	}
 	if action == "heartbeat" {
-		var body struct {
-			State   string `json:"state"`
-			Message string `json:"message"`
-		}
-		if err := decodeAdapterBody(r, &body); err != nil {
-			writeError(w, 400, err.Error())
-			return
-		}
-		if (body.State != "ready" && body.State != "busy" && body.State != "offline") || !cleanActivityText(body.Message, 500) {
-			writeError(w, 400, "invalid heartbeat state or message")
-			return
-		}
 		if time.Since(p.LastSeen) >= adapterLease || body.State == "offline" {
 			p.Items = nil
 			p.VisibleUntil = time.Time{}
 		}
 		p.State, p.Message, p.LastSeen = body.State, body.Message, time.Now()
+		rt.mu.Unlock()
 		configuration["lease_seconds"] = 45
 		writeJSON(w, configuration)
 		return
 	}
-	var body struct {
-		Actor   string `json:"actor"`
-		Kind    string `json:"kind"`
-		Summary string `json:"summary"`
-	}
-	if err := decodeAdapterBody(r, &body); err != nil {
-		writeError(w, 400, err.Error())
-		return
-	}
-	if (body.Actor != "neuro" && body.Actor != "evil") || !cleanActivityText(body.Summary, 500) || strings.TrimSpace(body.Summary) == "" {
-		writeError(w, 400, "invalid curated activity")
-		return
-	}
-	switch body.Kind {
-	case "status", "discord.channel", "discord.message", "discord.voice":
-	default:
-		writeError(w, 400, "unsupported activity kind")
-		return
-	}
-	if !a.integration.viewerGrantAllowed(id, cfg.Manifest.Permissions) || p.State == "offline" || time.Since(p.LastSeen) >= adapterLease || !time.Now().Before(p.VisibleUntil) || p.Actor != body.Actor {
+	if !viewerAllowed || p.State == "offline" || time.Since(p.LastSeen) >= adapterLease || !time.Now().Before(p.VisibleUntil) || p.Actor != body.Actor {
+		rt.mu.Unlock()
 		writeError(w, 403, "Viewer visibility is off. Enable it for this actor before publishing.")
 		return
 	}
 	if time.Since(p.LastEvent) < 250*time.Millisecond {
+		rt.mu.Unlock()
 		writeError(w, 429, "activity rate limit")
 		return
 	}
@@ -534,7 +569,9 @@ func (a *AdminServer) handleScopedAdapter(w http.ResponseWriter, r *http.Request
 	if len(p.Items) > 50 {
 		p.Items = append([]viewerActivity(nil), p.Items[len(p.Items)-50:]...)
 	}
-	writeJSON(w, map[string]interface{}{"ok": true, "seq": p.NextSeq})
+	seq := p.NextSeq
+	rt.mu.Unlock()
+	writeJSON(w, map[string]interface{}{"ok": true, "seq": seq})
 }
 
 func (n *NDIntegration) adapterConfiguration(cfg adapterConfig) (map[string]interface{}, error) {
@@ -600,14 +637,15 @@ func (n *NDIntegration) setViewerVisibility(id, actor string, visible bool, minu
 	}
 	rt := n.adapterRuntime()
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	p := rt.presence[id]
 	if p == nil || p.State == "offline" || time.Since(p.LastSeen) >= adapterLease {
+		rt.mu.Unlock()
 		return errors.New("integration is offline; connect it before enabling viewer visibility")
 	}
 	p.Items = nil
 	p.Actor = actor
 	p.VisibleUntil = time.Now().Add(time.Duration(minutes) * time.Minute)
+	rt.mu.Unlock()
 	n.audit.record("viewer_visibility", map[string]interface{}{"integration": id, "visible": true, "actor": actor, "minutes": minutes})
 	return nil
 }
@@ -635,7 +673,6 @@ func (a *AdminServer) handleViewerFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	rt := a.integration.adapterRuntime()
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	p := rt.presence[id]
 	visible := p != nil && p.State != "offline" && time.Since(p.LastSeen) < adapterLease && time.Now().Before(p.VisibleUntil) && a.integration.viewerGrantAllowed(id, cfg.Manifest.Permissions) && a.integration.stop.blockReason("viewer_feed") == ""
 	items := []viewerActivity{}
@@ -647,6 +684,7 @@ func (a *AdminServer) handleViewerFeed(w http.ResponseWriter, r *http.Request) {
 		p.Items = nil
 		p.VisibleUntil = time.Time{}
 	}
+	rt.mu.Unlock()
 	writeJSON(w, map[string]interface{}{"ok": true, "visible": visible, "actor": actor, "items": items})
 }
 

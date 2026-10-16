@@ -152,6 +152,7 @@ func (n *NDIntegration) Start() error {
 }
 
 func (n *NDIntegration) Close() error {
+	n.stopGrantExpiryTimers()
 	n.neuroConnection.disconnected()
 	n.stopAllMCPServers()
 

@@ -34,6 +34,8 @@ The policy file is `extension-permissions.json` beside the extension state file.
 
 Ordinary install, enable, disable, and uninstall API calls require the same item delegation as model actions. You can perform a direct management action without delegating it by supplying the separately entered operator token. Enabling still checks runtime grants. Changing `run_allowed` or a required grant takes effect on future calls immediately, and the MCP manager withdraws and stops a no-longer-approved server.
 
+Temporary scope approvals use one deadline timer per scope. Expiry stops affected managed MCP processes even while the server is idle; renewal replaces the previous timer, and shutdown cancels outstanding timers. Permission changes and expiry clear viewer visibility and buffered activity. Approving a capability again does not restore an earlier sharing session: explicitly enable visibility again when ready.
+
 The server checks deferred source installs again when they execute. Revoking delegation while a job waits prevents that job from starting. A Git operation that already began may finish staging source; staging never executes an installer.
 
 ## Manifest declarations and settings
