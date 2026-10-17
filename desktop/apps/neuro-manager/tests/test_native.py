@@ -20,6 +20,12 @@ if GUI_TESTS:
 
 @unittest.skipUnless(GUI_TESTS, "set NEURO_MANAGER_GUI_TESTS=1 inside a graphical session or Xvfb")
 class NativeManagerTests(unittest.TestCase):
+    def trace(self, stage):
+        # Native Windows failures may terminate the process without a Python
+        # traceback. These bounded markers locate the failing UI transition.
+        if os.environ.get("CI"):
+            print(f"[native manager] {stage}", flush=True)
+
     def pump(self, predicate, timeout=5):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -324,10 +330,12 @@ class NativeManagerTests(unittest.TestCase):
         app.register(None)
         app.activate()
         try:
+            self.trace("main views: starting")
             self.pump(lambda: app.window is not None)
             app.token_entry.set_text("fixture-token")
             app.sign_in()
             self.pump(lambda: hasattr(app, "extension_items"))
+            self.trace("main views: signed in")
             self.assertEqual(app.extension_items["memory"]["name"], "Memory")
             self.assertEqual(app.token_entry.get_text(), "")
             app.toggle_pause()
@@ -337,9 +345,12 @@ class NativeManagerTests(unittest.TestCase):
             self.pump(lambda: "release" not in app.busy)
             app.toggle_pause()
             self.pump(lambda: app.status.get("control", {}).get("paused") is False)
+            self.trace("main views: controls complete")
             for view, attribute in [("marketplace", "marketplace_data"), ("games", "profiles"), ("permissions", "scope_widgets"), ("activity", "audit_list"), ("status", "config")]:
+                self.trace("main views: opening " + view)
                 app.pages.set_visible_child_name(view)
                 self.pump(lambda name=attribute: bool(getattr(app, name, None)))
+            self.trace("main views: editing permissions")
             app.pages.set_visible_child_name("permissions")
             app.scope_widgets["input"][0].set_active(False)
             self.assertTrue(app.policy_dirty)
@@ -351,23 +362,28 @@ class NativeManagerTests(unittest.TestCase):
             app.policy_operator_token.set_text("fixture-token")
             app.save_policy()
             self.pump(lambda: not app.policy_dirty)
+            self.trace("main views: policy saved")
             self.assertFalse(policy["scopes"]["input"]["allowed"])
             self.assertEqual(policy["metadata"], {"owner": "operator"})
             app.sign_out()
+            self.trace("main views: signed out")
             self.assertIsNone(app.client)
             app.token_entry.set_text("fixture-token")
             app.sign_in()
             self.pump(lambda: app.client is not None and not app.refresh_pending)
+            self.trace("main views: signed back in")
             app.pages.set_visible_child_name("permissions")
             self.pump(lambda: app.page_boxes["permissions"].get_first_child() is not None)
             self.assertIn(("POST", "/api/games/release"), seen)
             self.assertNotIn(("GET", "/api/runtime"), seen)
             app.sign_out()
+            self.trace("main views: switching to delegated session")
             session_role["role"] = "neuro"
             status["control"]["paused"] = True
             app.token_entry.set_text("fixture-token")
             app.sign_in()
             self.pump(lambda: app.client is not None and not app.refresh_pending)
+            self.trace("main views: delegated session ready")
             self.assertIsNone(app.pages.get_child_by_name("permissions"))
             self.assertIsNone(app.pages.get_child_by_name("activity"))
             self.assertFalse(app.pause_button.get_sensitive(), "a delegated session cannot resume an operator pause")
