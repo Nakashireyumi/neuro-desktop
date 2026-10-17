@@ -26,6 +26,8 @@ type visionRequest struct {
 // is always sent inline (the server does not read paths unless it is told to).
 const maxVisionImageBytes = 8 << 20
 
+const maxVisionResponseBytes = 256 << 10
+
 // visionServerURL returns the configured vision endpoint, if any. NEURO_VISION_URL
 // is the canonical name; NEURO_VISION_SERVER_URL is still read so older setups keep
 // working.
@@ -209,9 +211,12 @@ func summarizeWithVisionServer(serverURL string, png []byte, prompt string) (str
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxVisionResponseBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("failed to read vision response: %w", err)
+	}
+	if len(body) > maxVisionResponseBytes {
+		return "", fmt.Errorf("vision response exceeds %d bytes", maxVisionResponseBytes)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -79,6 +79,23 @@ Each scope has `allowed` and `requestable`:
 The dashboard saves policy changes to `NEURO_PERMISSIONS_FILE` (`PUT /api/permissions`)
 and applies them at once. Keep a copy of the file before you edit it on the dashboard.
 
+Scripts are validated in full before execution. Commands inside a script need the
+same permissions as their individual actions: `SHELL` needs shell approval and the
+firewall, `LAUNCH` needs system approval, and desktop shortcuts retain their own
+scopes and action denials. Quoting or escaping a command name does not change its
+permissions. Retained queues are checked again before a later action drains them.
+Scripts and pending queues are limited to 64 KiB per script, 512 instructions, and
+20 seconds of estimated execution time. The client also checks a deadline between
+instructions and limits a script's shell command to the remaining time. These
+checks do not interrupt an individual operating-system call already in progress.
+
+Desktop context and game observations check live vision permission before
+collection, after waiting for the executor, before uploading an image, and before
+returning or sending the result. A changed approval discards an in-flight result.
+The periodic context loop uses the same checks. Explicitly requesting `vision:false`
+does not capture or upload an image; ordinary metadata refreshes do not capture.
+Analysis responses are limited to 256 KiB.
+
 ## 5. Shell firewall
 
 `shell_command` runs only when all of these hold:

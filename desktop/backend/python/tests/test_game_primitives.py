@@ -120,6 +120,8 @@ class GamePrimitiveTests(unittest.TestCase):
         parser, keyboard, _, _ = build_parser()
 
         parser.parse("HOLD_FOR w 1.5")
+        parser.execute()
+        parser.clear()
 
         self.assertEqual(keyboard.calls, [("hold_for", "w", 1.5)])
 
@@ -129,6 +131,8 @@ class GamePrimitiveTests(unittest.TestCase):
         for bad in ("HOLD_FOR w 60", "HOLD_FOR w -1", "HOLD_FOR w 0"):
             with self.assertRaises(ActionParseError):
                 parser.parse(bad)
+                parser.execute()
+                parser.clear()
 
         self.assertEqual(keyboard.calls, [])
 
@@ -136,6 +140,8 @@ class GamePrimitiveTests(unittest.TestCase):
         parser, keyboard, _, _ = build_parser()
 
         parser.parse("COMBO ctrl shift s")
+        parser.execute()
+        parser.clear()
 
         self.assertEqual(keyboard.calls, [("shortcut", ("ctrl", "shift", "s"))])
 
@@ -143,6 +149,8 @@ class GamePrimitiveTests(unittest.TestCase):
         parser, _, mouse, _ = build_parser()
 
         parser.parse("MOVE_REL 40 -15 0.2")
+        parser.execute()
+        parser.clear()
 
         self.assertEqual(mouse.calls, [("move_rel", 40, -15, 0.2)])
 
@@ -150,6 +158,8 @@ class GamePrimitiveTests(unittest.TestCase):
         parser, _, mouse, _ = build_parser()
 
         parser.parse("MOVE_REL 12 3")
+        parser.execute()
+        parser.clear()
 
         self.assertEqual(mouse.calls, [("move_rel", 12, 3, 0.0)])
 
@@ -158,6 +168,8 @@ class GamePrimitiveTests(unittest.TestCase):
 
         with self.assertRaises(ActionParseError):
             parser.parse("MOVE_REL 10 10 5")
+            parser.execute()
+            parser.clear()
 
         self.assertEqual(mouse.calls, [])
 
@@ -165,6 +177,8 @@ class GamePrimitiveTests(unittest.TestCase):
         parser, keyboard, mouse, _ = build_parser()
 
         parser.parse("RELEASE_ALL")
+        parser.execute()
+        parser.clear()
 
         self.assertEqual(keyboard.calls, [("release_all",)])
         self.assertEqual(mouse.calls, [("release_all",)])
@@ -178,6 +192,8 @@ class GamePrimitiveTests(unittest.TestCase):
         with self.assertRaises(ActionParseError):
             # A missing target is the parser's error, not "unknown command".
             parser.parse("LAUNCH")
+            parser.execute()
+            parser.clear()
 
         self.assertEqual(keyboard.calls, [])
         self.assertEqual(mouse.calls, [])
@@ -195,6 +211,8 @@ class GamePrimitiveTests(unittest.TestCase):
                 ]
             )
         )
+        parser.execute()
+        parser.clear()
 
         self.assertEqual(keyboard.calls, [("hold_for", "w", 1.0), ("release_all",)])
         self.assertEqual(mouse.calls, [("move_rel", 60, 0, 0.4), ("release_all",)])
@@ -204,11 +222,15 @@ class GamePrimitiveTests(unittest.TestCase):
 
         with self.assertRaises(ActionParseError):
             parser.parse("TELEPORT 1 2")
+            parser.execute()
+            parser.clear()
 
     def test_monitor_records_every_primitive(self):
         parser, _, _, monitor = build_parser()
 
         parser.parse("HOLD_FOR w 0.5\nCOMBO ctrl s\nRELEASE_ALL")
+        parser.execute()
+        parser.clear()
 
         kinds = [event[1] for event in monitor.events]
         self.assertEqual(kinds, ["HOLD_FOR", "COMBO", "RELEASE_ALL"])

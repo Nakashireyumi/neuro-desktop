@@ -41,6 +41,7 @@ import time
 from typing import Any, Dict, Optional
 
 from . import shell as shell_module
+from .actions import MAX_PENDING_ACTIONS, MAX_QUEUE_SECONDS, instruction_seconds
 from . import gui_stub
 from .gui_stub import describe_headless_reason, is_headless
 from .lib import initialize_driver
@@ -132,6 +133,7 @@ class Agent:
     def __init__(self) -> None:
         self.monitor, self.mouse, self.keyboard, self.parser = initialize_driver()
         self.headless = is_headless()
+        self._ordered_queue = []
 
     # ------------------------------------------------------------------
     # Status
@@ -202,12 +204,27 @@ class Agent:
         if not isinstance(params, dict):
             return self._failure("params must be an object")
 
+        queue_starts = (len(self.keyboard.queue), len(self.mouse.instruction_queue), len(self.parser.queue))
+        self.parser.last_shell_output = ""
         try:
             result = self._dispatch(name, params)
             # Queued input is flushed here, inside the guard: on a headless
             # machine draining a queue is exactly where NoDisplayError comes
             # from, and the caller must see it as a failed action.
             if result.get("success") and name in QUEUE_COMMANDS:
+                queues = (self.keyboard.queue, self.mouse.instruction_queue, self.parser.queue)
+                added = [instruction for queue, start in zip(queues, queue_starts) for instruction in queue[start:]]
+                pending = self._ordered_queue + added
+                error = None
+                if len(pending) > MAX_PENDING_ACTIONS:
+                    error = "At most 512 pending actions are allowed; execute and clear the queue"
+                elif sum(instruction_seconds(instruction) for instruction in pending) > MAX_QUEUE_SECONDS + 1e-9:
+                    error = "Pending actions exceed the 20-second delay budget; execute and clear a shorter queue"
+                if error:
+                    for queue, start in zip(queues, queue_starts):
+                        del queue[start:]
+                    return self._failure(error)
+                self._ordered_queue.extend(added)
                 if _bool_param(command, "execute_now", True):
                     self._drain_queues()
                 if _bool_param(command, "clear_after", True):
@@ -242,8 +259,10 @@ class Agent:
         return f"{message} (use `shell_command` on a machine with no display)"
 
     def _clear_queues(self) -> None:
+        self._ordered_queue.clear()
         self.mouse.instruction_queue.clear()
         self.keyboard.clear()
+        self.parser.clear()
 
     def _dispatch(self, name: str, params: Dict[str, Any]) -> Dict[str, Any]:
         if name == "move_mouse_to":
@@ -310,10 +329,10 @@ class Agent:
             if not isinstance(script, str) or not script.strip():
                 return self._failure("run_script needs a `script` string")
             self.parser.last_shell_output = ""
+            self.parser.shell_policy = ({"allowlist": params.get("allowlist"), "denylist": params.get("denylist") or []}
+                                        if "allowlist" in params else None)
+            self.parser.shell_cwd = params.get("cwd") or None
             self.parser.parse(script)
-            output = (getattr(self.parser, "last_shell_output", "") or "").strip()
-            if output:
-                return self._ok({"output": output, "script": script})
             return self._ok()
 
         if name == "shell_command":
@@ -345,8 +364,10 @@ class Agent:
             return self._ok({"heartbeat": "alive", "timestamp": _timestamp()})
 
         if name == "execute_queue":
+            self.parser.last_shell_output = ""
             self._drain_queues()
-            return self._ok()
+            output = (self.parser.last_shell_output or "").strip()
+            return self._ok({"output": output}) if output else self._ok()
 
         if name == "clear_action_queue":
             self._clear_queues()
@@ -366,14 +387,30 @@ class Agent:
         )
 
     def _drain_queues(self) -> None:
-        """Run every queued instruction once.
+        """Run pending input and scripts in wire/source order.
 
-        The mouse controller clears its own queue while executing; the keyboard
-        one does not (its `clear()` is explicit), so clearing is driven by
-        `clear_after` instead of happening behind the operator's back.
+        Queues are retained when clear_after=False, matching the wire contract.
+        A script's shell, launch and release operations occupy the same ordered
+        sequence as keyboard and mouse instructions.
         """
-        self.mouse.execute()
-        self.keyboard.execute()
+        previous_deadline = self.parser.execution_deadline
+        self.parser.execution_deadline = time.monotonic() + MAX_QUEUE_SECONDS
+        try:
+            if sum(instruction_seconds(instruction) for instruction in self._ordered_queue) > MAX_QUEUE_SECONDS + 1e-9:
+                raise ValueError("Pending actions exceed the 20-second delay budget")
+            for instruction in tuple(self._ordered_queue):
+                self.parser._remaining_seconds()
+                instruction.execute()
+                self.parser._remaining_seconds()
+        except Exception:
+            # A failed flush must never replay a partially executed launch or
+            # shell command on the next ordinary input, or strand a held key.
+            self._clear_queues()
+            self.parser.last_shell_output = ""
+            self.release_all_input()
+            raise
+        finally:
+            self.parser.execution_deadline = previous_deadline
 
     def release_all_input(self) -> None:
         self._safe(self.keyboard.release_all)

@@ -146,6 +146,8 @@ class ActionParserTests(unittest.TestCase):
                 ]
             )
         )
+        self.parser.execute()
+        self.parser.clear()
 
         self.assertEqual(
             self.kbd.calls,
@@ -175,21 +177,31 @@ class ActionParserTests(unittest.TestCase):
     def test_linux_run_dialog_uses_alt_f2(self):
         parser = ActionParser(self.kbd, self.mouse, self.monitor, platform="linux")
         parser.parse("OPEN_RUN_DIALOG")
+        parser.execute()
+        parser.clear()
         self.assertEqual(self.kbd.calls, [("shortcut", ("alt", "f2"))])
 
     def test_macos_close_app_uses_cmd_q(self):
         parser = ActionParser(self.kbd, self.mouse, self.monitor, platform="macos")
         parser.parse("CLOSE_FOREGROUND_APP")
+        parser.execute()
+        parser.clear()
         self.assertEqual(self.kbd.calls, [("shortcut", ("command", "q"))])
 
     def test_macos_clipboard_history_unsupported(self):
         parser = ActionParser(self.kbd, self.mouse, self.monitor, platform="macos")
         with self.assertRaises(ActionParseError):
             parser.parse("OPEN_CLIPBOARD_HISTORY")
+            parser.execute()
+            parser.clear()
 
     def test_click_syntax(self):
         self.parser.parse("CLICK")
+        self.parser.execute()
+        self.parser.clear()
         self.parser.parse("CLICK right")
+        self.parser.execute()
+        self.parser.clear()
 
         self.assertEqual(
             self.mouse.calls,
@@ -202,10 +214,14 @@ class ActionParserTests(unittest.TestCase):
     def test_click_rejects_coordinates(self):
         with self.assertRaises(ActionParseError):
             self.parser.parse("CLICK 500 400")
+            self.parser.execute()
+            self.parser.clear()
 
     def test_invalid_key_reports_error(self):
         with self.assertRaises(ActionParseError):
             self.parser.parse("PRESS definitely_not_a_key")
+            self.parser.execute()
+            self.parser.clear()
 
 
 class PlatformIntentUnitTests(unittest.TestCase):

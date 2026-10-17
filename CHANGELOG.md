@@ -73,6 +73,8 @@ This project aims to follow semantic versioning once stable releases begin.
 
 ### Changed
 
+- Macro scripts are preflighted before side effects, preserve keyboard/mouse order, wait once, and execute launches, shell commands, and releases at their source position. Nested commands retain their individual permission checks; retained queues recheck approvals before execution and have bounded size and duration.
+- Desktop observations honor explicit vision disablement and recheck live approval around capture, inference, and delivery. Periodic context cannot bypass a revoked vision permission; analysis response reads are bounded.
 - Expiring scope approvals stop affected managed MCP services without polling. Permission changes and pause clear viewer consent/history; reapproval cannot restore previously shared events.
 - Slow SDK request bodies and response streams no longer hold the shared adapter runtime lock. Native manager sign-out clears open approval dialogs and delayed token responses; authentication requests ignore ambient HTTP proxies.
 - **Screenshots travel as bytes, never as paths.** `get_status` returns `screenshot_png_b64` (a PNG scaled to at most 1 600 px and 3 MiB, then base64). The server no longer reads a path that the client names, which was an arbitrary-file read when the server ran on another PC. The server checks the PNG signature, the base64, and the 8 MiB limit. The vision service receives `image_base64`; the server no longer sends `image_path`.

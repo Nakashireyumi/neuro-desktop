@@ -222,6 +222,8 @@ class ActionParserShellVerbTest(unittest.TestCase):
         _, _, keyboard, parser = initialize_driver()
         self.assertIsInstance(parser, ActionParser)
         parser.parse('SHELL "echo from-neuro"')
+        parser.execute()
+        parser.clear()
         self.assertIn("from-neuro", parser.last_shell_output)
         self.assertIsNotNone(keyboard)
 

@@ -729,16 +729,17 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		return nil, a.integration.setExtensionEnabled(itemID, false)
 	}
 
-	// run_script is one action that can contain many capabilities, so the
-	// script body is checked against the scope it needs: LAUNCH opens programs,
-	// which is a system-scope operation and denied by default.
+	// A script can contain multiple capabilities. Validate every line before
+	// acknowledging it, with the same token grammar as the Python executor.
 	if a.spec.Name == CmdRunScript {
-		if script, ok := params["script"].(string); ok && scriptContainsLaunch(script) {
-			if policy := a.integration.policy(); policy != nil && !policy.ScopeAllowed(ScopeSystem) {
-				return nil, neuro.NewFailureResult(
-					"This script contains LAUNCH, which needs the `system` permission scope (currently denied). " +
-						"Vedal can allow it in the dashboard under Permissions.")
-			}
+		script, _ := params["script"].(string)
+		requirements, err := validateScript(script)
+		if err == nil {
+			err = requirements.check(a.integration.policy())
+		}
+		if err != nil {
+			a.integration.stats.noteDenied(name)
+			return nil, neuro.NewFailureResult(err.Error())
 		}
 	}
 
@@ -855,7 +856,7 @@ func (a *IPCProxyAction) Execute(state interface{}) {
 		)
 		return
 	case work.cmd != nil:
-		resp, err := a.integration.sendToExecutor(*work.cmd)
+		resp, err := a.integration.sendToExecutorForAction(*work.cmd, a.GetName())
 		if err != nil {
 			result = neuro.NewFailureResult(fmt.Sprintf("executor error: %v", err))
 		} else if !resp.Success {
@@ -897,7 +898,7 @@ func (a *IPCProxyAction) Execute(state interface{}) {
 // leave a key stuck down.
 func (a *IPCProxyAction) executeGameCommands(work pendingWork) neuro.ExecutionResult {
 	for _, cmd := range work.gameCommands {
-		resp, err := a.integration.sendToExecutor(cmd)
+		resp, err := a.integration.sendToExecutorForAction(cmd, work.gameActionName)
 		if err != nil {
 			a.integration.releaseAllInput()
 			return neuro.NewFailureResult(fmt.Sprintf("executor error: %v", err))
@@ -912,20 +913,6 @@ func (a *IPCProxyAction) executeGameCommands(work pendingWork) neuro.ExecutionRe
 		a.integration.games.recordAction(work.gameActionName)
 	}
 	return neuro.NewSuccessResult("ok")
-}
-
-// scriptContainsLaunch reports whether an action script opens a program.
-func scriptContainsLaunch(script string) bool {
-	for _, rawLine := range strings.Split(script, "\n") {
-		line := strings.ToUpper(strings.TrimSpace(rawLine))
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if line == "LAUNCH" || strings.HasPrefix(line, "LAUNCH ") || strings.HasPrefix(line, "LAUNCH\t") {
-			return true
-		}
-	}
-	return false
 }
 
 func getBoolParam(params map[string]interface{}, key string, defaultValue bool) bool {

@@ -338,14 +338,24 @@ jobs:
       - name: Test actual GTK views and controls (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
+        timeout-minutes: 5
         env:
           NEURO_MANAGER_GUI_TESTS: "1"
         run: |
           # Keep native exceptions visible: a Win32 GTK failure can terminate
           # Python before unittest has an opportunity to report a traceback.
-          gdb --batch --return-child-result \
-            -ex 'set pagination off' -ex run -ex 'thread apply all bt' \
-            --args python -u -X faulthandler -m unittest discover -s desktop/apps/neuro-manager/tests -v
+          # The ordinary run is the required gate. A debugger changes timing,
+          # so its diagnostic retry can never replace or erase that result.
+          set +e
+          python -u -X faulthandler -m unittest discover -s desktop/apps/neuro-manager/tests -v
+          gtk_test_status=$?
+          if [ "$gtk_test_status" -ne 0 ]; then
+            gdb --batch --return-child-result \
+              -ex 'set pagination off' -ex 'set debuginfod enabled off' \
+              -ex run -ex 'thread apply all bt' \
+              --args python -u -X faulthandler -m unittest discover -s desktop/apps/neuro-manager/tests -v
+          fi
+          exit "$gtk_test_status"
 
       - name: Package the native Python and GTK runtime (Linux and macOS)
         if: runner.os != 'Windows'

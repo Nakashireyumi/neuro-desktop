@@ -869,12 +869,12 @@ func (n *NDIntegration) launchGame(profile *GameProfile) error {
 			profile.Name, key, strings.Join(sortedKeys(profile.Launch.Commands), ", "))
 	}
 
-	resp, err := n.sendToExecutor(IPCCommand{
+	resp, err := n.sendToExecutorForAction(IPCCommand{
 		Type:       CmdRunScript,
 		Params:     map[string]interface{}{"script": fmt.Sprintf("LAUNCH %s", command)},
 		ExecuteNow: true,
 		ClearAfter: true,
-	})
+	}, string(CmdGameLaunch))
 	if err != nil {
 		return fmt.Errorf("launch failed: %w", err)
 	}
@@ -924,12 +924,21 @@ func (n *NDIntegration) runGameObserve(request *gameObserveRequest) {
 		return
 	}
 
-	message, err := n.buildGameObservation(request.vision, request.prompt)
+	permit, err := n.observationPermit(CmdGameObserve)
+	if err != nil {
+		n.reportGameFailure(request.recordActionAs, err.Error())
+		return
+	}
+	message, err := n.buildGameObservationGuarded(request.vision, request.prompt, permit)
 	if err != nil {
 		n.reportGameFailure(request.recordActionAs, err.Error())
 		return
 	}
 
+	if err := permit.check(); err != nil {
+		n.reportGameFailure(request.recordActionAs, err.Error())
+		return
+	}
 	if err := n.client.SendContext(message, true); err != nil {
 		log.Printf("Failed to send game observation context: %v", err)
 	}
@@ -939,8 +948,22 @@ func (n *NDIntegration) runGameObserve(request *gameObserveRequest) {
 // buildGameObservation produces the text Neuro receives from game_observe. It is
 // also what the dashboard shows for "what would Neuro see right now".
 func (n *NDIntegration) buildGameObservation(vision bool, prompt string) (string, error) {
-	status, err := n.fetchDesktopStatus(true)
+	permit, err := n.observationPermit(CmdGameObserve)
 	if err != nil {
+		return "", err
+	}
+	return n.buildGameObservationGuarded(vision, prompt, permit)
+}
+
+func (n *NDIntegration) buildGameObservationGuarded(vision bool, prompt string, permit *observationPermit) (string, error) {
+	if err := permit.check(); err != nil {
+		return "", err
+	}
+	status, err := n.fetchDesktopStatusGuarded(vision && visionServerURL() != "", permit.check)
+	if err != nil {
+		return "", err
+	}
+	if err := permit.check(); err != nil {
 		return "", err
 	}
 
@@ -990,6 +1013,9 @@ func (n *NDIntegration) buildGameObservation(vision bool, prompt string) (string
 		}
 	}
 
+	if err := permit.check(); err != nil {
+		return "", err
+	}
 	return strings.Join(lines, "\n"), nil
 }
 

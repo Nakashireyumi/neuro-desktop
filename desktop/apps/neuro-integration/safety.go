@@ -28,6 +28,7 @@ import (
 // safeDuringStop are the actions that still run while paused or killed: they
 // release input and report state. Everything else is refused.
 var safeDuringStop = map[string]bool{
+	string(CmdClearActionQueue):   true,
 	string(CmdKeyReleaseAll):      true,
 	string(CmdGetStatus):          true,
 	string(CmdSendDesktopContext): true,

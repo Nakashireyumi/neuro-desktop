@@ -811,19 +811,21 @@ func (a *AdminServer) handleGameObserve(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var body struct {
-		Vision bool   `json:"vision"`
+		Vision *bool  `json:"vision"`
 		Prompt string `json:"prompt"`
 	}
 	if r.Body != nil {
-		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body)
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, "Use a JSON object with vision (boolean) and optional prompt.")
+			return
+		}
 	}
-	if !body.Vision && body.Prompt == "" {
-		// The zero value of a JSON body is "no vision"; the dashboard's default
-		// is to ask the vision server when one is configured.
-		body.Vision = visionServerURL() != ""
+	useVision := visionServerURL() != ""
+	if body.Vision != nil {
+		useVision = *body.Vision
 	}
 
-	message, err := a.integration.buildGameObservation(body.Vision, strings.TrimSpace(body.Prompt))
+	message, err := a.integration.buildGameObservation(useVision, strings.TrimSpace(body.Prompt))
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return

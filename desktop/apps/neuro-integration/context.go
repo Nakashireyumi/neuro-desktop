@@ -72,6 +72,10 @@ func toMap(raw interface{}) map[string]interface{} {
 }
 
 func (n *NDIntegration) fetchDesktopStatus(captureScreenshot bool) (map[string]interface{}, error) {
+	return n.fetchDesktopStatusGuarded(captureScreenshot)
+}
+
+func (n *NDIntegration) fetchDesktopStatusGuarded(captureScreenshot bool, guards ...func() error) (map[string]interface{}, error) {
 	cmd := IPCCommand{
 		Type: CmdGetStatus,
 		Params: map[string]interface{}{
@@ -84,7 +88,7 @@ func (n *NDIntegration) fetchDesktopStatus(captureScreenshot bool) (map[string]i
 		ClearAfter: false,
 	}
 
-	resp, err := n.sendToExecutor(cmd)
+	resp, err := n.sendToExecutor(cmd, guards...)
 	if err != nil {
 		return nil, fmt.Errorf("ipc error: %w", err)
 	}
@@ -164,13 +168,27 @@ func buildDesktopContextMessage(status map[string]interface{}, visionSummary str
 }
 
 func (n *NDIntegration) getDesktopContext(captureScreenshot bool) (string, error) {
-	status, err := n.fetchDesktopStatus(captureScreenshot)
+	permit, err := n.observationPermit(CmdGetDesktopContext)
 	if err != nil {
+		return "", err
+	}
+	return n.getDesktopContextGuarded(captureScreenshot, permit)
+}
+
+func (n *NDIntegration) getDesktopContextGuarded(captureScreenshot bool, permit *observationPermit) (string, error) {
+	if err := permit.check(); err != nil {
+		return "", err
+	}
+	status, err := n.fetchDesktopStatusGuarded(captureScreenshot, permit.check)
+	if err != nil {
+		return "", err
+	}
+	if err := permit.check(); err != nil {
 		return "", err
 	}
 
 	visionSummary := ""
-	if serverURL := visionServerURL(); serverURL != "" {
+	if serverURL := visionServerURL(); captureScreenshot && serverURL != "" {
 		shot, ok, shotErr := screenshotPNG(status)
 		if shotErr != nil {
 			log.Printf("Vision skipped: %v", shotErr)
@@ -184,15 +202,25 @@ func (n *NDIntegration) getDesktopContext(captureScreenshot bool) (string, error
 		}
 	}
 
+	if err := permit.check(); err != nil {
+		return "", err
+	}
 	return buildDesktopContextMessage(status, visionSummary), nil
 }
 
 func (n *NDIntegration) sendDesktopContext(captureScreenshot bool, silent bool) neuro.ExecutionResult {
-	message, err := n.getDesktopContext(captureScreenshot)
+	permit, err := n.observationPermit(CmdSendDesktopContext)
+	if err != nil {
+		return neuro.NewFailureResult(err.Error())
+	}
+	message, err := n.getDesktopContextGuarded(captureScreenshot, permit)
 	if err != nil {
 		return neuro.NewFailureResult(fmt.Sprintf("Failed to collect desktop context: %v", err))
 	}
 
+	if err := permit.check(); err != nil {
+		return neuro.NewFailureResult(err.Error())
+	}
 	if err := n.client.SendContext(message, silent); err != nil {
 		return neuro.NewFailureResult(fmt.Sprintf("Failed to send context: %v", err))
 	}

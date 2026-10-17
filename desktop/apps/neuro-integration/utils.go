@@ -77,7 +77,11 @@ func ipcTimeout() time.Duration {
 //
 // Commands the bridge handles itself are rejected here: a `switch` that forgot
 // one of them used to look exactly like an executor that silently did nothing.
-func (n *NDIntegration) sendToExecutor(cmd IPCCommand) (*IPCResponse, error) {
+func (n *NDIntegration) sendToExecutor(cmd IPCCommand, guards ...func() error) (*IPCResponse, error) {
+	return n.sendToExecutorForAction(cmd, "", guards...)
+}
+
+func (n *NDIntegration) sendToExecutorForAction(cmd IPCCommand, action string, guards ...func() error) (*IPCResponse, error) {
 	if !isExecutorCommand(cmd.Type) {
 		return nil, fmt.Errorf(
 			"%q is handled by the bridge, not by the executor (see executor_commands.go)",
@@ -88,11 +92,30 @@ func (n *NDIntegration) sendToExecutor(cmd IPCCommand) (*IPCResponse, error) {
 	n.ipcMu.Lock()
 	defer n.ipcMu.Unlock()
 
-	if n.executorHub != nil && n.executorHub.HasClient() {
-		return n.executorHub.SendCommand(cmd, ipcTimeout())
+	for _, guard := range guards {
+		if err := guard(); err != nil {
+			return nil, err
+		}
 	}
-
-	return n.sendToFileIPC(cmd)
+	additions, err := n.prepareExecutorDispatch(&cmd, action)
+	if err != nil {
+		return nil, err
+	}
+	// The executor may append successfully and then fail while draining. Keep
+	// conservative requirements until a confirmed clear, including on timeout.
+	n.executorQueue.merge(additions)
+	var response *IPCResponse
+	if n.executorHub != nil && n.executorHub.HasClient() {
+		response, err = n.executorHub.SendCommand(cmd, ipcTimeout())
+	} else {
+		response, err = n.sendToFileIPC(cmd)
+	}
+	if err == nil && response != nil && response.Success &&
+		(cmd.Type == CmdClearActionQueue || cmd.Type == CmdShutdownGracefully || cmd.Type == CmdShutdownImmediately ||
+			(queuesExecutorInput(cmd.Type) && cmd.ClearAfter)) {
+		n.executorQueue = scriptPermissions{}
+	}
+	return response, err
 }
 
 func (n *NDIntegration) sendToFileIPC(cmd IPCCommand) (*IPCResponse, error) {

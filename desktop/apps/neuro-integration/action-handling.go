@@ -148,7 +148,11 @@ func (n *NDIntegration) executeScriptIntent(script string) neuro.ExecutionResult
 		ClearAfter: true,
 	}
 
-	resp, err := n.sendToExecutor(cmd)
+	action := ""
+	if name, ok := scriptIntentAction(strings.ToUpper(script)); ok {
+		action = string(name)
+	}
+	resp, err := n.sendToExecutorForAction(cmd, action)
 	if err != nil {
 		return neuro.NewFailureResult(fmt.Sprintf("IPC error: %v", err))
 	}
