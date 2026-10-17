@@ -10,6 +10,7 @@ relies on:
 * headless machines refuse input actions instead of pretending to work.
 """
 
+import io
 import json
 import os
 import pathlib
@@ -28,6 +29,9 @@ from controller.agent import (  # noqa: E402
     EXECUTOR_COMMANDS,
     PROTOCOL_VERSION,
     Agent,
+    _read_line,
+    connect_role,
+    ipc_file_role,
     process_ipc_file,
     serve_session,
 )
@@ -100,6 +104,7 @@ class CommandCoverageTest(unittest.TestCase):
 
     def setUp(self):
         self.agent = Agent()
+        self.addCleanup(self.agent.close)
 
     def test_every_declared_command_is_dispatched(self):
         for name in EXECUTOR_COMMANDS:
@@ -197,8 +202,8 @@ class SessionTest(unittest.TestCase):
     def _bridge(self, conn, token_ok=True, commands=None):
         """Act as the Go bridge on the other end of a socket pair."""
         conn.settimeout(10)
-        reader = conn.makefile("r", encoding="utf-8", newline="\n")
-        hello = json.loads(reader.readline())
+        with conn.makefile("r", encoding="utf-8", newline="\n") as reader:
+            hello = json.loads(reader.readline())
         self.assertEqual(hello["type"], "hello")
         self.assertEqual(hello["role"], "executor")
         self.assertEqual(hello["version"], PROTOCOL_VERSION)
@@ -290,8 +295,101 @@ class SessionTest(unittest.TestCase):
         result = json.loads(reader.readline())
         self.assertEqual(result["id"], "ok")
         self.assertTrue(result["success"])
+        reader.close()
+        bridge.shutdown(socket.SHUT_WR)
         bridge.close()
         thread.join(timeout=5)
+        self.assertFalse(thread.is_alive(), "the malformed-frame test must close its session")
+
+
+class FrameBoundsTest(unittest.TestCase):
+    def test_newline_terminated_and_unterminated_frames_obey_byte_limit(self):
+        for raw in (b"123456789\n", b"123456789", "é" * 5 + "\n"):
+            with self.subTest(raw=raw), mock.patch("controller.agent.MAX_LINE_BYTES", 8):
+                stream = io.BytesIO(raw) if isinstance(raw, bytes) else io.StringIO(raw)
+                with self.assertRaisesRegex(ValueError, "frame too large"):
+                    _read_line(stream)
+        with mock.patch("controller.agent.MAX_LINE_BYTES", 8):
+            self.assertEqual(_read_line(io.BytesIO(b"1234567\n")), "1234567\n")
+            self.assertEqual(_read_line(io.BytesIO(b"last")), "last")
+            self.assertIsNone(_read_line(io.BytesIO(b"")))
+
+    def test_invalid_utf8_is_rejected(self):
+        with self.assertRaises(UnicodeError):
+            _read_line(io.BytesIO(b"\xff\n"))
+
+
+class SessionLifecycleTest(unittest.TestCase):
+    class Connection:
+        def __init__(self, frames):
+            self.reader = io.BytesIO(frames)
+            self.closed = False
+
+        def makefile(self, mode):
+            self.assert_mode = mode
+            return self.reader
+
+        def settimeout(self, timeout):
+            pass
+
+        def sendall(self, data):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    def test_every_session_exit_closes_reader_and_agent(self):
+        for frames, error in ((b'{"type":"hello_ack"}\n', None),
+                              (b'{"type":"hello_nack","error":"invalid token"}\n', PermissionError),
+                              (b'[]\n', ConnectionError),
+                              (b'null\n', ConnectionError),
+                              (b'not-json\n', ValueError), (b'', ConnectionError)):
+            with self.subTest(frames=frames):
+                connection = self.Connection(frames)
+                controlled = mock.Mock(spec=Agent)
+                if error:
+                    with self.assertRaises(error):
+                        serve_session(connection, controlled, "test")
+                else:
+                    self.assertFalse(serve_session(connection, controlled, "test"))
+                self.assertTrue(connection.reader.closed)
+                controlled.close.assert_called_once_with()
+
+    def test_oversized_authenticated_frame_closes_session_resources(self):
+        connection = self.Connection(b'{"type":"hello_ack"}\n' + b'x' * 65 + b'\n')
+        controlled = mock.Mock(spec=Agent)
+        with mock.patch("controller.agent.MAX_LINE_BYTES", 64):
+            with self.assertRaisesRegex(ValueError, "frame too large"):
+                serve_session(connection, controlled, "test")
+        self.assertTrue(connection.reader.closed)
+        controlled.close.assert_called_once_with()
+
+    def test_rejected_authentication_never_retries(self):
+        connection = self.Connection(b'{"type":"hello_nack","error":"invalid token"}\n')
+        controlled = mock.Mock(spec=Agent)
+        with mock.patch("controller.agent.socket.create_connection", return_value=connection) as connect, \
+                mock.patch("controller.agent.Agent", return_value=controlled), \
+                mock.patch("controller.agent.time.sleep") as sleep:
+            self.assertEqual(connect_role("localhost:9876", "wrong", once=False), 1)
+        connect.assert_called_once()
+        sleep.assert_not_called()
+        self.assertTrue(connection.closed)
+
+    def test_file_shutdown_exits_even_without_once(self):
+        controlled = mock.Mock(spec=Agent)
+        with mock.patch("controller.agent.Agent", return_value=controlled), \
+                mock.patch("controller.agent.process_ipc_file", return_value=True) as handle:
+            self.assertEqual(ipc_file_role("ignored", once=False), 0)
+        handle.assert_called_once()
+        controlled.close.assert_called_once_with()
+
+    def test_file_loop_error_closes_agent(self):
+        controlled = mock.Mock(spec=Agent)
+        with mock.patch("controller.agent.Agent", return_value=controlled), \
+                mock.patch("controller.agent.process_ipc_file", side_effect=OSError("test failure")):
+            with self.assertRaises(OSError):
+                ipc_file_role("ignored")
+        controlled.close.assert_called_once_with()
 
 
 class FileIpcTest(unittest.TestCase):
@@ -303,6 +401,7 @@ class FileIpcTest(unittest.TestCase):
         self.path = os.path.join(self.tmp.name, "ipc.json")
         self.response = self.path + ".response"
         self.agent = Agent()
+        self.addCleanup(self.agent.close)
 
     def test_nothing_pending_returns_none(self):
         self.assertIsNone(process_ipc_file(self.path, self.response, self.agent))
@@ -330,6 +429,146 @@ class FileIpcTest(unittest.TestCase):
             payload = json.load(handle)
         self.assertFalse(payload["success"])
         self.assertIn("invalid command JSON", payload["error"])
+        self.assertFalse(list(pathlib.Path(self.tmp.name).glob(".ipc.json.claimed-*")))
+
+    def test_file_rejects_nonobject_and_oversized_commands(self):
+        for raw in (b"[]", b"1", b"{\"type\":\"get_status\"}" + b" " * 100):
+            with self.subTest(raw=raw), mock.patch("controller.agent.MAX_LINE_BYTES", 64):
+                pathlib.Path(self.path).write_bytes(raw)
+                self.assertFalse(process_ipc_file(self.path, self.response, self.agent))
+                payload = json.loads(pathlib.Path(self.response).read_text())
+                self.assertFalse(payload["success"], payload)
+
+    def test_rejected_command_echoes_file_correlation_identifiers(self):
+        command = {"type": "type_text", "execution_session": "a" * 64, "request_id": "9"}
+        pathlib.Path(self.path).write_text(json.dumps(command))
+        self.assertFalse(process_ipc_file(self.path, self.response, self.agent))
+        payload = json.loads(pathlib.Path(self.response).read_text())
+        self.assertFalse(payload["success"], payload)
+        self.assertEqual(payload["execution_session"], command["execution_session"])
+        self.assertEqual(payload["request_id"], "9")
+
+    def test_unclaimed_command_cannot_execute_on_the_next_poll(self):
+        command = {"type": "get_status", "execution_session": "a" * 64, "request_id": "9"}
+        pathlib.Path(self.path).write_text(json.dumps(command))
+        with mock.patch("controller.agent.os.replace", side_effect=PermissionError("test read-only directory")), \
+                mock.patch.object(self.agent, "execute") as execute:
+            for _ in range(2):
+                self.assertIsNone(process_ipc_file(self.path, self.response, self.agent))
+                self.assertFalse(os.path.exists(self.response))
+                self.assertEqual(json.loads(pathlib.Path(self.path).read_text()), command)
+                self.assertFalse(list(pathlib.Path(self.tmp.name).glob(".ipc.json.claimed-*")))
+        execute.assert_not_called()
+
+    def test_replacement_request_before_claim_is_read_instead_of_timed_out_work(self):
+        first = {"type": "get_status", "execution_session": "old", "request_id": "1"}
+        replacement = {"type": "get_status", "execution_session": "new", "request_id": "2"}
+        pathlib.Path(self.path).write_text(json.dumps(first))
+        replace = os.replace
+
+        def replace_after_timeout(source, destination):
+            if source == self.path:
+                # The bridge cancels request 1 and publishes request 2 before
+                # the agent has claimed either one.
+                pathlib.Path(self.path).unlink()
+                pathlib.Path(self.path).write_text(json.dumps(replacement))
+            return replace(source, destination)
+
+        with mock.patch("controller.agent.os.replace", side_effect=replace_after_timeout), \
+                mock.patch.object(self.agent, "execute", return_value={"success": True}) as execute:
+            self.assertFalse(process_ipc_file(self.path, self.response, self.agent))
+        execute.assert_called_once_with(replacement)
+        self.assertEqual(json.loads(pathlib.Path(self.response).read_text())["request_id"], "2")
+        self.assertFalse(list(pathlib.Path(self.tmp.name).glob(".ipc.json.claimed-*")))
+
+    def test_new_request_after_claim_survives_old_request_cleanup(self):
+        first = {"type": "get_status", "execution_session": "old", "request_id": "1"}
+        replacement = {"type": "get_status", "execution_session": "new", "request_id": "2"}
+        pathlib.Path(self.path).write_text(json.dumps(first))
+        opening = open
+        configured_path = self.path
+
+        class ReplaceAfterRead:
+            def __init__(self, path):
+                self.path = path
+
+            def __enter__(self):
+                self.handle = opening(self.path, "rb")
+                return self.handle
+
+            def __exit__(self, *arguments):
+                self.handle.close()
+                # Request 1 was already claimed. Go may time out and publish
+                # request 2 while the executor finishes reading its own file.
+                pathlib.Path(configured_path).write_text(json.dumps(replacement))
+
+        def open_then_replace(path, mode="r", *arguments, **options):
+            if mode == "rb" and pathlib.Path(path).name.startswith(".ipc.json.claimed-"):
+                return ReplaceAfterRead(path)
+            return opening(path, mode, *arguments, **options)
+
+        with mock.patch("builtins.open", side_effect=open_then_replace), \
+                mock.patch.object(self.agent, "execute", return_value={"success": True}) as execute:
+            self.assertFalse(process_ipc_file(self.path, self.response, self.agent))
+        execute.assert_called_once_with(first)
+        self.assertEqual(json.loads(pathlib.Path(self.path).read_text()), replacement)
+        self.assertEqual(json.loads(pathlib.Path(self.response).read_text())["request_id"], "1")
+        self.assertFalse(list(pathlib.Path(self.tmp.name).glob(".ipc.json.claimed-*")))
+        # The preserved replacement can be consumed exactly once on the next poll.
+        with mock.patch.object(self.agent, "execute", return_value={"success": True}) as execute:
+            self.assertFalse(process_ipc_file(self.path, self.response, self.agent))
+            self.assertIsNone(process_ipc_file(self.path, self.response, self.agent))
+        execute.assert_called_once_with(replacement)
+
+    def test_symlink_command_is_preserved_without_reading_or_execution(self):
+        target = pathlib.Path(self.tmp.name) / "private.json"
+        target.write_text('{"type":"get_status"}')
+        try:
+            os.symlink(target, self.path)
+        except OSError as error:
+            self.skipTest(f"symlink creation unavailable: {error}")
+        with mock.patch.object(self.agent, "execute") as execute:
+            self.assertIsNone(process_ipc_file(self.path, self.response, self.agent))
+        self.assertTrue(pathlib.Path(self.path).is_symlink())
+        self.assertEqual(target.read_text(), '{"type":"get_status"}')
+        execute.assert_not_called()
+
+    def test_response_write_does_not_follow_preexisting_temporary_symlink(self):
+        target = pathlib.Path(self.tmp.name) / "private.txt"
+        target.write_text("private fixture contents")
+        old_temporary = self.response + ".tmp"
+        try:
+            os.symlink(target, old_temporary)
+        except OSError as error:
+            self.skipTest(f"symlink creation unavailable: {error}")
+        pathlib.Path(self.path).write_text('{"type":"get_status"}')
+        self.assertFalse(process_ipc_file(self.path, self.response, self.agent))
+        self.assertTrue(json.loads(pathlib.Path(self.response).read_text())["success"])
+        self.assertEqual(target.read_text(), "private fixture contents")
+        self.assertTrue(pathlib.Path(old_temporary).is_symlink())
+        self.assertFalse(list(pathlib.Path(self.tmp.name).glob(".ipc.json.response.tmp-*")))
+
+    def test_response_replace_failure_cleans_own_temporary_without_replaying_command(self):
+        command = {"type": "get_status", "execution_session": "test", "request_id": "1"}
+        pathlib.Path(self.path).write_text(json.dumps(command))
+        original_response = '{"success":true,"request_id":"older"}'
+        pathlib.Path(self.response).write_text(original_response)
+        replace = os.replace
+
+        def fail_response_replace(source, destination):
+            if destination == self.response:
+                raise PermissionError("test response cannot be replaced")
+            return replace(source, destination)
+
+        with mock.patch("controller.agent.os.replace", side_effect=fail_response_replace), \
+                mock.patch.object(self.agent, "execute", return_value={"success": True}) as execute:
+            with self.assertRaisesRegex(PermissionError, "cannot be replaced"):
+                process_ipc_file(self.path, self.response, self.agent)
+            self.assertIsNone(process_ipc_file(self.path, self.response, self.agent))
+        execute.assert_called_once_with(command)
+        self.assertEqual(pathlib.Path(self.response).read_text(), original_response)
+        self.assertFalse(list(pathlib.Path(self.tmp.name).glob(".ipc.json.claimed-*")))
+        self.assertFalse(list(pathlib.Path(self.tmp.name).glob(".ipc.json.response.tmp-*")))
 
     def test_shutdown_is_reported_to_the_loop(self):
         with open(self.path, "w", encoding="utf-8") as handle:

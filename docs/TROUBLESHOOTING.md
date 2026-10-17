@@ -45,6 +45,8 @@ These come from the executor, which is the agent on the desktop.
 | `invalid or missing executor token` (in the server log) | the agent's token does not match | set the same `NEURO_EXECUTOR_TOKEN` on both sides |
 | `timeout waiting for executor response (no TCP client; file IPC timed out)` | the agent is not connected and file IPC has no reader | start the agent on this machine, or connect it over TCP |
 | `failed to write IPC command file` | the file IPC directory is not writable | fix `NEURO_IPC_FILE`'s directory permissions |
+| `file IPC client does not support execution_session/request_id` | the file client predates request correlation | update `neuro-client` and the server from the same release; TCP is the preferred transport |
+| an occupied IPC path stops startup or dispatch | a pending file exists, possibly from another running bridge | stop both programs and inspect the file before removing abandoned work, or select a separate `NEURO_IPC_FILE` path; see the [protocol guide](EXECUTOR_PROTOCOL.md#file-ipc) |
 
 If an action keeps failing, call `desktop_guide` first. It explains what to try, and
 it is always allowed.

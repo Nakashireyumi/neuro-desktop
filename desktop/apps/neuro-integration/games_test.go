@@ -221,9 +221,14 @@ func TestSessionRateLimit(t *testing.T) {
 
 func TestDetectionCacheExpiry(t *testing.T) {
 	runtime := newGameRuntime(&GameRegistry{})
-	runtime.setDetection(GameDetected{Profile: &GameProfile{ID: "minecraft"}, MatchedOn: "process"})
+	n := &NDIntegration{games: runtime, permissions: defaultPermissionPolicy()}
+	permit, err := n.observationPermit(CmdGameDetect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.setDetection(GameDetected{Profile: &GameProfile{ID: "minecraft"}, MatchedOn: "process"}, permit)
 
-	if _, ok := runtime.cachedDetection(); !ok {
+	if _, ok := runtime.cachedDetection(permit); !ok {
 		t.Fatal("a fresh detection should be cached")
 	}
 
@@ -231,7 +236,7 @@ func TestDetectionCacheExpiry(t *testing.T) {
 	runtime.lastDetectionAt = time.Now().Add(-2 * gameDetectionTTL)
 	runtime.mu.Unlock()
 
-	if _, ok := runtime.cachedDetection(); ok {
+	if _, ok := runtime.cachedDetection(permit); ok {
 		t.Fatal("an expired detection must not be reused")
 	}
 }

@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 
 def show_policy(app, item_id):
-    from .app import box, label, button, text_view, Gtk
+    from .app import box, label, button, credential_entry, text_view, Gtk
 
     client = app.client
     if not client:
@@ -35,7 +35,7 @@ def show_policy(app, item_id):
         scroll, settings = text_view(json.dumps(policy.get("settings") or {}, indent=2), editable=True, height=100)
         content.append(scroll)
         content.append(label("Re-enter your operator token to approve these changes. Your sign-in token is never filled in here.", "nd-muted"))
-        token = Gtk.PasswordEntry(show_peek_icon=True)
+        token = credential_entry()
         content.append(token)
         message = label()
         content.append(message)

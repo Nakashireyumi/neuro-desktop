@@ -350,6 +350,8 @@ jobs:
           python -u -X faulthandler -m unittest discover -s desktop/apps/neuro-manager/tests -v
           gtk_test_status=$?
           if [ "$gtk_test_status" -ne 0 ]; then
+            echo 'Probe the failing view test with one application in a fresh process'
+            python -u -X faulthandler -m unittest desktop/apps/neuro-manager/tests/test_native.py -k test_native_views_controls_and_unsaved_policy -v
             gdb --batch --return-child-result \
               -ex 'set pagination off' -ex 'set debuginfod enabled off' \
               -ex run -ex 'thread apply all bt' \
@@ -449,6 +451,20 @@ jobs:
 
       - name: SDK tests against the installed wheel
         run: python -m unittest discover -s ecosystem/neuro-desktop-sdk/tests -v
+
+      - name: Setup Go for the real SDK/server contract
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache-dependency-path: desktop/apps/neuro-integration/go.sum
+
+      - name: Test the installed SDK against the real isolated server
+        shell: bash
+        run: |
+          server="$RUNNER_TEMP/nd-sdk-contract-server"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then server="$server.exe"; fi
+          (cd desktop/apps/neuro-integration && go build -o "$server" .)
+          python desktop/tools/ci/sdk_contract_smoke.py --server-binary "$server"
 
       - name: Existing Minecraft and osu adapter manifest examples
         run: |

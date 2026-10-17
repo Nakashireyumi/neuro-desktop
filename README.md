@@ -48,10 +48,14 @@ See **[docs/CAPABILITIES.md](docs/CAPABILITIES.md)** for an honest “what works
 
 ## Architecture
 
-Neuro Desktop runs as **three programs** and a web page. Per the
+Neuro Desktop has a native manager, server, controlled-PC client and optional web
+dashboard. Per the
 [Neuro SDK](https://github.com/VedalAI/neuro-sdk), the server is a WebSocket
 **client** of Neuro's API server. Internally:
 
+- **Native manager** — `neuro-manager` (GTK 4) runs independently, shows its own
+  startup splash and uses the server's authenticated management API. It can run
+  on the same PC or connect from your administration desktop.
 - **Server** — `neuro-integration` (Go) talks to Neuro, owns the permission
   policy, audit log, game catalog, relay link and vision client, serves the dashboard,
   and listens for clients on TCP `:9876` (or uses file IPC on the same machine).
@@ -113,7 +117,13 @@ run `ssh -L 9876:127.0.0.1:9876 user@<server>` on the agent PC and point the age
 The same machine is the default: run the agent with no arguments (loopback hub)
 or point `NEURO_IPC_FILE` at a shared path for file IPC.
 
-### Operator dashboard
+### Operator manager and dashboard
+
+The bundle opens the native GTK manager. Its **Marketplace** tab connects SDK
+adapters and offers reviewed source listings; **Extensions** manages the signed
+runtime catalog. Follow the [manager setup](desktop/apps/neuro-manager/README.md)
+to approve an integration, create a scoped token, or give Neuro/Evil a restricted
+manager sign-in.
 
 The bridge serves the dashboard itself — no separate server, no `file://` page:
 
@@ -123,6 +133,8 @@ http://127.0.0.1:8300/ui/
 
 - **Extensions** — install / enable / disable / uninstall from the catalog
   (`desktop/catalog/index.json`), with the install mode (metadata, git clone, MCP).
+- **Marketplace** — reviewed, commit-pinned game/application source and connected
+  SDK adapters. Source downloads still need the upstream installation steps.
 - **Games** — profiles found on this machine, the game detected right now, the live
   session (mode, actions issued), "show me what Neuro sees", and a
   **release all input** panic button.
@@ -580,6 +592,11 @@ Randy will send random actions to test your integration.
 
 ## Documentation
 
+- [Native Manager Setup](desktop/apps/neuro-manager/README.md) — registration, approvals and scoped tokens
+- [Development and Release Workflow](docs/WORKFLOW.md) — repositories, catalog updates, checks and releases
+- [Delegated Manager Sessions](docs/DELEGATED_MANAGER.md) — let Neuro/Evil manage approved integrations
+- [Extension Permissions](docs/EXTENSION_PERMISSIONS.md) — management, runtime capabilities and settings
+- [Integration SDK](https://github.com/cassitly/neuro-desktop-sdk) and [Vencord Adapter](https://github.com/cassitly/neuro-desktop-vencord) — separate source and setup guides
 - ✅ [Current Capabilities](docs/CAPABILITIES.md) — what works today (honest)
 - 🐣 [Driving it with a small/weak model](docs/LLM_GUIDE.md) — prompting tactics and parameter shapes
 - 🛡️ [Safety systems and firewalls](docs/SAFETY.md) — every guard, where it lives, how to verify it

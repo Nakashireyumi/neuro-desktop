@@ -12,14 +12,16 @@ type CommandType string
 
 type NDIntegration struct {
 	// rate enforces the per-scope actions-per-minute budgets from the policy.
-	rate            actionRateLimiter
-	client          *neuro.Client
-	ipcFilePath     string
-	permissionsPath string
-	executorHub     *ExecutorHub
-	done            chan struct{}
-	doneOnce        sync.Once
-	ipcMu           sync.Mutex
+	rate                actionRateLimiter
+	client              *neuro.Client
+	ipcFilePath         string
+	permissionsPath     string
+	executorHub         *ExecutorHub
+	done                chan struct{}
+	doneOnce            sync.Once
+	ipcMu               sync.Mutex
+	executionSession    string
+	fileRequestSequence uint64
 	// executorQueue tracks permissions of retained executor instructions. Only
 	// ipcMu reads/writes it, alongside serialized transport dispatch.
 	executorQueue   scriptPermissions
@@ -66,17 +68,21 @@ type NDIntegration struct {
 
 // IPCCommand is one command for the executor.
 type IPCCommand struct {
-	Type       CommandType            `json:"type"`
-	Params     map[string]interface{} `json:"params,omitempty"`
-	ExecuteNow bool                   `json:"execute_now"`
-	ClearAfter bool                   `json:"clear_after"`
+	Type             CommandType            `json:"type"`
+	Params           map[string]interface{} `json:"params,omitempty"`
+	ExecuteNow       bool                   `json:"execute_now"`
+	ClearAfter       bool                   `json:"clear_after"`
+	ExecutionSession string                 `json:"execution_session,omitempty"`
+	RequestID        string                 `json:"request_id,omitempty"`
 }
 
 // IPCResponse is the executor's answer to one command.
 type IPCResponse struct {
-	Success bool                   `json:"success"`
-	Data    map[string]interface{} `json:"data,omitempty"`
-	Error   string                 `json:"error,omitempty"`
+	Success          bool                   `json:"success"`
+	Data             map[string]interface{} `json:"data,omitempty"`
+	Error            string                 `json:"error,omitempty"`
+	ExecutionSession string                 `json:"execution_session,omitempty"`
+	RequestID        string                 `json:"request_id,omitempty"`
 }
 
 func (n *NDIntegration) policy() *PermissionPolicy {

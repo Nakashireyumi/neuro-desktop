@@ -12,7 +12,7 @@ The native manager is a separate GTK application with its own startup splash. Th
 | Working fork | [cassitly/neuro-desktop](https://github.com/cassitly/neuro-desktop) |
 | Current development PR | [Fork #6](https://github.com/cassitly/neuro-desktop/pull/6), feature branch into fork `dev` |
 | Existing upstream development PR | [Upstream #28](https://github.com/Nakashireyumi/neuro-desktop/pull/28), fork `dev` into upstream `dev/latest` |
-| Canonical marketplace directory | Upstream application's separate `catalog` branch |
+| Canonical marketplace directory | [Upstream `catalog` branch](https://github.com/Nakashireyumi/neuro-desktop/tree/catalog) |
 | Standalone integration SDK | [cassitly/neuro-desktop-sdk](https://github.com/cassitly/neuro-desktop-sdk) |
 | Standalone Discord viewer adapter/plugin | [cassitly/neuro-desktop-vencord](https://github.com/cassitly/neuro-desktop-vencord) |
 
@@ -57,6 +57,14 @@ PYTHONPATH=desktop/apps/neuro-manager NEURO_MANAGER_GUI_TESTS=1 /usr/bin/python3
 
 Select the GTK-compatible Python described in the [manager README](../desktop/apps/neuro-manager/README.md); `/usr/bin/python3` above is a Linux example. Windows uses the PowerShell build scripts and MSYS2's matching GTK/Python for the manager. The controller's CPython environment stays separate from the manager's GTK environment.
 
+The Windows GTK job gates on the ordinary full-suite run. A fresh-process view
+probe and GDB retry run only after failure and cannot turn that failure into a
+pass. When diagnosing a native crash, retain the initial exit status and compare
+both runs; a debugger can change timing. Credential fields select GTK's simple
+input method on Windows, while ordinary text inputs retain their configured IME.
+This targeted workaround still needs the native Windows CI result for the exact
+commit; a Linux regression pass alone does not establish that the crash is fixed.
+
 CI's **Release gate (every required job succeeded)** is the required aggregate result. It fails if a required job fails or is skipped, including platform builds, native manager controls, real executor transport, SDK/Vencord checks, catalog trust, relay, vision, and bundles. Requiring this gate on maintained branches makes partial green results easier to identify.
 
 ## Add an integration or marketplace listing
@@ -68,6 +76,25 @@ For an existing Minecraft, osu!, or private integration, add a local SDK manifes
 For a marketplace update, work on a feature branch based on the canonical `catalog` branch and submit a PR back to `catalog`. Review the exact upstream commit, its license and prerequisites, then update the source entry and commit-pinned instructions. Run the directory's validator and tests in that branch. Keep platform results explicitly unverified until tested. See the [marketplace guide](MARKETPLACE.md).
 
 Application releases carry the reviewed snapshot at `desktop/catalog/marketplace.json`. Updating that snapshot is a separate reviewed application change; record the canonical catalog commit in its PR. A mutable upstream branch or repository URL is not a source pin. Fetch SDK, Vencord, and catalog validation sources at their reviewed full commit IDs in CI. The application working tree ignores local `ecosystem/` and `marketplace/` checkouts so those remain separate repositories/branch content.
+
+Use a separate checkout of `catalog` when changing its metadata. In that checkout,
+run `python3 marketplace/validate.py` and
+`python3 -m unittest discover -s marketplace/tests`. After review, copy the files
+listed in the application's `desktop/catalog/snapshot.json`, update its full
+catalog commit and the matching CI checkout pin, then verify from the application
+checkout:
+
+```sh
+python3 desktop/tools/ci/check_catalog_snapshot.py /path/to/catalog-checkout
+```
+
+The SDK and Vencord source repositories have their own tests and CI. Follow their
+READMEs to install the SDK wheel or build the Vencord userplugin; neither package
+is automatically installed by adding a marketplace listing. Application CI checks
+their reviewed revisions separately and also exercises the installed SDK against
+an isolated real server with `desktop/tools/ci/sdk_contract_smoke.py`. That check
+covers approval denial, manifest round trips, readiness leases, curated activity,
+revocation and shutdown without a private backend or desktop input.
 
 A source listing does not install game assets, run an installer, certify a build, or grant permissions. Managed source staging fetches only an approved pinned commit and executes no setup script. Runtime entries in the signed catalog, publishers, and permission policies remain separate from the source directory. Re-sign a managed entry after changing signed fields; display-only compatibility wording does not modify the original signed Memory entry.
 

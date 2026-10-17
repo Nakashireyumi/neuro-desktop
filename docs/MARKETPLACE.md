@@ -44,7 +44,10 @@ replace the trusted publisher keys when refreshing metadata.
 ## Initial source listings
 
 All eight requested repositories are present in
-[`marketplace/index.json`](../marketplace/index.json). This review inspected
+the shipped [`desktop/catalog/marketplace.json`](../desktop/catalog/marketplace.json)
+snapshot. Its source and validator live on the independent
+[`catalog` branch](https://github.com/Nakashireyumi/neuro-desktop/tree/catalog).
+This review inspected
 public source metadata and documentation on 2026-10-15; it did not run the games.
 
 | Listing | Required setup and limits |
@@ -61,10 +64,12 @@ public source metadata and documentation on 2026-10-15; it did not run the games
 ## SDK and adapter boundary
 
 Use the [official Neuro API](https://github.com/VedalAI/neuro-sdk/blob/main/API/SPECIFICATION.md)
-for game actions and context. A Neuro Desktop SDK should complement it with a
-versioned manifest, configuration mapping, lifecycle health and Games tab
-association. It should not require integration authors to implement a competing
-action protocol or expose their private backend.
+for game actions and context. The separate
+[Neuro Desktop SDK](https://github.com/cassitly/neuro-desktop-sdk) adds a versioned
+manifest, scoped configuration, lifecycle health and Games tab association.
+Existing integrations keep their action protocol and private backend. Follow the
+[workflow](WORKFLOW.md#add-an-integration-or-marketplace-listing) to register an
+adapter and test its readiness, grants and revocation against the server.
 
 For a managed integration, the adapter needs:
 
@@ -106,10 +111,14 @@ UI cannot grant her additional powers.
 Grant management separately from an extension's runtime abilities. An extension
 may need only a local connection and game state; another may edit files, launch
 processes, manage Docker or publish viewer activity. Review those independently.
-Bind approval to the extension version/manifest digest and require review when
-new capabilities are added. Revoking a grant should stop affected managed
-processes and withdraw their actions. Log installation and grant changes without
-tokens, secret settings or private message contents.
+Current grants are keyed by item ID; a newly required capability blocks runtime
+until you grant it. SDK manifests do not yet bind approval to a version/digest,
+so review manifest replacements explicitly. Signed runtime entries and pinned
+source commits provide separate distribution checks. Revoking runtime permission
+stops affected managed MCP services and clears adapter readiness and viewer
+sharing; separately installed applications remain under their own process and
+permission controls. Installation and grant changes are audited without tokens,
+secret settings or private message contents.
 
 Index capabilities are **review notes inferred from source**, not claims that
 upstream authors adopted an SDK manifest or that Neuro Desktop enforces those

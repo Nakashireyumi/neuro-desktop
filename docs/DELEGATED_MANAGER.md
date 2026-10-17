@@ -5,6 +5,26 @@ It has its own short-lived credential and cannot change permissions, approve
 requests, edit extension settings, resume your pause, mint tokens or read the
 audit log. Your operator token must stay outside the desktop session she controls.
 
+In the native manager:
+
+1. Sign in with your operator token and approve the global scopes and per-item
+   management/runtime permissions you intend to delegate.
+2. Open **Status → Create Neuro/Evil manager sign-in…**. The JSON editor defaults
+   to `{"minutes":60,"persona":"neuro"}`; change the persona to `evil` if needed.
+   Enter your operator token in the approval field and choose **Approve and apply**.
+3. Copy the returned `token` once. Closing the dialog clears its output. Sign out
+   of the operator manager on the controlled desktop, then sign in there using
+   the delegated token and the same server origin.
+4. To end access early, use **Status → Revoke delegated sign-in…** in your
+   operator session and re-enter your operator token. You can run that manager
+   from another desktop or forward its server connection over SSH.
+
+The delegated native manager hides **Permissions**, **Activity**, credential
+creation and integration-registration controls. You can pause or release input
+from it; resuming an operator pause still requires your operator session.
+
+For a tool you operate directly, the equivalent API contract follows.
+
 Sign in as the operator, then create a session with
 `POST /api/delegation/token`, a fresh `X-ND-Operator-Token` entry and an optional
 JSON body such as `{"minutes":60,"persona":"neuro"}`. Use `evil` for Evil's

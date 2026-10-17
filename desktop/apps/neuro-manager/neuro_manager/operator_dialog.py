@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 
 def json_action(app, title, path, body, *, method="POST", description=""):
-    from .app import box, label, button, text_view, Gtk
+    from .app import box, label, button, credential_entry, text_view, Gtk
 
     if not app.client or app.session_role != "operator":
         return
@@ -17,7 +17,7 @@ def json_action(app, title, path, body, *, method="POST", description=""):
     scroll, editor = text_view(json.dumps(body, indent=2), editable=True, height=180)
     content.append(scroll)
     content.append(label("Re-enter your operator token to approve this change.", "nd-muted"))
-    token = Gtk.PasswordEntry(show_peek_icon=True)
+    token = credential_entry()
     content.append(token)
     message = label()
     content.append(message)

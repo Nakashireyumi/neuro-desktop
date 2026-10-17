@@ -735,11 +735,16 @@ func (a *AdminServer) handleGames(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	var detected *GameDetected
-	if a.integration.executorHub != nil && a.integration.executorHub.HasClient() {
-		value, err := a.integration.detectGame(true)
+	permit, permitErr := a.integration.observationPermit(CmdGameDetect)
+	if permitErr == nil && a.integration.executorHub != nil && a.integration.executorHub.HasClient() {
+		value, err := a.integration.detectGameGuarded(true, permit)
 		if err == nil {
 			detected = &value
 		}
+	}
+	integrations := a.integration.adapterSnapshot()
+	if detected != nil && permit.check() != nil {
+		detected = nil
 	}
 
 	writeJSON(w, map[string]interface{}{
@@ -748,7 +753,7 @@ func (a *AdminServer) handleGames(w http.ResponseWriter, _ *http.Request) {
 		"registry_source": a.integration.games.RegistrySource(),
 		"detected":        detected,
 		"session":         a.integration.games.Session(),
-		"integrations":    a.integration.adapterSnapshot(),
+		"integrations":    integrations,
 	})
 }
 

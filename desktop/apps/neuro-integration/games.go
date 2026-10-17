@@ -412,9 +412,10 @@ type GameRuntime struct {
 	session  *GameSession
 	// lastDetection caches the desktop snapshot so `game_detect` cannot be used
 	// to hammer the executor with get_status calls.
-	lastDetection    GameDetected
-	lastDetectionAt  time.Time
-	actionTimestamps []time.Time
+	lastDetection       GameDetected
+	lastDetectionAt     time.Time
+	lastDetectionPermit *observationPermit
+	actionTimestamps    []time.Time
 }
 
 const gameDetectionTTL = 5 * time.Second
@@ -550,7 +551,7 @@ func (g *GameRuntime) rateLimited(limitPerMinute int) bool {
 	return len(kept) >= limitPerMinute
 }
 
-func (g *GameRuntime) setDetection(detected GameDetected) {
+func (g *GameRuntime) setDetection(detected GameDetected, permit *observationPermit) {
 	if g == nil {
 		return
 	}
@@ -558,18 +559,23 @@ func (g *GameRuntime) setDetection(detected GameDetected) {
 	defer g.mu.Unlock()
 	g.lastDetection = detected
 	g.lastDetectionAt = time.Now()
+	g.lastDetectionPermit = permit
 }
 
-func (g *GameRuntime) cachedDetection() (GameDetected, bool) {
+// Cached metadata is private observation data too. Its original approval must
+// still be current; a replacement grant/policy starts a new observation.
+func (g *GameRuntime) cachedDetection(permit *observationPermit) (GameDetected, bool) {
 	if g == nil {
 		return GameDetected{}, false
 	}
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.lastDetection.Profile == nil || time.Since(g.lastDetectionAt) > gameDetectionTTL {
+	detected, at, origin := g.lastDetection, g.lastDetectionAt, g.lastDetectionPermit
+	g.mu.Unlock()
+	if detected.Profile == nil || time.Since(at) > gameDetectionTTL || origin == nil || permit == nil ||
+		origin.check() != nil || permit.check() != nil {
 		return GameDetected{}, false
 	}
-	return g.lastDetection, true
+	return detected, true
 }
 
 // inputAllowed decides whether Neuro Desktop may inject input for a game

@@ -4,7 +4,12 @@ No input, process launch or shell command reaches the test machine. These tests
 cover observable ordering and atomic preflight rather than parser internals.
 """
 
+import io
+import json
 import pathlib
+import socket
+import tempfile
+import threading
 import sys
 import unittest
 from unittest import mock
@@ -69,6 +74,7 @@ class ScriptExecutionTests(unittest.TestCase):
         self.parser = actions.ActionParser(self.keyboard, self.mouse, monitor, platform="linux")
         with mock.patch.object(agent, "initialize_driver", return_value=(monitor, self.mouse, self.keyboard, self.parser)):
             self.agent = agent.Agent()
+        self.addCleanup(self.agent.close)
 
     def shell(self, command, **kwargs):
         self.os.events.append(("shell", command))
@@ -221,6 +227,124 @@ class ScriptExecutionTests(unittest.TestCase):
         self.assertIn("20-second execution budget", result["error"])
         self.assertEqual(self.os.events, [("down", "w"), ("up", "w")])
         self.assertFalse(self.keyboard.held_keys)
+
+    def test_session_eof_clears_input_and_stops_monitor_once(self):
+        frames = [
+            {"type": "hello_ack"},
+            {"type": "command", "id": "hold", "command": {"type": "run_script", "params": {"script": "HOLD w"}}},
+            {"type": "command", "id": "queued", "command": {"type": "run_script", "params": {"script": 'LAUNCH "later"'}, "execute_now": False, "clear_after": False}},
+        ]
+        reader = io.BytesIO(b"".join(json.dumps(frame).encode() + b"\n" for frame in frames))
+        connection = mock.Mock()
+        connection.makefile.return_value = reader
+        self.agent.monitor.shutdown = mock.Mock()
+        self.assertFalse(agent.serve_session(connection, self.agent, None))
+        self.agent.close()
+        self.assertTrue(reader.closed)
+        self.agent.monitor.shutdown.assert_called_once_with()
+        self.assertEqual(self.os.events, [("down", "w"), ("up", "w")])
+        self.assertFalse(self.agent._ordered_queue)
+        self.assertFalse(self.parser.queue)
+        self.assertFalse(self.keyboard.held_keys)
+
+    def test_real_socket_disconnect_discards_queued_effects_and_releases_input(self):
+        bridge, executor = socket.socketpair()
+        bridge.settimeout(3)
+        self.addCleanup(bridge.close)
+        self.addCleanup(executor.close)
+        self.agent.monitor.shutdown = mock.Mock()
+        failures = []
+
+        def serve():
+            try:
+                agent.serve_session(executor, self.agent, None)
+            except Exception as error:
+                failures.append(error)
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        reader = bridge.makefile("rb")
+        self.addCleanup(reader.close)
+        self.assertEqual(json.loads(reader.readline())["type"], "hello")
+        bridge.sendall(b'{"type":"hello_ack"}\n')
+        for command in (
+            {"type": "run_script", "params": {"script": "HOLD w"}},
+            {"type": "run_script", "params": {"script": 'LAUNCH "stale"'}, "execute_now": False, "clear_after": False},
+        ):
+            bridge.sendall(json.dumps({"type": "command", "id": "test", "command": command}).encode() + b"\n")
+            self.assertTrue(json.loads(reader.readline())["success"])
+        self.assertEqual(self.os.events, [("down", "w")])
+        bridge.shutdown(socket.SHUT_WR)
+        thread.join(timeout=3)
+        self.assertFalse(thread.is_alive(), "EOF must close the executor session")
+        self.assertFalse(failures, failures)
+        self.assertEqual(self.os.events, [("down", "w"), ("up", "w")])
+        self.assertFalse(self.agent._ordered_queue)
+        self.agent.monitor.shutdown.assert_called_once_with()
+
+    def test_closed_agent_cannot_retain_or_execute_new_work(self):
+        self.command("run_script", {"script": "HOLD w"})
+        self.agent.close()
+        self.agent.close()
+        result = self.command("run_script", {"script": 'LAUNCH "after-close"'})
+        self.assertFalse(result["success"], result)
+        self.assertIn("session is closed", result["error"])
+        self.assertEqual(self.os.events, [("down", "w"), ("up", "w")])
+
+    def test_file_server_restart_discards_previous_approval_and_held_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "ipc.json"
+            response = str(path) + ".response"
+
+            def send(command):
+                path.write_text(json.dumps(command))
+                agent.process_ipc_file(str(path), response, self.agent)
+                return json.loads(pathlib.Path(response).read_text())
+
+            first = send({"type": "run_script", "execution_session": "server-a", "params": {"script": "HOLD w"}})
+            self.assertTrue(first["success"], first)
+            queued = send({"type": "run_script", "execution_session": "server-a", "params": {"script": 'SHELL "echo stale"\nLAUNCH "old"'}, "execute_now": False, "clear_after": False})
+            self.assertTrue(queued["success"], queued)
+            drained = send({"type": "execute_queue", "execution_session": "server-b", "request_id": "3"})
+            self.assertTrue(drained["success"], drained)
+            self.assertEqual(drained["execution_session"], "server-b")
+            self.assertEqual(drained["request_id"], "3")
+            self.assertEqual(self.os.events, [("down", "w"), ("up", "w")])
+            self.assertFalse(self.agent._ordered_queue)
+
+    def test_legacy_file_server_can_execute_immediate_but_not_retain_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "ipc.json"
+            response = str(path) + ".response"
+            for command in (
+                {"type": "run_script", "params": {"script": 'LAUNCH "old"'}, "execute_now": False, "clear_after": False},
+                {"type": "execute_queue"},
+            ):
+                path.write_text(json.dumps(command))
+                agent.process_ipc_file(str(path), response, self.agent)
+                result = json.loads(pathlib.Path(response).read_text())
+                self.assertFalse(result["success"], result)
+                self.assertIn("execution_session", result["error"])
+            immediate = {"type": "run_script", "params": {"script": 'TYPE "legacy"'}}
+            path.write_text(json.dumps(immediate))
+            agent.process_ipc_file(str(path), response, self.agent)
+            self.assertTrue(json.loads(pathlib.Path(response).read_text())["success"])
+            self.assertEqual(self.os.events, [("type", "legacy")])
+
+    def test_invalid_file_session_discards_prior_work_without_an_effect(self):
+        self.command("run_script", {"script": "HOLD w"})
+        self.command("run_script", {"script": 'LAUNCH "stale"'}, execute_now=False, clear_after=False)
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "ipc.json"
+            response = str(path) + ".response"
+            path.write_text(json.dumps({"type": "execute_queue", "execution_session": "bad\nidentifier", "request_id": "bad"}))
+            agent.process_ipc_file(str(path), response, self.agent)
+            result = json.loads(pathlib.Path(response).read_text())
+        self.assertFalse(result["success"], result)
+        self.assertIn("execution_session", result["error"])
+        self.assertEqual(result["request_id"], "bad")
+        self.assertEqual(self.os.events, [("down", "w"), ("up", "w")])
+        self.assertFalse(self.agent._ordered_queue)
 
     def test_headless_script_refuses_all_input_before_running_shell(self):
         with mock.patch.object(keyboard, "pyautogui", gui_stub.StubPyAutoGUI()):

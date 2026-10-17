@@ -12,6 +12,50 @@ are ignored so session and approval headers cannot reach an unrelated proxy.
 Sign-out or an expired session closes approval dialogs and clears their fields,
 including one-time credential output.
 
+## Connect and approve an integration
+
+Start `neuro-integration` and complete its `setup` command first. Enter the
+server's HTTP origin and the operator token printed during setup on the manager's
+sign-in screen. Starting the manager alone does not start the server or client.
+
+1. Open **Marketplace → Connect an existing integration…**. Paste
+   `{"manifest": <your SDK manifest object>}` into the JSON editor, re-enter your
+   operator token, then choose **Approve and apply**. Existing game or Discord
+   backends continue using their own connection to the official Neuro API.
+2. Open **Permissions** and approve the global `extensions` scope, plus any global
+   scopes needed by the manifest. Saving needs fresh operator-token entry.
+3. In **Marketplace → Your connected ecosystem**, choose **Permissions…** for
+   that integration. Approve its runtime, required capabilities and settings.
+   Enable management delegation only when you want Neuro and Evil to manage it.
+4. Choose **Connection token…** and copy the returned `token` once into your
+   adapter's local credential storage. This scoped token is separate from the
+   operator and viewer tokens. Your adapter reports readiness through the
+   [SDK](https://github.com/cassitly/neuro-desktop-sdk); registration alone leaves
+   it offline. Matching ready adapters appear in the Games control decisions.
+
+Marketplace source downloads fetch a reviewed commit; they do not install a
+game mod or run its setup commands. Follow the listing's **Open setup
+instructions** link and prerequisites. The **Extensions** tab manages the signed
+runtime catalog separately. New installs start disabled. See
+[extension permissions](../../../docs/EXTENSION_PERMISSIONS.md) and the
+[integration workflow](../../../docs/WORKFLOW.md).
+
+For the [Vencord adapter](https://github.com/cassitly/neuro-desktop-vencord), use
+its `manifest.json` and approve `discord.viewer`. Its plugin needs a development
+Vencord build and a scoped connection token; it does not provide Vedal's private
+Discord backend. Choose **Viewer token…** for a separate OBS read credential.
+Set **Viewer visibility…** to `{"visible":true,"actor":"neuro","minutes":15}`
+only when ready to share; `evil` selects Evil. The local overlay is
+`http://127.0.0.1:8300/viewer/#integration=YOUR_ID&token=YOUR_VIEWER_TOKEN`.
+Sharing starts hidden and needs a ready, approved adapter. Revocation clears the
+feed; reapproval does not restore an earlier sharing session.
+
+Before Neuro or Evil uses the manager, create a restricted sign-in from
+**Status → Create Neuro/Evil manager sign-in…**, then sign out of the operator
+session on that desktop. Follow the
+[delegated-session guide](../../../docs/DELEGATED_MANAGER.md) for expiry and
+revocation. Only the operator session can change approvals or create credentials.
+
 ## Run and build
 
 From `desktop/`, stage a source build with:

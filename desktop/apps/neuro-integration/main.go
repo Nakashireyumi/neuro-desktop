@@ -46,22 +46,30 @@ func NewNDIntegration(opts IntegrationOptions) (*NDIntegration, error) {
 	if err != nil {
 		return nil, err
 	}
+	executionSession, err := newExecutionSession()
+	if err != nil {
+		return nil, err
+	}
+	if err := requireUnusedIPCPaths(opts.IPCPath); err != nil {
+		return nil, err
+	}
 
 	integration := &NDIntegration{
-		client:          client,
-		relay:           newRelayState(opts.Relay),
-		ipcFilePath:     opts.IPCPath,
-		permissionsPath: opts.PermissionsPath,
-		permissions:     policy,
-		done:            make(chan struct{}),
-		contextStopChan: make(chan struct{}),
-		games:           newGameRuntime(loadGameRegistry()),
-		stats:           newBridgeStats(),
-		stop:            newStopSwitch(),
-		audit:           newAuditor(),
-		requests:        newRequestBook(),
-		mcp:             newMCPManager(),
-		startedAt:       time.Now(),
+		client:           client,
+		relay:            newRelayState(opts.Relay),
+		ipcFilePath:      opts.IPCPath,
+		executionSession: executionSession,
+		permissionsPath:  opts.PermissionsPath,
+		permissions:      policy,
+		done:             make(chan struct{}),
+		contextStopChan:  make(chan struct{}),
+		games:            newGameRuntime(loadGameRegistry()),
+		stats:            newBridgeStats(),
+		stop:             newStopSwitch(),
+		audit:            newAuditor(),
+		requests:         newRequestBook(),
+		mcp:              newMCPManager(),
+		startedAt:        time.Now(),
 	}
 
 	integration.client.OnCommand("shutdown/graceful", integration.handleGracefulShutdown)

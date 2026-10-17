@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -70,6 +71,18 @@ def text_view(text="", editable=False, height=120):
     view.get_buffer().set_text(text)
     scroll = Gtk.ScrolledWindow(min_content_height=height, child=view, hexpand=True, vexpand=True)
     return scroll, view
+
+
+def credential_entry(**properties):
+    """Create an ASCII-token field without Win32's native IME lifecycle."""
+    entry = Gtk.PasswordEntry(show_peek_icon=True, **properties)
+    if sys.platform == "win32":
+        # GTK's Win32 IME can retain a native-window message filter across
+        # credential-widget replacement. Tokens already require printable
+        # ASCII, so only these fields can use GtkText's per-widget override.
+        # Keep normal IME support in server, search and settings inputs.
+        entry.get_delegate().set_property("im-module", "simple")
+    return entry
 
 
 class ManagerApplication(Gtk.Application):
@@ -187,7 +200,7 @@ class ManagerApplication(Gtk.Application):
         self.server_entry = Gtk.Entry(text=self.server, placeholder_text="http://127.0.0.1:8300")
         center.append(self.server_entry)
         center.append(label("Dashboard token"))
-        self.token_entry = Gtk.PasswordEntry(show_peek_icon=True, hexpand=True)
+        self.token_entry = credential_entry(hexpand=True)
         self.token_entry.connect("activate", lambda _: self.sign_in())
         center.append(self.token_entry)
         self.login_button = button("Sign in", self.sign_in, "suggested-action")
@@ -698,7 +711,7 @@ class ManagerApplication(Gtk.Application):
         advanced.set_child(lists)
         self.policy_editor.append(advanced)
         self.policy_editor.append(label("Re-enter your operator token to save permission changes.", "nd-muted"))
-        self.policy_operator_token = Gtk.PasswordEntry(show_peek_icon=True)
+        self.policy_operator_token = credential_entry()
         self.policy_editor.append(self.policy_operator_token)
         row = box(vertical=False)
         self.save_policy_button = button("Save policy", self.save_policy, "suggested-action")

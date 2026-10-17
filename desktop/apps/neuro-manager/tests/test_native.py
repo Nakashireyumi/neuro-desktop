@@ -8,6 +8,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -157,6 +158,50 @@ class NativeManagerTests(unittest.TestCase):
     def focus_entry(self, window, entry):
         entry.grab_focus()
         self.pump(lambda: window.get_focus() is entry.get_delegate())
+
+    def test_windows_credential_fields_override_only_their_input_method(self):
+        # Patch only the app module's sys reference, not Python's global
+        # platform: this exercises the Windows branch on every GTK CI runner.
+        with patch("neuro_manager.app.sys", SimpleNamespace(platform="win32")):
+            with self.session_fixture(sign_in=False) as (app, _state):
+                self.assertEqual(app.token_entry.get_delegate().get_property("im-module"), "simple")
+                self.assertIsNone(app.server_entry.get_delegate().get_property("im-module"))
+                app.token_entry.set_text("fixture-token")
+                app.sign_in()
+                self.pump(lambda: app.client is not None and not app.refresh_pending)
+                app.pages.set_visible_child_name("marketplace")
+                self.pump(lambda: self.widgets(app.page_boxes["marketplace"], Gtk.SearchEntry) and not app.refresh_pending)
+                search = self.widgets(app.page_boxes["marketplace"], Gtk.SearchEntry)[0]
+                self.assertIsNone(search.get_delegate().get_property("im-module"))
+                app.pages.set_visible_child_name("permissions")
+                self.pump(lambda: hasattr(app, "policy_operator_token") and not app.refresh_pending)
+                self.assertEqual(app.policy_operator_token.get_delegate().get_property("im-module"), "simple")
+
+                dialog, approval, _output = self.open_credential_dialog(app)
+                self.assertEqual(approval.get_delegate().get_property("im-module"), "simple")
+                settings = next(view for view in self.widgets(dialog, Gtk.TextView) if view.get_editable())
+                self.assertIsNone(settings.get_property("im-module"))
+                dialog.close()
+
+                app.extension_permissions("memory")
+                self.pump(lambda: self.dialog(app, "Permissions · memory") is not None)
+                extension_dialog = self.dialog(app, "Permissions · memory")
+                extension_approval = self.widgets(extension_dialog, Gtk.PasswordEntry)[0]
+                self.assertEqual(extension_approval.get_delegate().get_property("im-module"), "simple")
+                extension_settings = next(view for view in self.widgets(extension_dialog, Gtk.TextView) if view.get_editable())
+                self.assertIsNone(extension_settings.get_property("im-module"))
+                extension_dialog.close()
+
+                app.sign_out()
+                self.assertEqual(app.token_entry.get_delegate().get_property("im-module"), "simple")
+
+    def test_other_platforms_keep_the_default_credential_input_method(self):
+        from neuro_manager.app import credential_entry
+
+        self.assertTrue(Gtk.init_check(), "native GTK tests require a graphical display")
+        for platform in ("linux", "darwin"):
+            with self.subTest(platform=platform), patch("neuro_manager.app.sys", SimpleNamespace(platform=platform)):
+                self.assertIsNone(credential_entry().get_delegate().get_property("im-module"))
 
     def test_focused_approval_closes_after_focus_out_and_clears_credentials(self):
         with self.session_fixture() as (app, state):

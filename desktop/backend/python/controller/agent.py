@@ -36,7 +36,9 @@ import base64
 import json
 import os
 import socket
+import stat
 import sys
+import tempfile
 import time
 from typing import Any, Dict, Optional
 
@@ -134,6 +136,8 @@ class Agent:
         self.monitor, self.mouse, self.keyboard, self.parser = initialize_driver()
         self.headless = is_headless()
         self._ordered_queue = []
+        self._closed = False
+        self._file_execution_session = None
 
     # ------------------------------------------------------------------
     # Status
@@ -199,6 +203,10 @@ class Agent:
 
     def execute(self, command: Dict[str, Any]) -> Dict[str, Any]:
         """Run one IPC command; returns {"success", "data", "error"}."""
+        if self._closed:
+            return self._failure("executor session is closed; reconnect before sending commands")
+        if not isinstance(command, dict):
+            return self._failure("command must be an object")
         name = str(command.get("type") or "").strip()
         params = command.get("params") or {}
         if not isinstance(params, dict):
@@ -374,8 +382,7 @@ class Agent:
             return self._ok()
 
         if name in ("shutdown_gracefully", "shutdown_immediately"):
-            self._clear_queues()
-            self.release_all_input()
+            self.close()
             return self._ok({"shutdown": True})
 
         # Commands that the bridge handles itself (game_*, catalog, extensions).
@@ -418,6 +425,42 @@ class Agent:
         if callable(release_mouse):
             self._safe(release_mouse)
 
+    def close(self) -> None:
+        """End this executor session without retaining input or listeners."""
+        if self._closed:
+            return
+        self._closed = True
+        self._clear_queues()
+        self.parser.last_shell_output = ""
+        self.release_all_input()
+        shutdown = getattr(self.monitor, "shutdown", None)
+        if callable(shutdown):
+            self._safe(shutdown)
+
+    def accept_file_session(self, command: Dict[str, Any]) -> Optional[str]:
+        """Discard work approved by a previous file-IPC server instance.
+
+        Legacy servers may still send immediate, self-clearing commands. They
+        cannot retain or drain a queue because they have no session identity.
+        """
+        session = command.get("execution_session")
+        if session is not None and (not isinstance(session, str) or len(session) > 128
+                                    or any(ord(char) < 33 or ord(char) > 126 for char in session)):
+            self._clear_queues()
+            self.release_all_input()
+            return "execution_session must be a printable identifier of at most 128 characters"
+        session = session or None
+        if session is None or session != self._file_execution_session:
+            self._clear_queues()
+            self.parser.last_shell_output = ""
+            self.release_all_input()
+            self._file_execution_session = session
+        name = str(command.get("type") or "").strip()
+        if session is None and (name == "execute_queue" or (name in QUEUE_COMMANDS and
+                (not _bool_param(command, "execute_now", True) or not _bool_param(command, "clear_after", True)))):
+            return "Queued file IPC needs execution_session; update the server or send immediate commands with clear_after=true"
+        return None
+
     def _ok(self, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         result: Dict[str, Any] = {"success": True}
         if data:
@@ -434,19 +477,14 @@ class Agent:
 
 
 def _read_line(stream) -> Optional[str]:
-    """Read one newline-delimited JSON frame, or None at EOF."""
-    chunks = []
-    while True:
-        chunk = stream.readline()
-        if not chunk:
-            return None if not chunks else "".join(chunks)
-        if isinstance(chunk, bytes):
-            chunk = chunk.decode("utf-8", "replace")
-        chunks.append(chunk)
-        if chunk.endswith("\n"):
-            return "".join(chunks)
-        if sum(len(part) for part in chunks) > MAX_LINE_BYTES:
-            raise ValueError("frame too large")
+    """Read a bounded UTF-8 frame, including a final line without a newline."""
+    raw = stream.readline(MAX_LINE_BYTES + 1)
+    if not raw:
+        return None
+    size = len(raw) if isinstance(raw, bytes) else len(raw.encode("utf-8"))
+    if size > MAX_LINE_BYTES:
+        raise ValueError("frame too large")
+    return raw.decode("utf-8") if isinstance(raw, bytes) else raw
 
 
 def _write(stream, payload: Dict[str, Any]) -> None:
@@ -461,69 +499,82 @@ def _write(stream, payload: Dict[str, Any]) -> None:
 
 def serve_session(conn, agent: Agent, token: Optional[str], peer: str = "bridge") -> bool:
     """Run one session. Returns True when the bridge asked us to shut down."""
-    reader = conn.makefile("r", encoding="utf-8", newline="\n")
-    writer = conn
+    reader = None
+    try:
+        reader = conn.makefile("rb")
+        writer = conn
 
-    hello: Dict[str, Any] = {
-        "type": "hello",
-        "role": "executor",
-        "version": PROTOCOL_VERSION,
-    }
-    if token:
-        hello["token"] = token
-    _write(writer, hello)
-
-    first = _read_line(reader)
-    if not first:
-        raise ConnectionError("bridge closed the connection during the handshake")
-    ack = json.loads(first)
-    if ack.get("type") == "hello_nack":
-        raise PermissionError(
-            f"bridge rejected this agent: {ack.get('error') or 'unspecified'}"
-        )
-    if ack.get("type") != "hello_ack":
-        raise ConnectionError(f"expected hello_ack, got {ack.get('type')!r}")
-
-    version = ack.get("version") or "?"
-    print(f"[agent] connected to {peer} (protocol {version}) — waiting for commands")
-
-    while True:
-        line = _read_line(reader)
-        if line is None:
-            return False
-        line = line.strip()
-        if not line:
-            continue
-
-        try:
-            envelope = json.loads(line)
-        except json.JSONDecodeError as exc:
-            print(f"[agent] ignoring malformed frame: {exc}")
-            continue
-
-        kind = envelope.get("type")
-        if kind == "ping":
-            _write(writer, {"type": "pong", "id": envelope.get("id", "")})
-            continue
-        if kind != "command":
-            continue
-
-        command = envelope.get("command") or {}
-        result = agent.execute(command)
-        reply: Dict[str, Any] = {
-            "type": "result",
-            "id": envelope.get("id", ""),
-            "success": bool(result.get("success")),
+        hello: Dict[str, Any] = {
+            "type": "hello",
+            "role": "executor",
+            "version": PROTOCOL_VERSION,
         }
-        if result.get("data") is not None:
-            reply["data"] = result["data"]
-        if result.get("error"):
-            reply["error"] = result["error"]
-        _write(writer, reply)
+        if token:
+            hello["token"] = token
+        _write(writer, hello)
 
-        if (result.get("data") or {}).get("shutdown"):
-            print("[agent] shutdown requested by the bridge")
-            return True
+        first = _read_line(reader)
+        if not first:
+            raise ConnectionError("bridge closed the connection during the handshake")
+        ack = json.loads(first)
+        if not isinstance(ack, dict):
+            raise ConnectionError("bridge handshake must be an object")
+        if ack.get("type") == "hello_nack":
+            raise PermissionError(
+                f"bridge rejected this agent: {ack.get('error') or 'unspecified'}"
+            )
+        if ack.get("type") != "hello_ack":
+            raise ConnectionError(f"expected hello_ack, got {ack.get('type')!r}")
+
+        version = ack.get("version") or "?"
+        print(f"[agent] connected to {peer} (protocol {version}) — waiting for commands")
+
+        while True:
+            line = _read_line(reader)
+            if line is None:
+                return False
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                envelope = json.loads(line)
+            except json.JSONDecodeError as exc:
+                print(f"[agent] ignoring malformed frame: {exc}")
+                continue
+
+            if not isinstance(envelope, dict):
+                print("[agent] ignoring a frame that is not an object")
+                continue
+            kind = envelope.get("type")
+            if kind == "ping":
+                _write(writer, {"type": "pong", "id": envelope.get("id", "")})
+                continue
+            if kind != "command":
+                continue
+
+            command = envelope.get("command") or {}
+            result = agent.execute(command)
+            reply: Dict[str, Any] = {
+                "type": "result",
+                "id": envelope.get("id", ""),
+                "success": bool(result.get("success")),
+            }
+            if result.get("data") is not None:
+                reply["data"] = result["data"]
+            if result.get("error"):
+                reply["error"] = result["error"]
+            _write(writer, reply)
+
+            if (result.get("data") or {}).get("shutdown"):
+                print("[agent] shutdown requested by the bridge")
+                return True
+    finally:
+        try:
+            if reader is not None:
+                reader.close()
+        finally:
+            agent.close()
 
 
 # ----------------------------------------------------------------------
@@ -536,35 +587,40 @@ def connect_role(bridge: str, token: Optional[str], once: bool) -> int:
     port = int(port or "9876")
     attempt = 0
     while True:
+        conn, session_agent = None, None
+        delay = 2
         try:
             conn = socket.create_connection((host, port), timeout=10)
             conn.settimeout(None)
-            shutdown = serve_session(conn, Agent(), token, peer=f"{host}:{port}")
+            session_agent = Agent()
+            shutdown = serve_session(conn, session_agent, token, peer=f"{host}:{port}")
             if shutdown:
                 return 0
             print("[agent] bridge closed the connection")
-        except (ConnectionError, OSError) as exc:
+            if once:
+                return 0
+            attempt = 0
+        except PermissionError as exc:
+            # PermissionError subclasses OSError; authentication failures must
+            # be handled first, so a rejected token never enters a retry loop.
+            print(f"[agent] not retrying: {exc}")
+            return 1
+        except (ConnectionError, OSError, ValueError) as exc:
             attempt += 1
             if once:
                 print(f"[agent] giving up: {exc}")
                 return 1
             delay = min(2 ** min(attempt, 5), 30)
             print(f"[agent] could not reach {host}:{port} ({exc}); retrying in {delay}s")
-            time.sleep(delay)
-            continue
-        except PermissionError as exc:
-            print(f"[agent] not retrying: {exc}")
-            return 1
         finally:
-            try:
-                conn.close()  # type: ignore[possibly-undefined]
-            except Exception:
-                pass
-
-        if once:
-            return 0
-        attempt = 0
-        time.sleep(2)
+            if session_agent is not None:
+                session_agent.close()
+            if conn is not None:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+        time.sleep(delay)
 
 
 def ipc_file_role(path: str, once: bool = False) -> int:
@@ -572,9 +628,9 @@ def ipc_file_role(path: str, once: bool = False) -> int:
 
     File IPC is what the bridge falls back to when no TCP executor is connected,
     which is the co-located case (bridge and agent on the same machine). The
-    command file is removed *before* it runs, so a slow command can never be
-    executed twice by a later poll, and the response is written atomically
-    because the bridge polls for it.
+    command file is atomically claimed *before* it is read, so a replacement
+    request cannot be deleted by a slow previous poll. The response is written
+    atomically because the bridge polls for it.
     """
     response_path = path + ".response"
     print(f"[agent] watching {path} (file IPC); answers go to {response_path}")
@@ -582,15 +638,17 @@ def ipc_file_role(path: str, once: bool = False) -> int:
     if is_headless():
         print(f"[agent] headless: {describe_headless_reason()}")
 
-    while True:
-        handled = process_ipc_file(path, response_path, agent)
-        if handled is None:
-            time.sleep(0.05)
-            continue
-        if handled:  # the last command was a shutdown
-            print("[agent] shutdown requested by the bridge")
-            if once:
+    try:
+        while True:
+            handled = process_ipc_file(path, response_path, agent)
+            if handled is None:
+                time.sleep(0.05)
+                continue
+            if handled:
+                print("[agent] shutdown requested by the bridge")
                 return 0
+    finally:
+        agent.close()
 
 
 def process_ipc_file(path: str, response_path: str, agent: Agent) -> Optional[bool]:
@@ -599,38 +657,73 @@ def process_ipc_file(path: str, response_path: str, agent: Agent) -> Optional[bo
     Returns None when there was nothing to do, otherwise whether the command was
     a shutdown request.
     """
+    # Claim before reading. Reading the shared path and then unlinking it could
+    # delete a replacement request written after the bridge timed out. Once the
+    # rename succeeds, this process owns only its unique claimed file; the
+    # bridge may safely write the next request to the original path.
+    claimed_path = None
     try:
-        with open(path, "r", encoding="utf-8") as handle:
-            raw = handle.read()
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            raise OSError("IPC command must be a regular file, not a symlink or directory")
+        descriptor, claimed_path = tempfile.mkstemp(
+            prefix=f".{os.path.basename(path)}.claimed-",
+            dir=os.path.dirname(os.path.abspath(path)),
+        )
+        os.close(descriptor)
+        os.replace(path, claimed_path)
+        if not stat.S_ISREG(os.lstat(claimed_path).st_mode):
+            raise OSError("IPC command changed to a nonregular file while being claimed")
+        with open(claimed_path, "rb") as handle:
+            raw = handle.read(MAX_LINE_BYTES + 1)
     except FileNotFoundError:
         return None
     except OSError as exc:
-        print(f"[agent] cannot read {path}: {exc}")
+        print(f"[agent] cannot claim/read {path}: {exc}")
+        agent._clear_queues()
+        agent.release_all_input()
         return None
-
-    # Remove before running: a slow command must never be executed twice by a
-    # later poll, and the bridge's own timeout must be able to cancel it.
-    try:
-        os.remove(path)
-    except OSError:
-        pass
+    finally:
+        if claimed_path is not None:
+            try:
+                os.remove(claimed_path)
+            except FileNotFoundError:
+                pass
 
     if not raw.strip():
         return False
 
+    command = None
     try:
+        if len(raw) > MAX_LINE_BYTES:
+            raise ValueError("frame too large")
         command = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        if not isinstance(command, dict):
+            raise ValueError("command must be an object")
+    except (ValueError, UnicodeError) as exc:
         result = {"success": False, "error": f"invalid command JSON: {exc}"}
     else:
-        result = agent.execute(command)
+        error = agent.accept_file_session(command)
+        result = agent._failure(error) if error else agent.execute(command)
+    if isinstance(command, dict):
+        for field in ("execution_session", "request_id"):
+            if isinstance(command.get(field), str) and len(command[field]) <= 128:
+                result[field] = command[field]
 
     # The bridge polls for this file, so it has to appear complete: write a
     # temporary file and rename it into place.
-    temp_path = response_path + ".tmp"
-    with open(temp_path, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(result))
-    os.replace(temp_path, response_path)
+    descriptor, temp_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(response_path)}.tmp-",
+        dir=os.path.dirname(os.path.abspath(response_path)),
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(result, handle)
+        os.replace(temp_path, response_path)
+    finally:
+        try:
+            os.remove(temp_path)
+        except FileNotFoundError:
+            pass
 
     return bool((result.get("data") or {}).get("shutdown"))
 

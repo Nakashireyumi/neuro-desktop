@@ -357,8 +357,19 @@ func (n *NDIntegration) describeGameStatus() string {
 
 // detectGame snapshots the controlled machine and matches it to a profile.
 func (n *NDIntegration) detectGame(refresh bool) (GameDetected, error) {
+	permit, err := n.observationPermit(CmdGameDetect)
+	if err != nil {
+		return GameDetected{}, err
+	}
+	return n.detectGameGuarded(refresh, permit)
+}
+
+func (n *NDIntegration) detectGameGuarded(refresh bool, permit *observationPermit) (GameDetected, error) {
+	if err := permit.check(); err != nil {
+		return GameDetected{}, err
+	}
 	if !refresh {
-		if cached, ok := n.games.cachedDetection(); ok {
+		if cached, ok := n.games.cachedDetection(permit); ok {
 			return cached, nil
 		}
 	}
@@ -367,16 +378,22 @@ func (n *NDIntegration) detectGame(refresh bool) (GameDetected, error) {
 		return GameDetected{}, fmt.Errorf("no game profile registry loaded")
 	}
 
-	status, err := n.fetchDesktopStatus(false)
+	status, err := n.fetchDesktopStatusGuarded(false, permit.check)
 	if err != nil {
 		return GameDetected{}, fmt.Errorf("could not inspect the controlled machine: %w", err)
+	}
+	if err := permit.check(); err != nil {
+		return GameDetected{}, err
 	}
 
 	activeWindow, _ := status["active_window"].(string)
 	processes := toStringSlice(status["running_processes"])
 
 	detected := n.games.Detect(activeWindow, processes)
-	n.games.setDetection(detected)
+	n.games.setDetection(detected, permit)
+	if err := permit.check(); err != nil {
+		return GameDetected{}, err
+	}
 	return detected, nil
 }
 

@@ -101,6 +101,9 @@ func (n *NDIntegration) sendToExecutorForAction(cmd IPCCommand, action string, g
 	if err != nil {
 		return nil, err
 	}
+	if err := n.prepareExecutionSession(&cmd); err != nil {
+		return nil, err
+	}
 	// The executor may append successfully and then fail while draining. Keep
 	// conservative requirements until a confirmed clear, including on timeout.
 	n.executorQueue.merge(additions)
@@ -119,6 +122,11 @@ func (n *NDIntegration) sendToExecutorForAction(cmd IPCCommand, action string, g
 }
 
 func (n *NDIntegration) sendToFileIPC(cmd IPCCommand) (*IPCResponse, error) {
+	if strings.TrimSpace(n.ipcFilePath) == "" {
+		return nil, fmt.Errorf("no TCP executor is connected and no file IPC path is configured")
+	}
+	n.fileRequestSequence++
+	cmd.RequestID = fmt.Sprintf("%d", n.fileRequestSequence)
 	cmdBytes, err := json.Marshal(cmd)
 	if err != nil {
 		return nil, err
@@ -129,19 +137,34 @@ func (n *NDIntegration) sendToFileIPC(cmd IPCCommand) (*IPCResponse, error) {
 	// Drop any previous response first: otherwise a slow command could return
 	// the *previous* action's result, which is how "the action silently did
 	// nothing" reports happened.
-	_ = os.Remove(responseFile)
+	if err := discardPreviousIPCResponse(responseFile); err != nil {
+		return nil, fmt.Errorf("could not clear previous IPC response: %w", err)
+	}
+	if _, err := os.Lstat(n.ipcFilePath); err == nil {
+		return nil, fmt.Errorf("IPC command path is already occupied; use a separate path for each running bridge")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("could not inspect IPC command path: %w", err)
+	}
 
 	if err := atomicWriteFile(n.ipcFilePath, cmdBytes); err != nil {
 		return nil, fmt.Errorf("failed to write IPC command file: %w", err)
 	}
+	defer removeOwnedIPCFile(n.ipcFilePath, cmd, false)
 
 	deadline := time.Now().Add(ipcTimeout())
 	for time.Now().Before(deadline) {
-		data, err := os.ReadFile(responseFile)
+		data, _, err := readBoundedIPCFile(responseFile)
 		if err == nil {
 			var resp IPCResponse
 			if err := json.Unmarshal(data, &resp); err == nil {
-				_ = os.Remove(responseFile)
+				if resp.ExecutionSession == "" || resp.RequestID == "" {
+					return nil, fmt.Errorf("file IPC client does not support execution_session/request_id; update neuro-client to match the server")
+				}
+				if resp.ExecutionSession != cmd.ExecutionSession || resp.RequestID != cmd.RequestID {
+					time.Sleep(25 * time.Millisecond)
+					continue // An earlier bridge/request finished late.
+				}
+				removeOwnedIPCFile(responseFile, cmd, true)
 				return &resp, nil
 			}
 			// Another writer may have been mid-write; keep polling briefly.
@@ -153,8 +176,7 @@ func (n *NDIntegration) sendToFileIPC(cmd IPCCommand) (*IPCResponse, error) {
 
 	// The command was never picked up. Remove it so it cannot execute later
 	// out of order (e.g. after the operator grants/denies a permission).
-	_ = os.Remove(n.ipcFilePath)
-	_ = os.Remove(responseFile)
+	removeOwnedIPCFile(responseFile, cmd, true)
 	return nil, fmt.Errorf("timeout waiting for executor response (no TCP client; file IPC timed out)")
 }
 

@@ -73,6 +73,9 @@ This project aims to follow semantic versioning once stable releases begin.
 
 ### Changed
 
+- Executor disconnects clear pending work, release held input, and close monitor listeners. File IPC atomically claims commands, correlates each result with its bridge session and request, refuses incompatible clients, and preserves pre-existing files during startup.
+- Windows manager credential fields use GTK's simple input method to avoid a stale native IME callback when replacing signed-in views; ordinary text fields retain their configured input method.
+- Installed SDK packages are tested against the real server on Linux, Windows, and macOS, including approval, presence leases, viewer activity, and revocation.
 - Macro scripts are preflighted before side effects, preserve keyboard/mouse order, wait once, and execute launches, shell commands, and releases at their source position. Nested commands retain their individual permission checks; retained queues recheck approvals before execution and have bounded size and duration.
 - Desktop observations honor explicit vision disablement and recheck live approval around capture, inference, and delivery. Periodic context cannot bypass a revoked vision permission; analysis response reads are bounded.
 - Expiring scope approvals stop affected managed MCP services without polling. Permission changes and pause clear viewer consent/history; reapproval cannot restore previously shared events.

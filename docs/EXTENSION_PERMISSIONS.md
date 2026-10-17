@@ -10,6 +10,31 @@ Three independent decisions apply:
 
 For example, delegating management of a game integration lets Neuro prepare its approved source. Starting an integration that requires `input` also needs its per-item input grant and the global input permission. A later version that requests an additional required capability remains blocked until you approve that capability.
 
+## Approve an item in the native manager
+
+Sign in as the operator. Use **Permissions** for global scopes, or select an item
+in **Extensions** or **Marketplace** and choose **Permissions and settings…**.
+SDK adapter cards under **Marketplace → Your connected ecosystem** instead label
+that button **Permissions…**. All open the same per-item approval editor.
+
+- **Allow Neuro and Evil to install, enable, disable and remove this extension**
+  sets `manage_allowed`.
+- **Allow this extension to run** sets `run_allowed`.
+- Capability checkboxes set individual grants; required capabilities must all
+  be allowed before runtime use. Optional capabilities stay denied until granted.
+- The settings editor accepts a JSON object matching the item's declared schema.
+
+Re-enter your operator token and choose **Approve and save**. This approval field
+starts empty; your sign-in credential is never copied into it. The global policy
+editor likewise needs fresh approval before saving. A delegated session cannot
+open these controls. Sign-out or an expired session closes approval dialogs and
+clears their credentials and unsaved settings.
+
+For a signed catalog entry, install it before enabling it. Installation leaves
+it disabled. A source-only marketplace listing can stage approved source, but
+needs its upstream installation steps and an adapter before it becomes a managed
+runtime integration. SDK registration alone does not run the integration.
+
 ## Policy storage and API
 
 The policy file is `extension-permissions.json` beside the extension state file. Set `NEURO_EXTENSION_PERMISSIONS_FILE` to choose another location. It is separate from install state so reinstalling or removing an item does not erase your decisions. A missing item policy denies management and runtime; a malformed policy file fails closed.
