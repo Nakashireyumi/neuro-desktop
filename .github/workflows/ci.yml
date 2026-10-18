@@ -460,6 +460,10 @@ jobs:
 
       - name: Test the installed SDK against the real isolated server
         shell: bash
+        env:
+          # Match the server build matrix: no cgo is needed, and Go 1.22's
+          # external linker produces binaries rejected by current macOS.
+          CGO_ENABLED: "0"
         run: |
           server="$RUNNER_TEMP/nd-sdk-contract-server"
           if [[ "$RUNNER_OS" == "Windows" ]]; then server="$server.exe"; fi

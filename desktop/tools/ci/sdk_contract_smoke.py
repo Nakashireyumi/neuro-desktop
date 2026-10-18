@@ -63,7 +63,7 @@ def main():
                 deadline = time.monotonic() + 15
                 while True:
                     if process.poll() is not None:
-                        raise RuntimeError("isolated server exited before becoming ready")
+                        raise RuntimeError(f"isolated server exited before becoming ready (exit {process.returncode})")
                     try:
                         request("/health", anonymous=True)
                         break

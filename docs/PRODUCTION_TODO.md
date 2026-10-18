@@ -1,6 +1,6 @@
 # Production TODO
 
-Last updated: 2026-10-16. Each status below was checked against the code in this
+Last updated: 2026-10-18. Each status below was checked against the code in this
 repository. `[x]` done, `[~]` partly done (what is missing is written next to it),
 `[ ]` open, `[-]` declined with the reason.
 
@@ -67,7 +67,9 @@ Check these directly; this file does not keep a copy of their issue lists.
 
 - [~] **Verify the Windows and macOS bundles and launchers.** CI now requires native
   GTK builds/tests on all three operating systems and Windows bundle state-preservation
-  checks. The release workflow builds four native targets and checks the packaged
+  checks. Both CI runs at `433f336` passed native GTK controls, frozen-manager
+  startup and packaging on Linux, Windows and macOS. The release workflow builds
+  four native targets and checks the packaged
   client/server transport. These checks do not establish that input permissions,
   screen capture, signing, or installation work on a viewer's actual desktop.
 
@@ -116,8 +118,9 @@ Check these directly; this file does not keep a copy of their issue lists.
 
 - [~] **Native manager and splash.** GTK 4 desktop application implemented and
   exercised on Linux, including all pages, pause/release/resume, sign-in and policy
-  editing. Standalone GTK packaging and three-OS CI are provided. Windows/macOS
-  desktop execution still needs those runners and real devices. A notification-area
+  editing. Standalone GTK packaging, native controls and frozen startup passed
+  all three OS runners at `433f336`; real desktop input/capture still needs device
+  validation. A notification-area
   tray is separate optional work; it is not required to run the native manager.
 
 - [~] **Release quality gates.** Done: the `release-gate` job in CI, which fails unless

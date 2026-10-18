@@ -62,8 +62,10 @@ probe and GDB retry run only after failure and cannot turn that failure into a
 pass. When diagnosing a native crash, retain the initial exit status and compare
 both runs; a debugger can change timing. Credential fields select GTK's simple
 input method on Windows, while ordinary text inputs retain their configured IME.
-This targeted workaround still needs the native Windows CI result for the exact
-commit; a Linux regression pass alone does not establish that the crash is fixed.
+At `433f336`, both CI runs passed the ordinary Windows suite and standalone
+startup check, alongside the Linux and macOS native jobs. Keep requiring that
+evidence for later commits; a Linux regression pass alone does not establish
+that a Windows crash is fixed.
 
 CI's **Release gate (every required job succeeded)** is the required aggregate result. It fails if a required job fails or is skipped, including platform builds, native manager controls, real executor transport, SDK/Vencord checks, catalog trust, relay, vision, and bundles. Requiring this gate on maintained branches makes partial green results easier to identify.
 
