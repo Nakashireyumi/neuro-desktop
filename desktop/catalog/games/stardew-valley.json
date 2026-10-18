@@ -1,0 +1,31 @@
+{
+  "id": "stardew-valley",
+  "name": "Stardew Valley",
+  "description": "Example of hybrid control: a dedicated integration owns the game logic while Neuro Desktop only takes screenshots and reads state.",
+  "tags": ["hybrid", "example"],
+  "match": {
+    "processes": ["Stardew Valley", "StardewModdingAPI"],
+    "window_titles": ["Stardew Valley"]
+  },
+  "control": {
+    "mode": "hybrid",
+    "external_integration": "stardew-valley",
+    "movement": "keys",
+    "mouse_look": { "enabled": false },
+    "move_hold_seconds": 0.5,
+    "nd_actions": ["game_observe", "game_status", "game_press"]
+  },
+  "keys": {
+    "forward": "w",
+    "back": "s",
+    "left": "a",
+    "right": "d",
+    "use": "left",
+    "interact": "e",
+    "inventory": "i",
+    "map": "m",
+    "pause": "esc"
+  },
+  "vision": { "recommended": true },
+  "notes": "Hybrid mode: the dedicated integration decides what to plant or buy, while Neuro Desktop may still press keys for screenshots and quick look-arounds."
+}

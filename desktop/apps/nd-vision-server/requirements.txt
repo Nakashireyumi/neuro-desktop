@@ -1,0 +1,9 @@
+# nd-vision-server runs on the standard library alone (the `size` backend).
+# Pillow is optional: it enables the `stats` and `ocr` backends (colour summary,
+# and reading the image before OCR). The `ocr` backend also needs the
+# `tesseract` command on PATH; without it the server says so in `warnings`.
+#
+#   python3 -m pip install -r requirements.txt
+#
+# The tests run without Pillow and skip the Pillow-only cases.
+pillow>=10

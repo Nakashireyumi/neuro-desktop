@@ -1,0 +1,3 @@
+# Optional vision / YOLO demos (large; not required for desktop control)
+-r requirements.txt
+ultralytics==8.3.249

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Neuro Desktop run_script Action Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "script": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Action script body. See Action Script Documentation.md for supported commands."
+    },
+    "execute_now": {
+      "type": "boolean",
+      "default": true,
+      "description": "Execute queued instructions immediately."
+    },
+    "clear_after": {
+      "type": "boolean",
+      "default": true,
+      "description": "Clear instruction queues after execution."
+    }
+  },
+  "required": [
+    "script"
+  ]
+}

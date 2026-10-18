@@ -1,0 +1,75 @@
+{
+  "version": "1.0.0",
+  "default_allow": false,
+  "allowed_actions": [
+    "run_script",
+    "execute_queue",
+    "clear_action_queue",
+    "move_mouse_to",
+    "mouse_click",
+    "key_press",
+    "type_text",
+    "enable_low_level_controls",
+    "disable_low_level_controls",
+    "get_desktop_context",
+    "send_desktop_context",
+    "get_status",
+    "list_catalog_items",
+    "find_catalog_items",
+    "get_catalog_item",
+    "game_list_profiles",
+    "game_detect",
+    "game_start_session",
+    "game_end_session",
+    "game_status",
+    "game_move",
+    "game_look",
+    "game_action",
+    "game_press",
+    "game_release_all",
+    "game_observe"
+  ],
+  "denied_actions": [
+    "shutdown_immediately",
+    "lock_workstation",
+    "game_launch"
+  ],
+  "scopes": {
+    "input": {
+      "allowed": true,
+      "requestable": false
+    },
+    "vision": {
+      "allowed": true,
+      "requestable": false
+    },
+    "game": {
+      "allowed": true,
+      "requestable": false
+    },
+    "process": {
+      "allowed": true,
+      "requestable": false
+    },
+    "network": {
+      "allowed": true,
+      "requestable": false
+    },
+    "filesystem": {
+      "allowed": false,
+      "requestable": true
+    },
+    "extensions": {
+      "allowed": false,
+      "requestable": true
+    },
+    "shell": {
+      "allowed": false,
+      "requestable": false
+    },
+    "system": {
+      "allowed": false,
+      "requestable": false
+    }
+  }
+}

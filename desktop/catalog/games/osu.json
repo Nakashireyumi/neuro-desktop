@@ -1,0 +1,30 @@
+{
+  "id": "osu",
+  "name": "osu!",
+  "description": "Rhythm game driven almost entirely with the mouse cursor and clicks.",
+  "tags": ["rhythm", "mouse-only"],
+  "match": {
+    "processes": ["osu", "osu!"],
+    "window_titles": ["osu!"]
+  },
+  "control": {
+    "mode": "nd",
+    "movement": "mouse",
+    "mouse_look": { "enabled": false },
+    "move_hold_seconds": 0.1,
+    "max_actions_per_minute": 240
+  },
+  "keys": {
+    "attack": "left",
+    "use": "right",
+    "pause": "esc",
+    "confirm": "enter",
+    "cancel": "esc",
+    "special": "space"
+  },
+  "vision": {
+    "recommended": true,
+    "prompt": "Describe the osu! playfield: where the hit circles are relative to the cursor, plus combo and accuracy."
+  },
+  "notes": "Cursor position matters more than keys here: move with MOVE/MOVE_N or the absolute move_mouse_to action, then fire with game_action {action: attack}."
+}
