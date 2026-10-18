@@ -6,7 +6,7 @@ package-id: "io.cassitly.controller"
 build-date: "2025-12-28"
 author: "cassitly"  
 license: "MIT"  
-repository: "https://github.com/Nakashireyumi/neuro-desktop"
+repository: "https://github.com/cassitly/neuro-desktop"
 
 dependencies:  
   - pyautogui>=0.9.53  

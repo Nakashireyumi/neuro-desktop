@@ -1,760 +1,238 @@
-# Neuro Desktop Integration Guide
+# Neuro Desktop — desktop control for Neuro-sama
 
-## Architecture Overview
+Neuro Desktop lets Neuro (or Evil) use a real computer: move the mouse, press
+keys, run scripts and shell commands, play games that have no integration of
+their own, and read the desktop back as context. Vedal/you get a dashboard to
+watch it, grant permissions, and pause or kill anything at any time.
+
+## The three programs
 
 ```
-┌──────────────────┐
-│   Neuro API      │  (WebSocket)
-│  (ws://...)      │
-└────────┬─────────┘
-         │
-         │ WebSocket
-         │
-┌────────▼──────────┐
-│  Go Integration   │  (WebSocket Client + IPC)
-│  go-neuro-int...  │
-└────────┬──────────┘
-         │
-         │ File IPC (JSON)
-         │ (neuro_ipc.json)
-         │
-┌────────▼──────────┐
-│  Rust Binary      │  (Main Process)
-│  neuro-desktop    │
-└────────┬──────────┘
-         │
-         │ PyO3 FFI
-         │
-┌────────▼──────────┐
-│  Python Driver    │  (pyautogui)
-│  controller/      │
-└───────────────────┘
+┌─────────────────────────────┐
+│  Neuro API (ws://…)         │
+└──────────┬──────────────────┘
+           │ neuro-sdk (Go)
+┌──────────▼───────────────────────────────────────────────────────────┐
+│  SERVER — desktop/apps/neuro-integration (Go)                        │
+│  • talks to Neuro (actions, context, results)                        │
+│  • serves the dashboard API and the dashboard page at /ui/           │
+│  • owns the permission policy, audit log, kill switch, game catalog  │
+│  • vision client; forwards machine commands to the client            │
+└──────────┬───────────────────────────────────────────────────────────┘
+           │ executor protocol (JSON lines) or file IPC
+┌──────────▼───────────────────────────────────────────────────────────┐
+│  CLIENT (neuro-client) — desktop/backend/python/controller (Python)  │
+│  • runs on the PC Neuro controls (usually the same machine)          │
+│  • mouse/keyboard via pyautogui, screen capture, windows, shell      │
+│  • built as one program with PyInstaller: no Python needed there     │
+│  • refuses input on a headless machine and says why                  │
+└──────────────────────────────────────────────────────────────────────┘
+
+Dashboard page (your browser) ──HTTP /ui/──► the server, or the DASHBOARD PROGRAM
+(`neuro-dashboard`, optional, on your own PC), which forwards only /api and /health.
 ```
 
-## Components
+The server executes *decisions*; the client executes *actions*. The dashboard
+is a client of the server. See `docs/ARCHITECTURE.md` for why the project is split
+into these programs (and why the client is not rewritten in Go yet), and
+`docs/EXECUTOR_PROTOCOL.md` for the wire protocol between the server and the client.
 
-### 1. **Go WebSocket Integration** (`native/go-neuro-integration/`)
-- Connects to Neuro API via WebSocket
-- Registers 5 action types:
-  - `move_mouse`: Move cursor to X,Y
-  - `click_mouse`: Click at position
-  - `type_text`: Type text
-  - `press_key`: Press keys with modifiers
-  - `run_script`: Execute multi-command scripts
-- Converts Neuro actions to IPC commands
-- Sends results back to Neuro
-
-### 2. **Rust IPC Handler** (`apps/neuro-desktop/src/ipc_handler.rs`)
-- Reads JSON commands from `neuro_ipc.json`
-- Executes commands via Python controller
-- Writes JSON responses to `neuro_ipc.json.response`
-- Runs in background thread (non-blocking)
-
-### 3. **Python Controller** (`backend/python/controller/`)
-- Existing cross-platform input controller:
-- Action parser for script language
-- Mouse controller with path drawing
-- Keyboard controller with queuing
-- Desktop monitor for telemetry
-
-## Setup
-
-### Prerequisites
+## Quick start
 
 ```bash
-# Go 1.25+
-go version
+# 1. Server (on the PC that runs Neuro). Set up once: this prints the dashboard token.
+cd desktop/apps/neuro-integration
+go build -o neuro-integration .
+./neuro-integration setup
+NEURO_SDK_WS_URL=ws://127.0.0.1:8000 ./neuro-integration
 
-# Rust
-cargo --version
+# 2. Client (on the PC Neuro should control — same machine in dev)
+cd desktop/backend/python
+python3 -m controller.agent --bridge 127.0.0.1:9876
+#    or the built program: ./scripts/build-client.sh, then dist/neuro-client/neuro-client --bridge 127.0.0.1:9876
 
-# Python 3.8+ with venv
-python --version
+# 3. Dashboard: sign in with the token from step 1
+xdg-open http://127.0.0.1:8300/ui/      # macOS: open, Windows: start
+#    or on your own PC (the server's admin port reached over SSH):
+#    cd apps/neuro-dashboard && go build -o neuro-dashboard .
+#    ./neuro-dashboard --server http://127.0.0.1:8300 --listen 127.0.0.1:8310
 ```
 
-## Running
+`setup` creates the relay token (`relay-token`, shared by the relay host and the
+server) and the dashboard token (`dashboard-token`, which keeps only its hash). It
+is safe to run again, and `setup --check` changes nothing. The bundle's `start.sh`
+and `start.bat` run it on every start.
 
-### Development Mode
+Everything can also be built and staged in one step:
 
-**Terminal 1 - Rust Binary:**
-```powershell
-# Set IPC path
-$env:NEURO_IPC_FILE = "./neuro_ipc.json"
-
-# Run Rust binary
-cd apps/neuro-desktop
-cargo run --release
-```
-
-**Terminal 2 - Go Integration:**
-```powershell
-# Set WebSocket URL and IPC path
-$env:NEURO_SDK_WS_URL = "ws://localhost:8000"
-$env:NEURO_IPC_FILE = "./neuro_ipc.json"
-
-# Run Go integration
-cd apps/neuro-integration
-./go-neuro-integration
-```
-
-**Terminal 3 - Randy (for testing):**
 ```bash
-cd Randy
-npm install
-npm start
+./scripts/build-all.sh            # server + dashboard program + dashboard page + client syntax check
+./scripts/bundle/dev.sh           # stages dist/dev and launches the server
+NEURO_BUNDLE_SKIP_VENV=1 ./scripts/bundle/prod.sh   # release bundle in dist/neuro-desktop
+./scripts/build-client.sh         # neuro-client: the client as one program (PyInstaller)
 ```
 
-### Production Bundle
+The bundle's `start.sh` / `start.bat` launch the server and the local client
+together (`neuro-client/` when the bundle has it, else the Python agent);
+`NEURO_NO_AGENT=1` skips the client for a split-machine setup.
 
-Update your `scripts/bundle/prod.ps1`:
+On Linux/macOS, the development bundle also provides `dist/dev/start.sh` and
+starts the local client automatically. Rebuilding either shell bundle preserves
+tokens, `permissions.json`, installed extensions, and custom game profiles.
+The development script uses `backend/python/.venv/bin/python` when it exists;
+`NEURO_AGENT_PYTHON=/path/to/python` selects another client interpreter.
+For a desktop client from source, install its drivers once:
 
-```powershell
-# ... existing code ...
-
-# ---------- Build Go Integration ----------
-Write-Host "Building Go integration..."
-Push-Location native/go-neuro-integration
-go build -o go-neuro-integration.exe main.go
-Pop-Location
-
-Copy-Item `
-  apps/neuro-integration/dist/neuro-integration.exe `
-  $DIST
-
-# ... rest of existing code ...
+```bash
+python3 -m venv backend/python/.venv
+backend/python/.venv/bin/python -m pip install -r backend/python/requirements.txt
+./scripts/bundle/dev.sh
 ```
 
-## File IPC Protocol
+With `NEURO_HEADLESS=1`, the client needs only Python's standard library.
+On supported Wayland compositors (including Hyprland), install `grim` for native
+screenshots; the client uses MSS on X11, Windows, and macOS. Missing GUI drivers
+and capture failures are reported in telemetry without stopping the client.
+The dashboard exposes Pause / Resume and Release all input on every tab. Its
+Activity tab reads `NEURO_AUDIT_LOG`; the Neuro API connection has its own runtime
+card, so an available dashboard does not imply Neuro is connected.
 
-### Command Format (Go → Rust)
-Written to: `neuro_ipc.json`
-
-```json
-{
-  "type": "mouse_move",
-  "params": {
-    "x": 500,
-    "y": 300
-  }
-}
-```
-
-### Response Format (Rust → Go)
-Written to: `neuro_ipc.json.response`
-
-```json
-{
-  "success": true,
-  "data": null,
-  "error": null
-}
-```
-
-## Action Types
-
-### 1. Move Mouse
-```json
-{
-  "type": "mouse_move",
-  "params": { "x": 500, "y": 300 }
-}
-```
-
-### 2. Click Mouse
-```json
-{
-  "type": "mouse_click",
-  "params": {
-    "x": 500,
-    "y": 300,
-    "button": "left"
-  }
-}
-```
-
-### 3. Type Text
-```json
-{
-  "type": "key_type",
-  "params": { "text": "Hello from Neuro!" }
-}
-```
-
-### 4. Press Key
-```json
-{
-  "type": "key_press",
-  "params": {
-    "key": "enter",
-    "modifiers": ["ctrl", "shift"]
-  }
-}
-```
-
-### 5. Run Script
-```json
-{
-  "type": "run_script",
-  "params": {
-    "script": "TYPE \"git status\"\nENTER\nWAIT 0.5"
-  }
-}
-```
-
-## Script Language
-
-Your Python controller already supports a powerful script language:
-
-```
-TYPE "hello world"
-ENTER
-WAIT 0.5
-MOVE 400 300
-CLICK 400 300
-SHORTCUT ctrl c
-PRESS escape
-```
-
-Commands supported:
-- `TYPE "text"` - Type text
-- `ENTER` - Press enter
-- `PRESS key` - Press a key
-- `SHORTCUT key1 key2 ...` - Press key combination
-- `MOVE x y [duration]` - Move mouse
-- `CLICK x y [button]` - Click mouse
-- `WAIT seconds` - Wait/pause
-- `LINE x1 y1 x2 y2` - Draw line
-- `PATH x1 y1 x2 y2 x3 y3 ...` - Draw path
-
-## Environment Variables
-
-```powershell
-# Neuro WebSocket URL
-$env:NEURO_SDK_WS_URL = "ws://localhost:8000"
-
-# IPC file path
-$env:NEURO_IPC_FILE = "./neuro_ipc.json"
-```
-
-### File Structure
+## Layout
 
 ```
 desktop/
-├── apps/neuro-desktop/
-│   └── src/
-│       ├── main.rs          (updated)
-│       ├── controller.rs    (your existing code)
-│       └── ipc_handler.rs   (new)
-├── native/
-│   └── go-neuro-integration/
-│       ├── main.go          (new)
-│       └── go.mod           (new)
-└── backend/python/
-    └── controller/          (your existing code)
+├── apps/
+│   ├── neuro-integration/    SERVER (Go): Neuro client, dashboard API, executor hub, policy,
+│   │                         relay host (`relay` subcommand), MCP bridge, signed catalog
+│   ├── neuro-dashboard/      DASHBOARD PROGRAM (Go, stdlib only): serves the page, forwards /api and /health
+│   ├── neuro-client/         entry point for the PyInstaller build of the CLIENT
+│   ├── neuro-client-go/      the Go port of the CLIENT, slice 1 (not shipped; see its README)
+│   └── nd-vision-server/     optional vision service (Python, stdlib HTTP; Pillow optional)
+├── backend/python/
+│   ├── controller/           CLIENT / AGENT + drivers (agent.py, actions.py, controls/, shell.py)
+│   └── tests/                unittest suite for the agent and the safety rules
+├── frontend/                 DASHBOARD PAGE (React + TypeScript + Vite)
+├── catalog/                  game profiles, catalog index, live extension state
+├── config/                   example policy (no config file: settings are env vars)
+├── scripts/                  build-all.*, build-go.ps1, build-client.*, bundle/{dev,prod}.*, templates/
+├── tools/
+│   ├── ci/repo_checks.py     dependency-free repository checks (what CI runs first)
+│   ├── fake-executor/        protocol simulator for the server (no input is ever generated)
+│   └── ollama-neuro/         local small-model brain for testing the action surface
+└── docs/ (repo root docs/)   ARCHITECTURE, EXECUTOR_PROTOCOL, LLM_GUIDE, SAFETY, CAPABILITIES
 ```
-
-## Testing
-
-### 1. Test IPC Manually
-
-Write to `neuro_ipc.json`:
-```json
-{"type":"mouse_move","params":{"x":500,"y":500}}
-```
-
-Check `neuro_ipc.json.response`:
-```json
-{"success":true}
-```
-
-### 2. Test with Randy
-
-1. Start Randy: `cd Randy && npm start`
-2. Start Rust: `cargo run --release`
-3. Start Go: `./neuro-integration`
-4. Randy will force random actions
-
-### 3. Test Script Execution
-
-Have Neuro run:
-```
-TYPE "notepad"
-ENTER
-WAIT 1
-TYPE "Hello from Neuro!"
-```
-
-## Benefits of This Architecture
-
-1. **Separation of Concerns**
-   - Go handles WebSocket complexity
-   - Rust handles system integration
-   - Python handles cross-platform input
-
-2. **Simple IPC**
-   - Just JSON files
-   - No sockets or pipes
-   - Easy to debug
-
-3. **Your Existing Code**
-   - No changes to Python controller
-   - Minimal changes to Rust
-   - Leverages all your work
-
-4. **Scalable**
-   - Easy to add new actions
-   - Easy to extend script language
-   - Easy to add error handling
-
-## Troubleshooting
-
-### "IPC file not found"
-- Check `NEURO_IPC_FILE` environment variable
-- Ensure Rust binary is running
-- Check file permissions
-
-### "Timeout waiting for Rust response"
-- Rust binary may have crashed
-- Check Rust logs for Python errors
-- Verify Python controller is initialized
-
-### "WebSocket connection failed"
-- Check `NEURO_SDK_WS_URL` is correct
-- Ensure Randy or Neuro API is running
-- Check firewall settings
-
-<!-- ## Next Steps
-
-1. **Add More Actions**: Extend both Go and Rust to support new commands
-2. **Add Vision**: Integrate screenshot analysis
-3. **Add Telemetry**: Use your `DesktopMonitor` to send context to Neuro
-4. **Add Safety**: Implement action rate limiting
-5. **Add UI**: Show what Neuro is doing in your frontend -->
-
-## Example Neuro Interactions
-
-**User**: "Neuro, open notepad and write hello"
-
-**Neuro calls**:
-1. `run_script`: `"SHORTCUT win\nTYPE \"notepad\"\nENTER\nWAIT 1"`
-2. `type_text`: `"Hello from Neuro!"`
-
-**User**: "Click on the start button"
-
-**Neuro calls**:
-1. `move_mouse`: `{x: 10, y: 1070}` (bottom-left)
-2. `click_mouse`: `{button: "left"}`
-
-# Neuro Desktop - Complete Setup Guide
-
-## Overview
-
-The Rust binary now **automatically starts and manages** the Go integration. You only need to run one executable!
-
-```
-You run: neuro-desktop.exe
-   ↓
-Rust starts: go-neuro-integration.exe
-   ↓
-Both communicate via: neuro_ipc.json
-```
-
-## Quick Start
-
-### 1. Initial Setup
-
-```powershell
-# Run the dev setup script (installs all dependencies)
-.\scripts\setup-dev.ps1
-```
-
-### 2. Build Everything
-
-```powershell
-# Build all components
-make all
-
-# Or manually:
-cd native/go-neuro-integration
-go build -o go-neuro-integration.exe main.go
-cd ../..
-
-cd apps/neuro-desktop
-cargo build --release
-cd ../..
-```
-
-### 3. Bundle for Development
-
-```powershell
-# This copies Go binary + Python + frontend to Rust's target/release
-.\scripts\bundle\dev.ps1
-```
-
-### 4. Run
-
-```powershell
-# Just run the Rust binary - it handles everything!
-cd apps/neuro-desktop/target/release
-.\neuro-desktop.exe
-```
-
-That's it! The Rust binary will:
-1. ✅ Initialize Python controllers
-2. ✅ Start IPC handler  
-3. ✅ Launch Go integration automatically
-4. ✅ Monitor and restart Go if it crashes
-
-## Project Structure
-
-```
-desktop/
-├── apps/neuro-desktop/          # Main Rust application
-│   └── src/
-│       ├── main.rs              # Entry point + Go manager
-│       ├── controller.rs        # Python FFI (your existing code)
-│       ├── ipc_handler.rs       # IPC command processor (NEW)
-│       └── go_manager.rs        # Go process manager (NEW)
-│
-├── native/
-│   └── go-neuro-integration/    # Go WebSocket client (NEW)
-│       ├── main.go              # Neuro API connector
-│       └── go.mod
-│
-└── backend/python/controller/   # Python drivers (your existing code)
-    ├── lib.py
-    ├── actions.py
-    ├── mouse.py
-    ├── keyboard.py
-    └── desktop.py
-```
-
-## What Each Component Does
-
-### Rust Binary (`neuro-desktop.exe`)
-- **Main orchestrator**
-- Initializes Python controllers
-- Spawns Go integration as child process
-- Monitors Go health and restarts if needed
-- Handles IPC commands from Go
-- Executes actions via Python
-
-### Go Integration (`go-neuro-integration.exe`)
-- **Neuro API client**
-- Connects to Neuro WebSocket
-- Registers 5 action types
-- Converts Neuro actions → IPC commands
-- Sends results back to Neuro
-- **Managed automatically by Rust**
-
-### Python Controller (already exists)
-- **Cross-platform input driver**
-- Mouse/keyboard control via pyautogui
-- Powerful script language
-- Action telemetry
-- **Called by Rust via PyO3**
-
-## Development Workflow
-
-### Daily Development
-
-```powershell
-# Terminal 1: Randy (Neuro mock server)
-cd Randy
-npm start
-
-# Terminal 2: Your app
-cd apps/neuro-desktop/target/release
-.\neuro-desktop.exe
-```
-
-The Rust binary will automatically start Go and connect to Randy!
-
-### Making Changes
-
-**Changed Rust code?**
-```powershell
-cd apps/neuro-desktop
-cargo build --release
-cd target/release
-.\neuro-desktop.exe
-```
-
-**Changed Go code?**
-```powershell
-cd native/go-neuro-integration
-go build
-cd ../../apps/neuro-desktop/target/release
-copy ..\..\..\..\..\native\go-neuro-integration\go-neuro-integration.exe .
-.\neuro-desktop.exe
-```
-
-**Changed Python code?**
-```powershell
-# Just re-run! Python is interpreted
-cd apps/neuro-desktop/target/release
-.\neuro-desktop.exe
-```
-
-### Full Rebuild
-
-```powershell
-# Clean everything
-make clean
-
-# Build everything
-make all
-
-# Bundle for dev
-.\scripts\bundle\dev.ps1
-
-# Run
-cd apps/neuro-desktop/target/release
-.\neuro-desktop.exe
-```
-
-## Production Build
-
-### Create Distribution Package
-
-```powershell
-.\scripts\bundle\prod.ps1
-```
-
-This creates `dist/neuro-desktop/` with:
-```
-neuro-desktop/
-├── neuro-desktop.exe          ← Main binary
-├── go-neuro-integration.exe   ← Bundled automatically
-├── python/                     ← Python runtime
-│   ├── Lib/                    ← Dependencies
-│   └── controller/             ← Your drivers
-├── frontend/                   ← Web UI
-├── README.txt                  ← Instructions
-└── start.bat                   ← Easy launcher
-```
-
-### Distribute
-
-1. Zip the entire `dist/neuro-desktop/` folder
-2. Users extract and run `neuro-desktop.exe`
-3. Everything works out of the box!
 
 ## Configuration
 
-### Environment Variables
+| Variable | What it does |
+| --- | --- |
+| `NEURO_SDK_WS_URL` / `-ws-url` | Neuro API websocket (`ws://localhost:8000` by default) |
+| `NEURO_ADMIN_LISTEN` | dashboard address (`127.0.0.1:8300`) |
+| `NEURO_DASHBOARD_LISTEN` / `--listen` | **dashboard program only**: its address (`127.0.0.1:8310`). A non-loopback address prints a warning |
+| `NEURO_DASHBOARD_SERVER` / `--server` | **dashboard program only**: the server it forwards `/api` and `/health` to (`http://127.0.0.1:8300`). Plain HTTP to another machine prints a warning |
+| `NEURO_UI_DIR` / `--ui-dir` | **dashboard program only**: the built page folder (it contains `index.html`); found next to the program when empty |
+| `NEURO_ADMIN_TOKEN` | optional override of the dashboard token; at least 16 characters, and it must equal the token `setup` printed. Every `/api` route needs the token, loopback included |
+| `NEURO_DASHBOARD_TOKEN_FILE` | where the dashboard token's SHA-256 hash is kept (`./dashboard-token`, mode 0600). `setup` writes it |
+| `NEURO_EXECUTOR_LISTEN` / `-executor-listen` | hub address clients (agents) connect to (`127.0.0.1:9876`) |
+| `NEURO_EXECUTOR_TOKEN` | shared secret every agent must present. Required before the hub listens beyond loopback. It is sent in plain TCP (see `docs/SAFETY.md`, section 6) |
+| `NEURO_IPC_FILE` | file-IPC fallback path for a co-located agent |
+| `NEURO_PERMISSIONS_FILE` | policy file (see `config/permissions.example.json`) |
+| `NEURO_HEADLESS` | `1`/`true` on a machine with no display session |
+| `NEURO_SHELL_ALLOWLIST` | programs the shell action may run (`ls,echo,python3`) |
+| `NEURO_DENY_ACTIONS` | actions that never run (`type_text`) |
+| `NEURO_AUDIT_LOG` | JSON-lines audit file |
+| `NEURO_RELAY_ENABLED` / `NEURO_RELAY_URL` | connect the server to a relay as an integration (`neuro-integration relay`, or the upstream relay) |
+| `NEURO_RELAY_TOKEN` | optional. The server's relay token comes from the relay token file; if this is set it must equal that file, or the link stays off. For the upstream relay, point `NEURO_RELAY_TOKEN_FILE` at a file holding its `intermediary.auth_token` |
+| `NEURO_RELAY_TOKEN_FILE` | the relay token shared by the relay host and the server (`./relay-token`, mode 0600). `setup` creates it |
+| `NEURO_RELAY_LISTEN` / `NEURO_RELAY_AUTH_TOKEN` | the relay host's socket, and an optional token override for the host (it must equal the file) |
+| `NEURO_RELAY_HEALTH_LISTEN` / `NEURO_RELAY_NEURO_URL` / `NEURO_RELAY_NEURO_OS_TOKEN` | the relay host's health endpoint, the optional Neuro link for `direct_to_neuro`, and the enhanced watcher token |
+| `NEURO_VISION_URL` / `NEURO_VISION_TOKEN` | the vision service `game_observe` calls (`NEURO_VISION_SERVER_URL` is still read as an alias) |
+| `NEURO_CATALOG_FILE` / `NEURO_PUBLISHERS_FILE` | the signed extension index and the publisher keys the server trusts |
+| `NEURO_EXTENSION_DIR` / `NEURO_EXTENSION_INSTALL_MODE` | where installed extensions live, and `metadata_only` (default) or `git_clone` |
+| `NEURO_EXTENSIONS_ALLOW_UNSIGNED` | **dangerous, development builds only** (`go build -tags neurodev`, which `dev.sh` uses): install extensions whose signature does not verify. A release build ignores it and logs once that it is ignored. Leave it unset |
+| `NEURO_GAME_PROFILES_DIR`, `NEURO_CATALOG_FILE` | game profiles and catalog index |
+| `NEURO_RELAY_*` | optional Neuro Relay participation (see `docs/RELAY.md`) |
+| `NEURO_VISION_URL` | vision server used by `game_observe` |
 
-```powershell
-# WebSocket URL (optional, default: ws://localhost:8000)
-$env:NEURO_SDK_WS_URL = "ws://your-neuro-api:8080"
+## Actions
 
-# IPC file path (optional, auto-generated in exe directory)
-$env:NEURO_IPC_FILE = "C:\custom\path\neuro_ipc.json"
+`GET /api/actions` lists every action with its `kind`, its JSON `schema`, and a
+plain-language `params` hint (for example `direction` with the allowed values,
+which params are required). The same schemas are registered with Neuro.
+`docs/LLM_GUIDE.md` explains how to prompt a small model so it uses them
+correctly; `docs/CAPABILITIES.md` is the full feature list.
 
-# Run
-.\neuro-desktop.exe
-```
+Roughly: mouse/keyboard primitives, script and shell execution, desktop shell
+intents (`open_windows_menu`, `show_desktop`, …), catalog and extension
+management, telemetry (`get_status`, `get_desktop_context`), and the high-level
+game interface (`game_list_profiles`, `game_start_session`, `game_move`, …).
 
-### For End Users
+## Safety
 
-No configuration needed! Just:
-1. Extract zip
-2. Run `neuro-desktop.exe`
-3. It connects to `ws://localhost:8000` by default
+Every action goes through the same pipeline: kill switch and pause state, deny
+list, permission policy (per-scope budgets and explicit consent for `shell` and
+`system`), rate limit, the shell firewall — all logged to the audit file, and all
+flippable live from the dashboard. `docs/SAFETY.md` lists each guard, where it
+lives, and how to verify it.
 
-## Monitoring
+## Headless / command-line-only machines
 
-### Console Output
-
-```
-=======================================================
-           Neuro Desktop Control System
-=======================================================
-
-Configuration:
-  - Neuro WebSocket: ws://localhost:8000
-  - IPC File:        C:\...\neuro_ipc.json
-
-[1/3] Initializing Python controller drivers...
-      ✓ Python drivers loaded
-
-[2/3] Starting IPC handler...
-      ✓ IPC handler running on: C:\...\neuro_ipc.json
-
-[3/3] Starting Go WebSocket integration...
-Starting Go integration at: C:\...\go-neuro-integration.exe
-Go integration started with PID: 12345
-      ✓ Go integration connected to Neuro
-
-=======================================================
-  Neuro Desktop is ready!
-  Neuro can now control your computer.
-=======================================================
-
-Press Ctrl+C to stop
-```
-
-### Health Monitoring
-
-The Rust binary checks Go every 5 seconds:
-- If Go crashes → **Auto-restarts**
-- If Go restart fails → **Exits gracefully**
-
-## Troubleshooting
-
-### "Go integration binary not found"
-
-**Cause**: `go-neuro-integration.exe` not in same folder as `neuro-desktop.exe`
-
-**Fix**:
-```powershell
-# Rebuild the bundle
-.\scripts\bundle\dev.ps1
-
-# Or manually copy
-copy native\go-neuro-integration\go-neuro-integration.exe apps\neuro-desktop\target\release\
-```
-
-### "Failed to initialize controller drivers"
-
-**Cause**: Python dependencies missing
-
-**Fix**:
-```powershell
-.\scripts\setup-dev.ps1
-.\scripts\bundle\dev.ps1
-```
-
-### "Go integration crashed! Attempting restart..."
-
-**Cause**: Go couldn't connect to Neuro API
-
-**Fix**:
-1. Start Randy: `cd Randy && npm start`
-2. Or set correct URL: `$env:NEURO_SDK_WS_URL = "ws://..."`
-
-### Go keeps restarting in loop
-
-**Cause**: WebSocket URL is wrong or unreachable
-
-**Fix**:
-```powershell
-# Check Randy/Neuro is running
-curl ws://localhost:8000
-
-# Set correct URL
-$env:NEURO_SDK_WS_URL = "ws://correct-url:port"
-```
+Set `NEURO_HEADLESS=1` (or just have no `DISPLAY`/`WAYLAND_DISPLAY`). Input
+actions then fail fast with an explanation, `get_status` reports `headless:
+true`, and the shell capability becomes the useful surface — still bounded by
+`NEURO_SHELL_ALLOWLIST`, `NEURO_SHELL_DENY_PATTERNS` and the 20-second default
+timeout.
 
 ## Testing
 
-### Test IPC Manually
+```bash
+# server (Go)
+cd desktop/apps/neuro-integration && go test -race ./...    # -race needs cgo (CI runs it on Linux)
+cd desktop/apps/neuro-integration && go test -race -tags neurodev ./...   # the dev-only switch's tests
 
-While Rust is running, create `neuro_ipc.json`:
-```json
-{"type":"mouse_move","params":{"x":800,"y":600}}
+# dashboard program (Go, stdlib only): the proxy rules, the sign-in pass-through, 502 when the server is down
+cd desktop/apps/neuro-dashboard && go vet ./... && go test -count=1 ./...
+
+# agent + safety rules (Python, no third-party deps needed)
+cd desktop/backend/python && python3 -m unittest discover -s tests -t .
+
+# the client as one program (Linux/macOS; Windows: scripts/build-client.ps1). Needs Python headers on Linux
+./scripts/build-client.sh && ./dist/neuro-client/neuro-client --help
+
+# everything CI runs first: JSON/JSONC, policy parity, catalog, docs, file sizes,
+# stale references, the ollama brain tests
+python3 desktop/tools/ci/repo_checks.py
+
+# dashboard client
+cd desktop/frontend && npm run build
 ```
 
-Check console for:
-```
-IPC: Executing mouse_move
-Mouse moved to (800, 600)
-```
+`desktop/tools/fake-executor/fake_executor.py` speaks the agent protocol and
+never generates input, so the server can be exercised (and the dashboard
+explored) on a machine with no display and without touching anything.
 
-### Test with Randy
+## Troubleshooting
 
-```powershell
-# Terminal 1
-cd Randy
-npm start
+| Symptom | Cause / fix |
+| --- | --- |
+| `/api/status` shows `executor.connected: false` | No agent connected. Start `python3 -m controller.agent --bridge 127.0.0.1:9876`, or use `NEURO_IPC_FILE` file IPC. |
+| `executor.replaced_connections` climbing | Two agents are running against one hub; the newer one wins. Kill the extra process. |
+| Actions fail with "no display session" | The agent is on a machine without a GUI session. Use `shell_command`, or run the agent on the desktop PC. |
+| `relay rejected the registration` | The token must match on both sides. The server reads the relay token file that `setup` writes. The relay host reads the same file (or `NEURO_RELAY_AUTH_TOKEN`). For the upstream relay, it is `intermediary.auth_token`. The relay's log says `invalid auth token`. |
+| `relay link disabled: NEURO_RELAY_TOKEN differs from the relay token file` | Unset `NEURO_RELAY_TOKEN`, or copy the file's value into it. Run `setup --check` to see every mismatch. |
+| `no relay token: run neuro-integration setup` | No relay token file exists yet. Run `neuro-integration setup`. |
+| Shell action says the command is not allow-listed | Add the program to `NEURO_SHELL_ALLOWLIST`; the output names the pattern that blocked it. |
+| Dashboard answers `503`: "the dashboard has no token yet" | Run `neuro-integration setup`, then sign in with the token it prints. |
+| Dashboard answers `503` with "does not match the dashboard token" | `NEURO_ADMIN_TOKEN` disagrees with the stored token. Unset it, or set it to the printed token. |
+| Dashboard answers `401` | The token is wrong or missing. Send it in the `X-ND-Token` header or as a Bearer token. A `?token=` query parameter is not read. |
+| Dashboard program answers `502` | It is running, but the server at `--server` did not answer. Start the server, or fix the address (see `docs/TROUBLESHOOTING.md`) |
+| `scripts/build-client.sh` fails on Linux with `Python.h` or `evdev` | `pynput` needs `evdev`, which builds from source. Install the Python development headers (`sudo apt install python3-dev`) and run it again |
 
-# Terminal 2  
-cd apps/neuro-desktop/target/release
-.\neuro-desktop.exe
+## Removed
 
-# Watch Randy send random actions!
-```
+Several components were deleted when the server and the agent were consolidated into Go and Python: the Rust executor, the C++ process handler, the Python relay shim, the `native/` placeholders, and the root integration scripts that could not run. Nothing in the shipped path uses them, and `tools/ci/repo_checks.py` fails if a reference to one of them returns. The list and the reasons are in `CHANGELOG.md`.
 
-### Test Script Execution
-
-In Randy's console or via Neuro:
-```javascript
-// Force action
-{
-  "action": "run_script",
-  "params": {
-    "script": "TYPE \"Hello Neuro!\"\nENTER"
-  }
-}
-```
-
-## Advanced: Cross-Platform Build
-
-Build Go for all platforms:
-
-```powershell
-.\scripts\bundle\build-go.ps1
-```
-
-```powershell
-.\scripts\bundle\build-go.ps1
-```
-
-Outputs:
-- `go-neuro-integration-windows-amd64.exe`
-- `go-neuro-integration-linux-amd64`
-- `go-neuro-integration-darwin-amd64`
-- `go-neuro-integration-darwin-arm64`
-
-Then update `go_manager.rs` to use the right binary for each OS.
-
-<!-- ## What's Next?
-
-1. **Add UI**: Show Neuro's actions in your frontend
-2. **Add Safety**: Implement action rate limiting  
-3. **Add Vision**: Send screenshots to Neuro
-4. **Add Telemetry**: Use your DesktopMonitor data
-5. **Add Shortcuts**: Hotkeys to pause/resume Neuro -->
-
-## Example Session
-
-```powershell
-PS> .\neuro-desktop.exe
-=======================================================
-           Neuro Desktop Control System
-=======================================================
-
-Configuration:
-  - Neuro WebSocket: ws://localhost:8000
-  - IPC File:        C:\Users\You\neuro_ipc.json
-
-[1/3] Initializing Python controller drivers...
-      ✓ Python drivers loaded
-
-[2/3] Starting IPC handler...
-      ✓ IPC handler running
-
-[3/3] Starting Go WebSocket integration...
-Go integration started with PID: 15420
-      ✓ Go integration connected to Neuro
-
-=======================================================
-  Neuro Desktop is ready!
-=======================================================
-
-Press Ctrl+C to stop
-
-# Neuro does her thing...
-IPC: Executing mouse_move (800, 600)
-IPC: Executing type_text "Hello from Neuro!"
-IPC: Executing run_script
-
-# You press Ctrl+C
-^C
-Shutting down...
-Stopping Go integration...
-Go integration stopped
-Neuro Desktop stopped
-```
-
-Perfect! 🎉
+The manager is a separate native GTK 4 application with its own startup splash.
+Build it with `python3 scripts/build-manager.py --standalone`, or use the development
+bundle with GTK and PyGObject installed. The server also provides an optional browser
+dashboard. See [manager setup and resource use](apps/neuro-manager/README.md).

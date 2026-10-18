@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	neuro "github.com/cassitly/neuro-integration-sdk"
 )
@@ -47,17 +49,57 @@ const (
 	CmdUninstallExtension  CommandType = "uninstall_extension"
 	CmdEnableExtension     CommandType = "enable_extension"
 	CmdDisableExtension    CommandType = "disable_extension"
+	CmdMarketplaceSearch   CommandType = "marketplace_search"
+	CmdStageIntegration    CommandType = "stage_integration_source"
+	CmdViewerVisibility    CommandType = "set_viewer_visibility"
 	CmdGetStatus           CommandType = "get_status"
 	CmdRunScript           CommandType = "run_script"
 	CmdExecuteQueue        CommandType = "execute_queue"
 	CmdClearActionQueue    CommandType = "clear_action_queue"
 	CmdShutdownGracefully  CommandType = "shutdown_gracefully"
 	CmdShutdownImmediately CommandType = "shutdown_immediately"
+
+	// Raw input primitives the game layer needs (relative look, held keys,
+	// key combinations, held mouse buttons, and a safety release-everything).
+	// Self-documentation for small models.
+	CmdDesktopGuide  CommandType = "desktop_guide"
+	CmdResetControls CommandType = "reset_controls"
+
+	// Shell capability (headless-friendly: this is what Neuro can do on a
+	// command-line-only machine). Guarded by the `shell` scope and the shell
+	// firewall, and never enabled by the shipped example policy.
+	CmdShellCommand CommandType = "shell_command"
+
+	CmdMoveMouseRelative CommandType = "move_mouse_relative"
+	CmdKeyHoldFor        CommandType = "key_hold_for"
+	CmdKeyReleaseAll     CommandType = "key_release_all"
+	CmdKeyCombo          CommandType = "key_combo"
+	CmdMouseHoldFor      CommandType = "mouse_hold_for"
+
+	// High-level game interface: Neuro plays a game that has no dedicated
+	// integration, or observes one that does.
+	CmdGameListProfiles CommandType = "game_list_profiles"
+	CmdGameDetect       CommandType = "game_detect"
+	CmdGameStartSession CommandType = "game_start_session"
+	CmdGameEndSession   CommandType = "game_end_session"
+	CmdGameStatus       CommandType = "game_status"
+	CmdGameMove         CommandType = "game_move"
+	CmdGameLook         CommandType = "game_look"
+	CmdGameAction       CommandType = "game_action"
+	CmdGamePress        CommandType = "game_press"
+	CmdGameReleaseAll   CommandType = "game_release_all"
+	CmdGameObserve      CommandType = "game_observe"
+	CmdGameLaunch       CommandType = "game_launch"
 )
 
+// actionKindGame marks the high-level game interface actions so they can be
+// registered (or withheld) as a group.
+const actionKindGame = "game"
+
 var (
-	RegisterHLActionsOnStartup bool = false
-	RegisterLLActionsOnStartup bool = true
+	RegisterHLActionsOnStartup   bool = false
+	RegisterLLActionsOnStartup   bool = true
+	RegisterGameActionsOnStartup bool = getEnvBool("NEURO_GAME_ACTIONS", true)
 
 	currentActionList   = map[string]neuro.ActionHandler{}
 	currentActionListMu sync.Mutex
@@ -68,6 +110,9 @@ type actionSpec struct {
 	Name        CommandType
 	Description string
 	Schema      *neuro.ActionSchema
+	// Kind groups actions: "" for desktop actions, actionKindGame for the game
+	// interface. The registration list is filtered by kind.
+	Kind string
 }
 
 var HLActionSpecs = []actionSpec{
@@ -172,6 +217,82 @@ var HLActionSpecs = []actionSpec{
 		Schema:      nil,
 	},
 	{
+		Name:        CmdGetDesktopContext,
+		Description: "Collect current desktop context snapshot (window/process/action history + optional screenshot path)",
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"capture_screenshot": map[string]interface{}{
+				"type":        "boolean",
+				"default":     false,
+				"description": "Capture a screenshot before generating context",
+			},
+		}, nil),
+	},
+	{
+		Name:        CmdSendDesktopContext,
+		Description: "Collect desktop context and send it to Neuro as a context message",
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"capture_screenshot": map[string]interface{}{
+				"type":        "boolean",
+				"default":     false,
+				"description": "Capture a screenshot before generating context",
+			},
+			"silent": map[string]interface{}{
+				"type":        "boolean",
+				"default":     true,
+				"description": "Send context silently",
+			},
+		}, nil),
+	},
+}
+
+// ShellActionSpecs is registered independently of the high/low level switch:
+// a headless machine has no high-level intents, but it does have a shell.
+var ShellActionSpecs = []actionSpec{
+	{
+		Name: CmdShellCommand,
+		Description: `Run one command line on the controlled machine and return its exit code and output. ` +
+			`Use this on headless/command-line-only machines, or for terminal work. ` +
+			`The program must be on the shell allowlist. Example: {"command": "ls -la"}`,
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"command": map[string]interface{}{
+				"type":        "string",
+				"description": "The full command line to run, e.g. \"ls -la\" or \"python3 --version\"",
+			},
+			"cwd": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional working directory; defaults to NEURO_SHELL_CWD or the executor's directory",
+			},
+			"timeout": map[string]interface{}{
+				"type":        "number",
+				"description": "How long to wait, in seconds (default 20, maximum 120)",
+			},
+		}, []string{"command"}),
+	},
+}
+
+// Management actions remain available in both input modes.
+var ManagementActionSpecs = []actionSpec{
+	{
+		Name:        CmdMarketplaceSearch,
+		Description: "Search the integration marketplace. Listings explain compatibility, installation steps, and permissions; a listing does not imply an integration is installed or running.",
+		Schema:      neuro.WrapSchema(map[string]interface{}{"query": map[string]interface{}{"type": "string", "description": "Optional name, game, or tag"}}, nil),
+	},
+	{
+		Name:        CmdStageIntegration,
+		Description: "Stage an approved marketplace integration's pinned source for local setup. Needs extensions permission and per-item management delegation. This does not execute an installer or start the integration; the result arrives as a message.",
+		Schema:      neuro.WrapSchema(map[string]interface{}{"item_id": map[string]interface{}{"type": "string", "description": "Marketplace integration id"}}, []string{"item_id"}),
+	},
+	{
+		Name:        CmdViewerVisibility,
+		Description: "Choose whether viewers can see your curated integration activity. Sharing expires automatically; private messages, credentials, and raw desktop capture are excluded.",
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"integration_id": map[string]interface{}{"type": "string"},
+			"actor":          map[string]interface{}{"type": "string", "enum": []string{"neuro", "evil"}},
+			"visible":        map[string]interface{}{"type": "boolean"},
+			"minutes":        map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 60, "default": 15},
+		}, []string{"integration_id", "actor", "visible"}),
+	},
+	{
 		Name:        CmdListCatalogItems,
 		Description: "List available catalog integrations/apps configured for Neuro Desktop",
 		Schema:      nil,
@@ -202,40 +323,14 @@ var HLActionSpecs = []actionSpec{
 		}, []string{"item_id"}),
 	},
 	{
-		Name:        CmdGetDesktopContext,
-		Description: "Collect current desktop context snapshot (window/process/action history + optional screenshot path)",
-		Schema: neuro.WrapSchema(map[string]interface{}{
-			"capture_screenshot": map[string]interface{}{
-				"type":        "boolean",
-				"default":     false,
-				"description": "Capture a screenshot before generating context",
-			},
-		}, nil),
-	},
-	{
-		Name:        CmdSendDesktopContext,
-		Description: "Collect desktop context and send it to Neuro as a context message",
-		Schema: neuro.WrapSchema(map[string]interface{}{
-			"capture_screenshot": map[string]interface{}{
-				"type":        "boolean",
-				"default":     false,
-				"description": "Capture a screenshot before generating context",
-			},
-			"silent": map[string]interface{}{
-				"type":        "boolean",
-				"default":     true,
-				"description": "Send context silently",
-			},
-		}, nil),
-	},
-	{
 		Name:        CmdListInstalledExts,
 		Description: "List installed/managed Neuro Desktop extensions",
 		Schema:      nil,
 	},
 	{
-		Name:        CmdInstallExtension,
-		Description: "Install an extension from the catalog (supports metadata-only or git-clone mode)",
+		Name: CmdInstallExtension,
+		Description: "Install a catalog extension by id. Needs the extensions permission (you can ask for it with request_permission). " +
+			"Only signed catalog items can fetch code. The outcome arrives later as a message.",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"item_id": map[string]interface{}{
 				"type":        "string",
@@ -275,6 +370,18 @@ var HLActionSpecs = []actionSpec{
 	},
 }
 
+// alwaysRegisteredSpecs are registered whatever the high- or low-level mode.
+// The shell is the main capability on a headless machine, the guide is the
+// cheapest way to make a small model behave, and request_permission is how
+// Neuro asks the operator for a permission it does not have.
+func alwaysRegisteredSpecs() []actionSpec {
+	specs := append([]actionSpec{}, ShellActionSpecs...)
+	specs = append(specs, ManagementActionSpecs...)
+	specs = append(specs, guideActionSpecs()...)
+	specs = append(specs, escapeHatchSpecs()...)
+	return append(specs, permissionRequestSpecs()...)
+}
+
 var LLActionSpecs = []actionSpec{
 	{
 		Name:        DisableLLControls,
@@ -283,7 +390,7 @@ var LLActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdMouseMove,
-		Description: "Move mouse cursor to specific coordinates",
+		Description: "Move mouse cursor to specific coordinates in screen pixels. Example: {\"x\": 640, \"y\": 360}",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"x": map[string]interface{}{
 				"type":        "integer",
@@ -307,7 +414,7 @@ var LLActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdMouseClick,
-		Description: "Click mouse button at current cursor position",
+		Description: "Click mouse button at current cursor position. Example: {\"button\": \"left\"}",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"button": map[string]interface{}{
 				"type":        "string",
@@ -329,7 +436,7 @@ var LLActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdTypeText,
-		Description: "Type text using keyboard",
+		Description: "Type text using keyboard. Example: {\"text\": \"hello\"}",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"text": map[string]interface{}{
 				"type":        "string",
@@ -350,7 +457,7 @@ var LLActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdKeyPress,
-		Description: "Press a specific keyboard key",
+		Description: "Press a specific keyboard key. Example: {\"key\": \"enter\"}",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"key": map[string]interface{}{
 				"type":        "string",
@@ -395,7 +502,7 @@ var LLActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdClearActionQueue,
-		Description: "Clear queued actions",
+		Description: "Clear queued actions that have not run yet. Example: {}",
 		Schema:      nil,
 	},
 }
@@ -418,17 +525,74 @@ func (a *IPCProxyAction) GetSchema() *neuro.ActionSchema {
 }
 
 func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.ExecutionResult) {
-	if a.integration.permissions != nil && !a.integration.permissions.IsAllowed(a.GetName()) {
-		return nil, neuro.NewFailureResult(fmt.Sprintf("Action denied by policy: %s", a.GetName()))
+	name := a.GetName()
+	a.integration.stats.noteAction(name)
+
+	policy := a.integration.policy()
+
+	// Pause flag and kill switch come first: they must hold even if the policy
+	// was just widened from the dashboard.
+	if reason := a.integration.stop.blockReason(name); reason != "" {
+		a.integration.stats.noteDenied(name)
+		a.integration.audit.record("action", map[string]interface{}{
+			"action": name, "decision": "refused", "reason": "stopped",
+		})
+		return nil, neuro.NewFailureResult(reason)
+	}
+
+	if policy != nil && !policy.IsAllowed(name) {
+		a.integration.stats.noteDenied(name)
+		a.integration.audit.record("action", map[string]interface{}{
+			"action": name, "decision": "refused", "reason": "policy",
+		})
+		return nil, neuro.NewFailureResult(policyDenialMessage(name, policy))
+	}
+
+	// Per-scope rate limit, before any work is queued.
+	if policy != nil {
+		scope, _ := scopeForAction(name)
+		if limit := policy.ScopeRateLimit(scope); limit > 0 {
+			if allowed, retryAfter := a.integration.rate.allow(scope, limit, time.Now()); !allowed {
+				a.integration.stats.noteDenied(name)
+				return nil, neuro.NewFailureResult(rateLimitDenial(scope, limit, retryAfter))
+			}
+		}
 	}
 
 	params := map[string]interface{}{}
 	if err := neuro.ParseActionData(data, &params); err != nil {
-		return nil, neuro.NewFailureResult("Invalid action parameters")
+		return nil, neuro.NewFailureResult(fmt.Sprintf(
+			"Invalid parameters for %s: the data must be a JSON object like %s. (Underlying error: %v)",
+			name, a.expectedParamsHint(), err))
+	}
+	if reason := a.missingParamsReason(params); reason != "" {
+		return nil, neuro.NewFailureResult(reason)
 	}
 
 	executeNow := getBoolParam(params, "execute_now", true)
 	clearAfter := getBoolParam(params, "clear_after", true)
+
+	if a.spec.Kind == actionKindGame {
+		return a.handleGameAction(params)
+	}
+
+	if a.spec.Name == CmdShellCommand {
+		return a.handleShellCommand(params)
+	}
+
+	if a.spec.Name == CmdDesktopGuide {
+		topic, _ := params["topic"].(string)
+		return nil, a.integration.desktopGuide(topic)
+	}
+
+	if a.spec.Name == CmdResetControls {
+		// Like every input action: accept now, do the work in Execute, and
+		// report the outcome as context (see Execute).
+		a.integration.audit.record("action", map[string]interface{}{
+			"action": name, "decision": "accepted",
+		})
+		return pendingWork{reset: true}, neuro.NewSuccessResult("accepted")
+	}
 
 	// Fast in-process actions: answer Neuro immediately (API best practice).
 	switch a.spec.Name {
@@ -477,18 +641,70 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		return nil, a.integration.sendDesktopContext(capture, silent)
 	case CmdListInstalledExts:
 		return nil, a.integration.listInstalledExtensions()
-	case CmdInstallExtension:
-		itemID, _ := params["item_id"].(string)
-		itemID = strings.TrimSpace(itemID)
-		if itemID == "" {
-			return nil, neuro.NewFailureResult("item_id is required")
+	case CmdMarketplaceSearch:
+		query, _ := params["query"].(string)
+		return nil, a.integration.marketplaceSearch(query)
+	case CmdStageIntegration:
+		id, _ := params["item_id"].(string)
+		id, err := normalizeExtensionID(id)
+		if err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
 		}
-		return nil, a.integration.installExtension(itemID)
+		if err := a.integration.checkExtensionManagement(id); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
+		return pendingWork{extension: &extensionJob{op: "stage", id: id}}, neuro.NewSuccessResult("accepted: staging " + id + "; the outcome arrives as a message")
+	case CmdViewerVisibility:
+		id, _ := params["integration_id"].(string)
+		actor, _ := params["actor"].(string)
+		visible, visibleOK := params["visible"].(bool)
+		minutes := 15
+		if value, exists := params["minutes"]; exists {
+			number, ok := value.(float64)
+			if !ok || number < 1 || number > 60 || number != float64(int(number)) {
+				return nil, neuro.NewFailureResult("minutes must be an integer from 1 through 60")
+			}
+			minutes = int(number)
+		}
+		if _, err := normalizeExtensionID(id); err != nil || (actor != "neuro" && actor != "evil") || !visibleOK {
+			return nil, neuro.NewFailureResult("integration_id, actor (neuro or evil), and visible (boolean) are required")
+		}
+		if err := a.integration.setViewerVisibility(id, actor, visible, minutes); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
+		return nil, neuro.NewSuccessResult(fmt.Sprintf("Viewer visibility for %s (%s) is %t", id, actor, visible))
+	case CmdRequestPermission:
+		// Filing a request never changes the policy; the decision comes later
+		// as a message from the operator.
+		scope, _ := params["scope"].(string)
+		reason, _ := params["reason"].(string)
+		minutes := int(numericParam(params, "minutes"))
+		return nil, a.integration.requestPermission(scope, reason, minutes, "neuro")
+
+	case CmdInstallExtension:
+		// An install can fetch code and take longer than the action window, so
+		// it runs in Execute, after the acknowledgement. Only the id is checked here.
+		itemID, _ := params["item_id"].(string)
+		itemID = strings.ToLower(strings.TrimSpace(itemID))
+		if _, err := normalizeExtensionID(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
+		if err := a.integration.checkExtensionManagement(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
+		a.integration.audit.record("action", map[string]interface{}{
+			"action": name, "decision": "accepted", "item": itemID,
+		})
+		return pendingWork{extension: &extensionJob{op: "install", id: itemID}},
+			neuro.NewSuccessResult("accepted: installing " + itemID + ". The outcome arrives as a message when it finishes.")
 	case CmdUninstallExtension:
 		itemID, _ := params["item_id"].(string)
 		itemID = strings.TrimSpace(itemID)
 		if itemID == "" {
 			return nil, neuro.NewFailureResult("item_id is required")
+		}
+		if err := a.integration.checkExtensionManagement(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
 		}
 		return nil, a.integration.uninstallExtension(itemID)
 	case CmdEnableExtension:
@@ -497,6 +713,9 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		if itemID == "" {
 			return nil, neuro.NewFailureResult("item_id is required")
 		}
+		if err := a.integration.checkExtensionManagement(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
 		return nil, a.integration.setExtensionEnabled(itemID, true)
 	case CmdDisableExtension:
 		itemID, _ := params["item_id"].(string)
@@ -504,7 +723,24 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		if itemID == "" {
 			return nil, neuro.NewFailureResult("item_id is required")
 		}
+		if err := a.integration.checkExtensionManagement(itemID); err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
+		}
 		return nil, a.integration.setExtensionEnabled(itemID, false)
+	}
+
+	// A script can contain multiple capabilities. Validate every line before
+	// acknowledging it, with the same token grammar as the Python executor.
+	if a.spec.Name == CmdRunScript {
+		script, _ := params["script"].(string)
+		requirements, err := validateScript(script)
+		if err == nil {
+			err = requirements.check(a.integration.policy())
+		}
+		if err != nil {
+			a.integration.stats.noteDenied(name)
+			return nil, neuro.NewFailureResult(err.Error())
+		}
 	}
 
 	// Desktop intents → validated now, executed after action/result (best practice).
@@ -518,12 +754,28 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		return nil, neuro.NewFailureResult(err.Error())
 	}
 
+	a.integration.audit.record("action", map[string]interface{}{
+		"action": name, "decision": "accepted",
+	})
+
 	return pendingWork{cmd: &cmd}, neuro.NewSuccessResult("accepted")
 }
 
 type pendingWork struct {
 	cmd          *IPCCommand
 	scriptIntent string
+	// extension is a slow extension operation (an install) run after the ack.
+	extension *extensionJob
+	// gameCommands is a batch of input primitives produced by one game action
+	// (e.g. game_move with steps=3 holds a key three times, in order).
+	gameCommands []IPCCommand
+	// gameObserve is the slow screenshot + vision path for game_observe.
+	gameObserve *gameObserveRequest
+	// gameActionName is the Neuro action that produced this work.
+	gameActionName string
+	// reset is the escape hatch (reset_controls): clear queued inputs, then
+	// release every held key and button.
+	reset bool
 }
 
 func scriptIntentFor(name CommandType) string {
@@ -578,10 +830,33 @@ func (a *IPCProxyAction) Execute(state interface{}) {
 	}
 
 	var result neuro.ExecutionResult
-	if work.scriptIntent != "" {
+	switch {
+	case work.extension != nil:
+		a.integration.runExtensionJob(work.extension)
+		return
+	case work.gameObserve != nil:
+		// Slow path: the action was already acknowledged, the observation is
+		// delivered to Neuro as context when it is ready.
+		a.integration.runGameObserve(work.gameObserve)
+		return
+	case len(work.gameCommands) > 0:
+		result = a.executeGameCommands(work)
+	case work.scriptIntent != "":
 		result = a.integration.executeScriptIntent(work.scriptIntent)
-	} else if work.cmd != nil {
-		resp, err := a.integration.sendToRust(*work.cmd)
+	case work.reset:
+		// The model cannot see the outcome of an accepted action, so the escape
+		// hatch always reports what happened, success or not.
+		result = a.integration.resetControls()
+		if !result.Successful {
+			a.integration.stats.noteFailure(a.GetName())
+		}
+		_ = a.integration.client.SendContext(
+			fmt.Sprintf("## %s\n\n%s", a.GetName(), result.Message),
+			true,
+		)
+		return
+	case work.cmd != nil:
+		resp, err := a.integration.sendToExecutorForAction(*work.cmd, a.GetName())
 		if err != nil {
 			result = neuro.NewFailureResult(fmt.Sprintf("executor error: %v", err))
 		} else if !resp.Success {
@@ -590,21 +865,56 @@ func (a *IPCProxyAction) Execute(state interface{}) {
 				message = "Command failed"
 			}
 			result = neuro.NewFailureResult(message)
+		} else if output, ok := resp.Data["output"].(string); ok && strings.TrimSpace(output) != "" {
+			// Long-running commands (shell_command, taskkill via run_script, ...)
+			// finish after the action result was acknowledged. The transcript is
+			// the whole point of those actions, so send it back as context
+			// instead of dropping it.
+			_ = a.integration.client.SendContext(
+				fmt.Sprintf("## %s output\n\n```text\n%s\n```",
+					a.GetName(), strings.TrimSpace(output)),
+				true,
+			)
+			return
 		} else {
 			return
 		}
-	} else {
+	default:
 		return
 	}
 
 	// Execution finished after action/result was already sent. Tell Neuro via context.
 	if !result.Successful {
+		a.integration.stats.noteFailure(a.GetName())
 		_ = a.integration.client.SendContext(
 			fmt.Sprintf("## Action execution failed\n\n- action: `%s`\n- error: %s", a.GetName(), result.Message),
 			true,
 		)
 	}
 }
+
+// executeGameCommands runs the input primitives of one game action in order and
+// releases everything if any of them fails, so a half-applied input cannot
+// leave a key stuck down.
+func (a *IPCProxyAction) executeGameCommands(work pendingWork) neuro.ExecutionResult {
+	for _, cmd := range work.gameCommands {
+		resp, err := a.integration.sendToExecutorForAction(cmd, work.gameActionName)
+		if err != nil {
+			a.integration.releaseAllInput()
+			return neuro.NewFailureResult(fmt.Sprintf("executor error: %v", err))
+		}
+		if !resp.Success {
+			a.integration.releaseAllInput()
+			return neuro.NewFailureResult(nonEmptyOr(resp.Error, "Command failed"))
+		}
+	}
+
+	if work.gameActionName != "" {
+		a.integration.games.recordAction(work.gameActionName)
+	}
+	return neuro.NewSuccessResult("ok")
+}
+
 func getBoolParam(params map[string]interface{}, key string, defaultValue bool) bool {
 	val, ok := params[key]
 	if !ok {
@@ -628,7 +938,7 @@ func buildIPCCommand(
 		x, xOK := params["x"].(float64)
 		y, yOK := params["y"].(float64)
 		if !xOK || !yOK {
-			return IPCCommand{}, fmt.Errorf("x and y are required numbers")
+			return IPCCommand{}, fmt.Errorf("move_mouse_to needs numeric x and y in screen pixels, for example {\"x\": 640, \"y\": 360}")
 		}
 		return IPCCommand{
 			Type: CmdMouseMove,
@@ -657,7 +967,7 @@ func buildIPCCommand(
 	case CmdTypeText:
 		text, ok := params["text"].(string)
 		if !ok || text == "" {
-			return IPCCommand{}, fmt.Errorf("text is required")
+			return IPCCommand{}, fmt.Errorf("type_text needs a non-empty \"text\" string, for example {\"text\": \"hello\"}")
 		}
 		return IPCCommand{
 			Type: CmdTypeText,
@@ -671,7 +981,7 @@ func buildIPCCommand(
 	case CmdKeyPress:
 		key, ok := params["key"].(string)
 		if !ok || key == "" {
-			return IPCCommand{}, fmt.Errorf("key is required")
+			return IPCCommand{}, fmt.Errorf("key_press needs a \"key\" name, for example {\"key\": \"enter\"}. Call desktop_guide for the other key names")
 		}
 		return IPCCommand{
 			Type: CmdKeyPress,
@@ -685,7 +995,7 @@ func buildIPCCommand(
 	case CmdRunScript:
 		script, ok := params["script"].(string)
 		if !ok || script == "" {
-			return IPCCommand{}, fmt.Errorf("script is required")
+			return IPCCommand{}, fmt.Errorf("run_script needs a non-empty \"script\" string. Call desktop_guide if you are unsure what to put in it")
 		}
 		return IPCCommand{
 			Type: CmdRunScript,
@@ -703,6 +1013,31 @@ func buildIPCCommand(
 			ClearAfter: clearAfter,
 		}, nil
 
+	case CmdShellCommand:
+		command, ok := params["command"].(string)
+		if !ok || strings.TrimSpace(command) == "" {
+			return IPCCommand{}, fmt.Errorf("shell_command needs a non-empty \"command\" string, for example {\"command\": \"echo hello\"}. Call desktop_guide with topic shell for the rules")
+		}
+		cmdParams := map[string]interface{}{
+			"command": strings.TrimSpace(command),
+			"timeout": shellTimeoutSeconds(numericParam(params, "timeout")),
+		}
+		if cwd, _ := params["cwd"].(string); strings.TrimSpace(cwd) != "" {
+			cmdParams["cwd"] = strings.TrimSpace(cwd)
+		} else if cwd, err := shellCWD(); err == nil && cwd != "" {
+			cmdParams["cwd"] = cwd
+		}
+		// The server owns the shell policy. The agent receives the effective
+		// lists with every command, so it never needs its own copy of the
+		// environment to agree with this one.
+		allowlist, _, _, _ := loadShellRules()
+		cmdParams["allowlist"] = append([]string{}, allowlist...)
+		cmdParams["denylist"] = splitListEnv("NEURO_SHELL_DENYLIST")
+		return IPCCommand{
+			Type:   CmdShellCommand,
+			Params: cmdParams,
+		}, nil
+
 	case CmdClearActionQueue:
 		return IPCCommand{
 			Type:       CmdClearActionQueue,
@@ -711,5 +1046,80 @@ func buildIPCCommand(
 		}, nil
 	}
 
-	return IPCCommand{}, fmt.Errorf("unknown action: %s", action)
+	return IPCCommand{}, fmt.Errorf("unknown action %q. Call desktop_guide to see the actions that are available now", action)
+}
+
+// numericParam reads a JSON number (or numeric string) parameter.
+func numericParam(params map[string]interface{}, key string) float64 {
+	switch value := params[key].(type) {
+	case float64:
+		return value
+	case string:
+		var parsed float64
+		if _, err := fmt.Sscanf(strings.TrimSpace(value), "%f", &parsed); err == nil {
+			return parsed
+		}
+	}
+	return 0
+}
+
+// handleShellCommand applies the shell firewall, then queues the command.
+//
+// The Python executor checks the same rules again: a watcher or a hand-written
+// script must not be able to skip this gate.
+func (a *IPCProxyAction) handleShellCommand(params map[string]interface{}) (interface{}, neuro.ExecutionResult) {
+	command, _ := params["command"].(string)
+	if err := checkShellCommand(command); err != nil {
+		return nil, neuro.NewFailureResult(err.Error())
+	}
+
+	cmd, err := buildIPCCommand(CmdShellCommand, params, true, true)
+	if err != nil {
+		return nil, neuro.NewFailureResult(err.Error())
+	}
+
+	// The command line itself is the interesting part of a shell audit entry.
+	a.integration.audit.record("action", map[string]interface{}{
+		"action": string(CmdShellCommand), "decision": "accepted", "command": command,
+	})
+
+	return pendingWork{cmd: &cmd}, neuro.NewSuccessResult("accepted")
+}
+
+// expectedParamsHint renders the action's schema properties so a weak model that
+// sent the wrong shape is told the right one instead of just "invalid".
+func (a *IPCProxyAction) expectedParamsHint() string {
+	if a.spec.Schema != nil && len(a.spec.Schema.Properties) > 0 {
+		keys := make([]string, 0, len(a.spec.Schema.Properties))
+		for key := range a.spec.Schema.Properties {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		hint := "{" + strings.Join(keys, ", ") + "}"
+		if len(a.spec.Schema.Required) > 0 {
+			hint += " (required: " + strings.Join(a.spec.Schema.Required, ", ") + ")"
+		}
+		return hint
+	}
+	return "{} (this action takes no parameters)"
+}
+
+// missingParamsReason reports empty required parameters with their names, which
+// is the single most common way a small model fails a call.
+func (a *IPCProxyAction) missingParamsReason(params map[string]interface{}) string {
+	if a.spec.Schema == nil {
+		return ""
+	}
+	for _, key := range a.spec.Schema.Required {
+		value, present := params[key]
+		if !present || value == nil {
+			return fmt.Sprintf("%s needs the parameter %q. Call it again with %s.",
+				a.spec.Name, key, a.expectedParamsHint())
+		}
+		if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {
+			return fmt.Sprintf("%s received an empty %q. Call it again with a value, e.g. %s.",
+				a.spec.Name, key, a.expectedParamsHint())
+		}
+	}
+	return ""
 }

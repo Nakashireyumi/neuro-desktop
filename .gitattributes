@@ -1,0 +1,8 @@
+# Source files keep LF endings on every platform. A Windows checkout with
+# core.autocrlf=true turns them into CRLF, which gofmt reports as unformatted and
+# which breaks shell scripts on Linux.
+*.go text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

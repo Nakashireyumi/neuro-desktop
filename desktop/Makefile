@@ -1,41 +1,52 @@
 # ============================================================
-# desktop/Makefile — works on Linux/macOS; uses PowerShell on Windows if present
+# desktop/Makefile — Linux and macOS. On Windows use scripts\build-all.ps1.
+# The shipped product is the Go server, the Go dashboard program, the Python agent
+# (neuro-client, built by scripts/build-client.sh) and the dashboard page.
 # ============================================================
 
-UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
-BIN_EXT :=
-ifeq ($(OS),Windows_NT)
-  BIN_EXT := .exe
-  BUNDLE_DEV := powershell.exe -File scripts/bundle/dev.ps1
-  BUNDLE_PROD := powershell.exe -File scripts/bundle/prod.ps1
-else
-  BUNDLE_DEV := ./scripts/bundle/dev.sh
-  BUNDLE_PROD := ./scripts/bundle/prod.sh
-endif
+GO ?= go
+PYTHON ?= python3
 
-all: bundle-prod
+all: build
 
-native:
-	cd apps/process-handler && cmake -S . -B build && cmake --build build
+build: server dashboard frontend manager
 
-go:
-	cd apps/neuro-integration && go build -o dist/neuro-integration$(BIN_EXT) .
+manager:
+	$(PYTHON) scripts/build-manager.py --out dist/manager-source
+
+manager-standalone:
+	$(PYTHON) scripts/build-manager.py --standalone
+
+server:
+	cd apps/neuro-integration && $(GO) build -o dist/neuro-integration .
+
+dashboard:
+	cd apps/neuro-dashboard && $(GO) build -o dist/neuro-dashboard .
+
+# neuro-client: the agent packaged with PyInstaller, for the PC Neuro controls.
+client:
+	./scripts/build-client.sh
 
 frontend:
-	cd frontend && npm install && npm run build
+	cd frontend && (test -f package-lock.json && npm ci || npm install) && npm run build
 
-rust:
-	cd apps/neuro-desktop && cargo build --release
+test:
+	PYTHONPATH=apps/neuro-manager $(PYTHON) -m unittest discover -s apps/neuro-manager/tests
+	cd frontend && npm test
+	cd apps/neuro-integration && $(GO) vet ./... && $(GO) test -count=1 ./... && $(GO) test -count=1 -tags neurodev ./...
+	cd apps/neuro-dashboard && $(GO) vet ./... && $(GO) test -count=1 ./...
+	cd apps/neuro-client-go && $(GO) vet ./... && $(GO) test -count=1 ./...
+	cd backend/python && NEURO_HEADLESS=1 $(PYTHON) -m unittest discover -s tests -t .
+	cd .. && $(PYTHON) desktop/tools/ci/repo_checks.py
+	cd .. && $(PYTHON) -m unittest discover -s desktop/tools/ci -p 'test_*.py'
 
-bundle-dev: rust
-	$(BUNDLE_DEV)
+bundle-prod:
+	./scripts/bundle/prod.sh
 
-bundle-prod: rust
-	$(BUNDLE_PROD)
+bundle-dev:
+	./scripts/bundle/dev.sh
 
 clean:
-	rm -rf apps/process-handler/build apps/neuro-integration/dist frontend/dist apps/neuro-desktop/target dist
+	rm -rf apps/neuro-integration/dist apps/neuro-dashboard/dist frontend/dist dist
 
-run: bundle-dev
-
-.PHONY: all native go frontend rust bundle-dev bundle-prod clean run
+.PHONY: all build server dashboard client frontend manager manager-standalone test bundle-prod bundle-dev clean

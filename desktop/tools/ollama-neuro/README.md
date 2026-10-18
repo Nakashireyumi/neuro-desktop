@@ -17,8 +17,8 @@ cd desktop/tools/ollama-neuro
 ./run.sh --mode ollama --warm   # WS :8000 + UI :1337, preload model
 ```
 
-Point neuro-desktop / neuro-integration at `ws://localhost:8000`
-(already in `config/integration-config.yml`).
+Point neuro-desktop / neuro-integration at `ws://localhost:8000` (the default of
+`NEURO_SDK_WS_URL`).
 
 Control UI: [http://127.0.0.1:1337/](http://127.0.0.1:1337/)
 

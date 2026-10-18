@@ -16,19 +16,60 @@
     "get_status",
     "list_catalog_items",
     "find_catalog_items",
-    "get_catalog_item"
+    "get_catalog_item",
+    "game_list_profiles",
+    "game_detect",
+    "game_start_session",
+    "game_end_session",
+    "game_status",
+    "game_move",
+    "game_look",
+    "game_action",
+    "game_press",
+    "game_release_all",
+    "game_observe"
   ],
   "denied_actions": [
     "shutdown_immediately",
     "lock_workstation",
-    "install_extension"
+    "game_launch"
   ],
   "scopes": {
-    "input": { "allowed": true },
-    "filesystem": { "allowed": false },
-    "process": { "allowed": true },
-    "network": { "allowed": true },
-    "system": { "allowed": false },
-    "vision": { "allowed": true }
+    "input": {
+      "allowed": true,
+      "requestable": false
+    },
+    "vision": {
+      "allowed": true,
+      "requestable": false
+    },
+    "game": {
+      "allowed": true,
+      "requestable": false
+    },
+    "process": {
+      "allowed": true,
+      "requestable": false
+    },
+    "network": {
+      "allowed": true,
+      "requestable": false
+    },
+    "filesystem": {
+      "allowed": false,
+      "requestable": true
+    },
+    "extensions": {
+      "allowed": false,
+      "requestable": true
+    },
+    "shell": {
+      "allowed": false,
+      "requestable": false
+    },
+    "system": {
+      "allowed": false,
+      "requestable": false
+    }
   }
 }

@@ -72,6 +72,10 @@ func toMap(raw interface{}) map[string]interface{} {
 }
 
 func (n *NDIntegration) fetchDesktopStatus(captureScreenshot bool) (map[string]interface{}, error) {
+	return n.fetchDesktopStatusGuarded(captureScreenshot)
+}
+
+func (n *NDIntegration) fetchDesktopStatusGuarded(captureScreenshot bool, guards ...func() error) (map[string]interface{}, error) {
 	cmd := IPCCommand{
 		Type: CmdGetStatus,
 		Params: map[string]interface{}{
@@ -84,15 +88,12 @@ func (n *NDIntegration) fetchDesktopStatus(captureScreenshot bool) (map[string]i
 		ClearAfter: false,
 	}
 
-	resp, err := n.sendToRust(cmd)
+	resp, err := n.sendToExecutor(cmd, guards...)
 	if err != nil {
 		return nil, fmt.Errorf("ipc error: %w", err)
 	}
 	if !resp.Success {
-		if resp.Error != "" {
-			return nil, fmt.Errorf(resp.Error)
-		}
-		return nil, fmt.Errorf("get_status failed")
+		return nil, fmt.Errorf("get_status failed: %s", nonEmptyOr(resp.Error, "executor returned no detail"))
 	}
 
 	if resp.Data == nil {
@@ -131,6 +132,10 @@ func buildDesktopContextMessage(status map[string]interface{}, visionSummary str
 
 	var lines []string
 	lines = append(lines, "## Desktop context snapshot")
+	if available, ok := status["input_available"].(bool); ok && !available {
+		reason, _ := status["input_error"].(string)
+		lines = append(lines, "- Desktop input: unavailable ("+reason+"). Use shell_command for command-line work.")
+	}
 	if strings.TrimSpace(activeWindow) == "" {
 		lines = append(lines, "- Active window: unavailable")
 	} else {
@@ -147,8 +152,12 @@ func buildDesktopContextMessage(status map[string]interface{}, visionSummary str
 		lines = append(lines, fmt.Sprintf("- Running processes sample: %s", strings.Join(runningProcesses, ", ")))
 	}
 
-	if screenshotPath, ok := status["screenshot_path"].(string); ok && strings.TrimSpace(screenshotPath) != "" {
-		lines = append(lines, fmt.Sprintf("- Screenshot path: %s", screenshotPath))
+	if shot, ok, shotErr := screenshotPNG(status); shotErr != nil {
+		lines = append(lines, fmt.Sprintf("- Screenshot: unusable (%v)", shotErr))
+	} else if ok {
+		lines = append(lines, fmt.Sprintf("- Screenshot: captured (PNG, %d KB)", len(shot)/1024))
+	} else if reason, _ := status["screenshot_error"].(string); reason != "" {
+		lines = append(lines, "- Screenshot: unavailable ("+reason+")")
 	}
 
 	if strings.TrimSpace(visionSummary) != "" {
@@ -159,15 +168,32 @@ func buildDesktopContextMessage(status map[string]interface{}, visionSummary str
 }
 
 func (n *NDIntegration) getDesktopContext(captureScreenshot bool) (string, error) {
-	status, err := n.fetchDesktopStatus(captureScreenshot)
+	permit, err := n.observationPermit(CmdGetDesktopContext)
 	if err != nil {
+		return "", err
+	}
+	return n.getDesktopContextGuarded(captureScreenshot, permit)
+}
+
+func (n *NDIntegration) getDesktopContextGuarded(captureScreenshot bool, permit *observationPermit) (string, error) {
+	if err := permit.check(); err != nil {
+		return "", err
+	}
+	status, err := n.fetchDesktopStatusGuarded(captureScreenshot, permit.check)
+	if err != nil {
+		return "", err
+	}
+	if err := permit.check(); err != nil {
 		return "", err
 	}
 
 	visionSummary := ""
-	if visionServerURL := strings.TrimSpace(os.Getenv("NEURO_VISION_SERVER_URL")); visionServerURL != "" {
-		if screenshotPath, ok := status["screenshot_path"].(string); ok && strings.TrimSpace(screenshotPath) != "" {
-			summary, visionErr := summarizeWithVisionServer(visionServerURL, screenshotPath)
+	if serverURL := visionServerURL(); captureScreenshot && serverURL != "" {
+		shot, ok, shotErr := screenshotPNG(status)
+		if shotErr != nil {
+			log.Printf("Vision skipped: %v", shotErr)
+		} else if ok {
+			summary, visionErr := summarizeWithVisionServer(serverURL, shot, "")
 			if visionErr != nil {
 				log.Printf("Vision summarize failed: %v", visionErr)
 			} else {
@@ -176,15 +202,25 @@ func (n *NDIntegration) getDesktopContext(captureScreenshot bool) (string, error
 		}
 	}
 
+	if err := permit.check(); err != nil {
+		return "", err
+	}
 	return buildDesktopContextMessage(status, visionSummary), nil
 }
 
 func (n *NDIntegration) sendDesktopContext(captureScreenshot bool, silent bool) neuro.ExecutionResult {
-	message, err := n.getDesktopContext(captureScreenshot)
+	permit, err := n.observationPermit(CmdSendDesktopContext)
+	if err != nil {
+		return neuro.NewFailureResult(err.Error())
+	}
+	message, err := n.getDesktopContextGuarded(captureScreenshot, permit)
 	if err != nil {
 		return neuro.NewFailureResult(fmt.Sprintf("Failed to collect desktop context: %v", err))
 	}
 
+	if err := permit.check(); err != nil {
+		return neuro.NewFailureResult(err.Error())
+	}
 	if err := n.client.SendContext(message, silent); err != nil {
 		return neuro.NewFailureResult(fmt.Sprintf("Failed to send context: %v", err))
 	}

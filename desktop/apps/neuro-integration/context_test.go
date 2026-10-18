@@ -33,3 +33,12 @@ func TestBuildDesktopContextMessage(t *testing.T) {
 		t.Fatalf("missing vision summary: %s", msg)
 	}
 }
+
+func TestDesktopContextExplainsUnavailableInput(t *testing.T) {
+	message := buildDesktopContextMessage(map[string]interface{}{
+		"input_available": false, "input_error": "GUI driver could not load",
+	}, "")
+	if !strings.Contains(message, "GUI driver could not load") || !strings.Contains(message, "shell_command") {
+		t.Fatalf("Neuro needs an actionable explanation: %s", message)
+	}
+}

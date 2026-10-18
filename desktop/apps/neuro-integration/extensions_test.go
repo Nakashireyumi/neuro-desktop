@@ -54,7 +54,7 @@ func TestExtensionInstallEnableDisableUninstallMetadataOnly(t *testing.T) {
 	if !listResult.Successful {
 		t.Fatalf("expected list success, got: %s", listResult.Message)
 	}
-	if !strings.Contains(listResult.Message, "mcp-bridge (enabled)") {
+	if !strings.Contains(listResult.Message, "mcp-bridge (disabled)") {
 		t.Fatalf("unexpected list output: %s", listResult.Message)
 	}
 
@@ -63,6 +63,10 @@ func TestExtensionInstallEnableDisableUninstallMetadataOnly(t *testing.T) {
 		t.Fatalf("expected disable success, got: %s", disableResult.Message)
 	}
 
+	policy := defaultPermissionPolicy()
+	policy.scopes[ScopeExtensions] = ScopeConfig{Allowed: true}
+	integration.setPolicy(policy)
+	grantExtensionFixture(t, "mcp-bridge", ExtensionPermissionPolicy{RunAllowed: true})
 	enableResult := integration.setExtensionEnabled("mcp-bridge", true)
 	if !enableResult.Successful {
 		t.Fatalf("expected enable success, got: %s", enableResult.Message)

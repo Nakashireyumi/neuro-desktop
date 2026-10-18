@@ -15,9 +15,27 @@ import re
 from dataclasses import dataclass
 from typing import Any, Optional, Sequence
 
-import aiohttp
+try:  # aiohttp is only needed to actually talk to Ollama, not to parse replies.
+    import aiohttp
+except ModuleNotFoundError:  # pragma: no cover - exercised on CLI-only installs
+    aiohttp = None  # type: ignore[assignment]
 
 log = logging.getLogger("neuro-ollama.brain")
+
+
+def _aiohttp():
+    """Return the aiohttp module or explain how to get it.
+
+    Parsing/model-selection logic is deliberately importable without aiohttp so
+    the unit tests (and any CLI-only install) work before dependencies are in
+    place.
+    """
+    if aiohttp is None:
+        raise RuntimeError(
+            "aiohttp is required to talk to Ollama; install it with "
+            "`pip install -r requirements.txt`"
+        )
+    return aiohttp
 
 
 @dataclass
@@ -44,16 +62,16 @@ class OllamaBrain:
         self.num_predict = num_predict
         self.keep_alive = keep_alive
 
-    def _timeout(self) -> aiohttp.ClientTimeout:
+    def _timeout(self):
         # Connect can be slow too when Ollama is busy loading weights into RAM.
-        return aiohttp.ClientTimeout(
+        return _aiohttp().ClientTimeout(
             total=self.timeout_seconds,
             sock_connect=60,
             sock_read=self.timeout_seconds,
         )
 
     async def ensure_ready(self) -> None:
-        async with aiohttp.ClientSession() as session:
+        async with _aiohttp().ClientSession() as session:
             async with session.get(f"{self.base_url}/api/tags") as resp:
                 if resp.status != 200:
                     raise RuntimeError(
@@ -92,7 +110,7 @@ class OllamaBrain:
             "options": {"num_predict": 4, "temperature": 0},
         }
         try:
-            async with aiohttp.ClientSession() as session:
+            async with _aiohttp().ClientSession() as session:
                 async with session.post(
                     f"{self.base_url}/api/chat",
                     json=body,
@@ -182,7 +200,7 @@ class OllamaBrain:
 
         log.info("Asking Ollama (%s) to pick among %d action(s)…", self.model, len(actions))
         try:
-            async with aiohttp.ClientSession() as session:
+            async with _aiohttp().ClientSession() as session:
                 async with session.post(
                     f"{self.base_url}/api/chat",
                     json=body,
@@ -205,7 +223,7 @@ class OllamaBrain:
             return choice
 
         log.info("No tool call in response; trying JSON fallback")
-        async with aiohttp.ClientSession() as session:
+        async with _aiohttp().ClientSession() as session:
             return await self._json_fallback(session, actions, context_lines, query, game)
 
     def _parse_tool_response(

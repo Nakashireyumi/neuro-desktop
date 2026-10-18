@@ -1,0 +1,20 @@
+[
+  {"name": "type_text accepts a plain string", "action": "type_text", "data": "{\"text\": \"hello\"}", "accepted": true},
+  {"name": "type_text with no text is explained", "action": "type_text", "data": "{}", "accepted": false, "contains": "\"text\""},
+  {"name": "type_text with an empty string is explained", "action": "type_text", "data": "{\"text\": \"\"}", "accepted": false, "contains": "\"text\""},
+  {"name": "type_text with a number instead of a string", "action": "type_text", "data": "{\"text\": 5}", "accepted": false, "contains": "non-empty \"text\" string"},
+  {"name": "a bare string instead of an object", "action": "type_text", "data": "\"hello\"", "accepted": false, "contains": "must be a JSON object"},
+  {"name": "move_mouse_to accepts numeric coordinates", "action": "move_mouse_to", "data": "{\"x\": 640, \"y\": 360}", "accepted": true},
+  {"name": "move_mouse_to with coordinates as strings", "action": "move_mouse_to", "data": "{\"x\": \"640\", \"y\": \"360\"}", "accepted": false, "contains": "numeric x and y"},
+  {"name": "move_mouse_to with y missing", "action": "move_mouse_to", "data": "{\"x\": 640}", "accepted": false, "contains": "\"y\""},
+  {"name": "key_press accepts a key name", "action": "key_press", "data": "{\"key\": \"enter\"}", "accepted": true},
+  {"name": "key_press with the wrong field name", "action": "key_press", "data": "{\"keys\": [\"enter\"]}", "accepted": false, "contains": "\"key\""},
+  {"name": "key_press with an empty key", "action": "key_press", "data": "{\"key\": \"\"}", "accepted": false, "contains": "\"key\""},
+  {"name": "mouse_click accepts a button name", "action": "mouse_click", "data": "{\"button\": \"left\"}", "accepted": true},
+  {"name": "mouse_click with no arguments is fine", "action": "mouse_click", "data": "{}", "accepted": true},
+  {"name": "run_script with an empty script", "action": "run_script", "data": "{\"script\": \"\"}", "accepted": false, "contains": "\"script\""},
+  {"name": "shell_command refused while the shell scope is off", "action": "shell_command", "data": "{\"command\": \"echo hello\"}", "accepted": false, "contains": "shell"},
+  {"name": "reset_controls takes no arguments", "action": "reset_controls", "data": "{}", "accepted": true},
+  {"name": "reset_controls ignores extra arguments a model adds", "action": "reset_controls", "data": "{\"force\": true, \"reason\": \"stuck\"}", "accepted": true},
+  {"name": "desktop_guide accepts a topic", "action": "desktop_guide", "data": "{\"topic\": \"shell\"}", "accepted": true}
+]

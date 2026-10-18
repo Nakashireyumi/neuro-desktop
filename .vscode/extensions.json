@@ -4,10 +4,8 @@
 
 	// List of extensions which should be recommended for users of this workspace.
 	"recommendations": [
-		"1yib.rust-bundle",
-		"ms-python.python",
-		"twxs.cmake",
 		"golang.go",
+		"ms-python.python",
 	],
 	// List of extensions recommended by VS Code that should not be recommended for users of this workspace.
 	"unwantedRecommendations": [

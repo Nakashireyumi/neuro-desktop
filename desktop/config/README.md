@@ -1,29 +1,29 @@
-# Runtime configuration
+# Configuration
 
-Copy `integration-config.yml` next to the `neuro-desktop` binary (or keep it under
-`config/` in a release bundle).
+The server has no configuration file. It reads its settings from environment
+variables and command-line flags. The full list is in [`../README.md`](../README.md#configuration).
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `integration-config.yml` | Neuro WebSocket URL and package metadata |
-| `permissions.example.json` | Safe-by-default operator policy for Vedal |
+| `permissions.example.json` | Safe-by-default operator policy for Vedal. The bundle copies it to `permissions.json` |
 
-## Permissions
+## The policy
 
-`neuro-integration` loads `NEURO_PERMISSIONS_FILE` (default: `permissions.json`
-beside the binary). Export from the frontend Permissions page, or copy the
-example:
+The policy is a JSON file (`NEURO_PERMISSIONS_FILE`) with:
 
-```bash
-cp config/permissions.example.json ./permissions.json
-```
+- `default_allow`: whether an action with no scope is allowed (`false` by default);
+- `allowed_actions` and `denied_actions`: explicit lists by action name;
+- `scopes`: one entry per capability category (`input`, `game`, `vision`, `process`,
+  `network`, `filesystem`, `system`, `shell`, `extensions`), each with
+  - `allowed`: whether the scope is on now;
+  - `requestable`: whether Neuro may ask Vedal for it with `request_permission`;
+  - `limits.max_actions_per_minute`: an optional per-scope rate limit.
 
-Schema (shared with the UI export):
+The example turns on input, process, network, vision, and game. It makes filesystem and
+extensions requestable, and it leaves shell and system off and not requestable. Changes
+made on the dashboard are written to that file (`NEURO_PERMISSIONS_FILE`) and take effect at
+once. Keep a copy of the file before you edit it on the dashboard.
 
-- `default_allow` — fallback when an action has no scope mapping
-- `scopes` — capability categories (`input`, `filesystem`, `process`, `network`, `system`, `vision`)
-- `allowed_actions` / `denied_actions` — per-action overrides (`denied` wins)
-
-See [VISION.md](../../VISION.md) for the bridge vs executor split.
+See `../docs/SAFETY.md` for what each scope means.

@@ -1,7 +1,10 @@
-import pyautogui
 import time
 from typing import List, Optional, Tuple, Union
 from ..desktop import DesktopMonitor
+from ..gui_stub import load_pyautogui
+
+# Real pyautogui when there is a display, a stub that explains itself when not.
+pyautogui = load_pyautogui()
 
 Point = Tuple[int, int]
 
@@ -30,6 +33,48 @@ class ClickInstruction(MouseInstruction):
 
     def execute(self):
         pyautogui.click(button=self.button)
+
+
+class MoveRelativeInstruction(MouseInstruction):
+    """Relative pointer movement.
+
+    This is what in-game mouse-look needs: the absolute target of a first-person
+    camera is unknown, only "how far did the player turn" matters. The move is
+    applied directly instead of through the human-like pathfinder so the camera
+    does not drift while the path is being generated.
+    """
+
+    def __init__(self, dx: int, dy: int, duration: float = 0.0):
+        self.dx = dx
+        self.dy = dy
+        self.duration = duration
+
+    def execute(self):
+        pyautogui.moveRel(self.dx, self.dy, duration=self.duration, _pause=False)
+
+
+class HoldClickInstruction(MouseInstruction):
+    """Mouse button held down for a fixed time (sustained fire / aim).
+
+    Bounded on purpose: an unbounded button-down is the mouse equivalent of a
+    stuck key, and nothing in the protocol can rescue it.
+    """
+
+    def __init__(self, button: str = "left", seconds: float = 0.2, tracker: Optional[set] = None):
+        self.button = button
+        self.seconds = max(0.0, min(float(seconds), 30.0))
+        self.tracker = tracker
+
+    def execute(self):
+        pyautogui.mouseDown(button=self.button, _pause=False)
+        if self.tracker is not None:
+            self.tracker.add(self.button)
+        try:
+            time.sleep(self.seconds)
+        finally:
+            pyautogui.mouseUp(button=self.button, _pause=False)
+            if self.tracker is not None:
+                self.tracker.discard(self.button)
 
 
 class WaitInstruction(MouseInstruction):
@@ -66,6 +111,8 @@ class MouseController:
         self.monitor = monitor
         self.headless = headless
         self.instruction_queue: List[MouseInstruction] = []
+        # Buttons currently held down, so a stuck button can always be released.
+        self.held_buttons: set = set()
         self._screen_size: Optional[Point] = None
         if not headless:
             try:
@@ -137,6 +184,33 @@ class MouseController:
             data={"button": button}
         )
         self.instruction_queue.append(ClickInstruction(button))
+
+    def queue_move_rel(self, dx: int, dy: int, duration: float = 0.0):
+        """Queue a relative move (mouse-look)."""
+        self.monitor.record_action(
+            source="mouse",
+            action_type="MOVE_REL",
+            data={"dx": dx, "dy": dy, "duration": duration},
+        )
+        self.instruction_queue.append(MoveRelativeInstruction(dx, dy, duration))
+
+    def queue_hold(self, button: str = "left", seconds: float = 0.2):
+        """Queue a bounded press-and-hold of a mouse button."""
+        self.monitor.record_action(
+            source="mouse",
+            action_type="HOLD_CLICK",
+            data={"button": button, "seconds": seconds},
+        )
+        self.instruction_queue.append(HoldClickInstruction(button, seconds, self.held_buttons))
+
+    def release_all(self):
+        """Release every mouse button we believe is held down."""
+        for button in list(self.held_buttons):
+            try:
+                pyautogui.mouseUp(button=button, _pause=False)
+            except Exception:
+                pass
+            self.held_buttons.discard(button)
 
     def queue_wait(self, duration: float):
         self.monitor.record_action(

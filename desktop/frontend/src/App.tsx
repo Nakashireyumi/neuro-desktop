@@ -1,210 +1,255 @@
-import { useEffect, useMemo, useState } from "react";
+import RuntimePanel from "./RuntimePanel";
+import { useCallback, useEffect, useRef, useState } from "react";
+import OperatorControls from "./OperatorControls";
+import ActivityPanel from "./ActivityPanel";
+import ExtensionPolicyEditor from "./ExtensionPolicyEditor";
+import GamesPanel from "./GamesPanel";
+import MarketplacePanel from "./MarketplacePanel";
 import PermissionsPage from "./PermissionsPage";
-import type { ExtensionState, NDBootstrap } from "./types";
+import SignIn from "./SignIn";
+import {
+  ApiError,
+  AUTH_REQUIRED_EVENT,
+  api,
+  safeExternalURL,
+  setAdminToken,
+  type CatalogItem,
+  type ConfigPayload,
+  type InstalledExtension,
+  type ManagerSession,
+  type RelayStatus,
+  type StatusPayload,
+} from "./api";
 
-type PluginInstallMethod = "metadata_only" | "git_clone" | "mcp_endpoint";
+type Tab = "extensions" | "marketplace" | "games" | "permissions" | "activity" | "settings";
 
-type Extension = {
-  id: string;
-  name: string;
-  category: "core" | "extension";
-  description: string;
-  repo?: string;
-  tags: string[];
-  defaultEnabled?: boolean;
-  installMethod: PluginInstallMethod;
-  requiresRelay?: boolean;
+const INSTALL_MODE_LABELS: Record<string, string> = {
+  metadata_only: "Metadata only (records the install)",
+  git_clone: "GitHub clone into the plugin directory",
+  mcp_endpoint: "MCP endpoint (external server)",
 };
 
-type Tab = "extensions" | "permissions" | "settings";
-
-const EXTENSIONS: Extension[] = [
-  {
-    id: "neuro-desktop",
-    name: "Neuro Desktop",
-    category: "core",
-    description: "Main Windows control runtime and desktop action bridge.",
-    repo: "https://github.com/cassitly/neuro-desktop",
-    tags: ["core", "windows", "runtime"],
-    defaultEnabled: true,
-    installMethod: "metadata_only",
-  },
-  {
-    id: "neuro-relay",
-    name: "Neuro Relay",
-    category: "core",
-    description: "Multiplexes multiple Neuro integrations and game endpoints.",
-    repo: "https://github.com/recassity/neuro-relay",
-    tags: ["core", "relay", "multiplex"],
-    defaultEnabled: false,
-    installMethod: "git_clone",
-  },
-  {
-    id: "nd-vision-server",
-    name: "ND Vision Server",
-    category: "extension",
-    description: "External model inference service for screenshot summarization.",
-    repo: "https://github.com/Ubuntufanboy/neuro-desktop",
-    tags: ["vision", "context", "experimental"],
-    defaultEnabled: false,
-    installMethod: "git_clone",
-  },
-  {
-    id: "mcp-bridge",
-    name: "MCP Bridge",
-    category: "extension",
-    description: "Model Context Protocol bridge for tool/plugin servers. Not installed by default.",
-    repo: "https://github.com/modelcontextprotocol/servers",
-    tags: ["mcp", "plugins", "optional"],
-    defaultEnabled: false,
-    installMethod: "mcp_endpoint",
-  },
-];
-
-const STORAGE_KEY = "nd_extension_state_v1";
-
-function getBootstrapState(): Record<string, ExtensionState> | null {
-  const raw = (window.__ND_BOOTSTRAP as NDBootstrap | undefined)?.extensionState;
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-  return raw;
-}
-
-function withDefaultExtensions(
-  incoming: Record<string, ExtensionState>,
-): Record<string, ExtensionState> {
-  const merged: Record<string, ExtensionState> = {};
-  for (const extension of EXTENSIONS) {
-    const existing = incoming[extension.id];
-    if (existing) {
-      merged[extension.id] = existing;
-      continue;
-    }
-
-    const coreInstalled = extension.category === "core";
-    merged[extension.id] = {
-      installed: coreInstalled,
-      enabled: coreInstalled ? true : Boolean(extension.defaultEnabled),
-    };
-  }
-  return merged;
-}
-
-function loadInitialState(): Record<string, ExtensionState> {
-  const bootstrap = getBootstrapState();
-  if (bootstrap) {
-    return withDefaultExtensions(bootstrap);
-  }
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      throw new Error("missing");
-    }
-    const parsed = JSON.parse(raw) as Record<string, ExtensionState>;
-    if (parsed && typeof parsed === "object") {
-      return withDefaultExtensions(parsed);
-    }
-  } catch {
-    // fallback defaults below
-  }
-
-  return withDefaultExtensions({});
-}
-
-function installMethodLabel(method: PluginInstallMethod): string {
-  switch (method) {
-    case "git_clone":
-      return "GitHub Clone";
-    case "mcp_endpoint":
-      return "MCP Endpoint";
-    default:
-      return "Metadata Only";
-  }
-}
-
 export default function App() {
-  console.log("App component rendering");
-  const [showSplash, setShowSplash] = useState(true);
-  const [selectedId, setSelectedId] = useState<string>("neuro-desktop");
-  const [state, setState] = useState<Record<string, ExtensionState>>(() =>
-    loadInitialState(),
-  );
   const [activeTab, setActiveTab] = useState<Tab>("extensions");
+  const [session, setSession] = useState<ManagerSession | null>(null);
+  const [status, setStatus] = useState<StatusPayload | null>(null);
+  const [config, setConfig] = useState<ConfigPayload | null>(null);
+  const [extensions, setExtensions] = useState<InstalledExtension[]>([]);
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [installMode, setInstallMode] = useState<string>("");
+  const [extensionDir, setExtensionDir] = useState<string>("");
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [connectionError, setConnectionError] = useState("");
+  const [extensionsError, setExtensionsError] = useState("");
+  const [editingPolicy, setEditingPolicy] = useState(false);
+  const [operatorActionToken, setOperatorActionToken] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState<"pause" | "release" | "">("");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const loadVersion = useRef(0);
+  const authVersion = useRef(0);
+  const sessionRef = useRef<ManagerSession | null>(null);
+  const configLoaded = useRef(false);
+  const failedRefreshes = useRef(0);
+  // "ok" shows the dashboard. "signin" and "setup" show the gate instead, and
+  // the reason is the server's own text when it gave one.
+  const [gate, setGate] = useState<{ kind: "ok" | "checking" } | { kind: "signin" | "setup"; reason?: string }>({
+    kind: "checking",
+  });
+  const polling = gate.kind === "ok" || gate.kind === "checking";
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setShowSplash(false), 2100);
-    return () => window.clearTimeout(timer);
+  const signOut = useCallback(() => {
+    loadVersion.current++;
+    authVersion.current++;
+    sessionRef.current = null;
+    configLoaded.current = false;
+    setSession(null);
+    setActiveTab("extensions");
+    setSelectedId("");
+    setEditingPolicy(false);
+    setOperatorActionToken("");
+    setBusy(false);
+    setRecoveryBusy("");
+    setAdminToken("");
+    setStatus(null);
+    setConfig(null);
+    setExtensions([]);
+    setCatalog([]);
+    setMessage(null);
+    setConnectionError("");
+    setExtensionsError("");
+    setLastUpdated(null);
+    setGate({ kind: "signin" });
   }, []);
 
+  const load = useCallback(async () => {
+    const version = ++loadVersion.current;
+    try {
+      const sessionPayload = sessionRef.current ?? await api.session();
+      if (sessionPayload.role !== "operator" && sessionPayload.role !== "neuro") {
+        throw new ApiError(0, "The bridge did not identify this session's role. Update the bridge before using the manager.");
+      }
+      const [statusPayload, extensionsResult, configPayload] = await Promise.all([
+        api.status(),
+        activeTab === "extensions" ? api.extensions().then((value) => ({ value, error: undefined })).catch((error) => ({ value: undefined, error })) : Promise.resolve(null),
+        configLoaded.current ? Promise.resolve(null) : api.config().catch(() => null),
+      ]);
+      if (version !== loadVersion.current) return;
+      sessionRef.current = sessionPayload;
+      setSession(sessionPayload);
+      setStatus(statusPayload);
+      if (extensionsResult?.value) {
+        const extensionsPayload = extensionsResult.value;
+        setExtensions(extensionsPayload.installed);
+        setCatalog(extensionsPayload.catalog);
+        setInstallMode(extensionsPayload.install_mode);
+        setExtensionDir(extensionsPayload.extension_dir);
+        setExtensionsError("");
+        setSelectedId((current) => {
+          if (current && (extensionsPayload.installed.some((item) => item.id === current) || extensionsPayload.catalog.some((item) => item.id === current))) return current;
+          return extensionsPayload.installed[0]?.id ?? extensionsPayload.catalog[0]?.id ?? "";
+        });
+      } else if (extensionsResult?.error) {
+        setExtensions([]);
+        setCatalog([]);
+        setExtensionsError(extensionsResult.error instanceof Error ? extensionsResult.error.message : "Could not read the extension catalog.");
+      }
+      if (configPayload) {
+        setConfig(configPayload);
+        configLoaded.current = true;
+      }
+      failedRefreshes.current = 0;
+      setConnectionError("");
+      setLastUpdated(new Date());
+      setGate({ kind: "ok" });
+    } catch (error) {
+      if (version !== loadVersion.current) return;
+      if (error instanceof ApiError && error.status === 401) {
+        setGate({ kind: "signin" });
+        return;
+      }
+      if (error instanceof ApiError && error.status === 503) {
+        setGate({ kind: "setup", reason: error.message });
+        return;
+      }
+      failedRefreshes.current++;
+      setConnectionError(error instanceof Error ? error.message : "Could not reach the bridge");
+    }
+  }, [activeTab]);
+
+  const operator = session?.role === "operator";
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    window.ndHost?.send("save_extension_state", state);
-  }, [state]);
+    if (session && !operator && (activeTab === "permissions" || activeTab === "activity")) setActiveTab("extensions");
+  }, [activeTab, operator, session]);
 
-  const selected = useMemo(
-    () => EXTENSIONS.find((item) => item.id === selectedId) ?? EXTENSIONS[0],
-    [selectedId],
-  );
+  useEffect(() => {
+    setEditingPolicy(false);
+    setOperatorActionToken("");
+  }, [selectedId, activeTab]);
 
-  const selectedState = state[selected.id] ?? { installed: false, enabled: false };
-  const coreServices = EXTENSIONS.filter((item) => item.category === "core");
-  const plugins = EXTENSIONS.filter((item) => item.category === "extension");
-  const installedCount = Object.values(state).filter((item) => item.installed).length;
-  const enabledCount = Object.values(state).filter(
-    (item) => item.installed && item.enabled,
-  ).length;
+  useEffect(() => {
+    window.addEventListener(AUTH_REQUIRED_EVENT, signOut);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, signOut);
+  }, [signOut]);
 
-  function updateState(next: Record<string, ExtensionState>) {
-    setState(next);
-  }
-
-  function installSelected() {
-    const next = {
-      ...state,
-      [selected.id]: { installed: true, enabled: true },
+  useEffect(() => {
+    if (!polling) return;
+    let cancelled = false;
+    let timer: number;
+    const refresh = async () => {
+      await load();
+      if (!cancelled) timer = window.setTimeout(() => void refresh(), document.hidden ? 30000 : Math.min(60000, 5000 * 2 ** Math.min(failedRefreshes.current, 4)));
     };
-    updateState(next);
-  }
+    void refresh();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      loadVersion.current++;
+    };
+  }, [load, polling]);
 
-  function uninstallSelected() {
-    if (selected.category === "core") {
-      return;
+  async function extensionAction(id: string, action: "install" | "enable" | "disable" | "uninstall") {
+    const generation = authVersion.current;
+    const freshToken = operatorActionToken;
+    setOperatorActionToken("");
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await api.extensionAction(id, action, operator ? freshToken : undefined);
+      if (generation !== authVersion.current) return;
+      setMessage({ kind: "ok", text: result.message || `${action} ok` });
+      await load();
+    } catch (error) {
+      if (generation !== authVersion.current) return;
+      setMessage({
+        kind: "error",
+        text:
+          error instanceof ApiError
+            ? `${action} failed: ${error.message}`
+            : `${action} failed`,
+      });
+    } finally {
+      if (generation === authVersion.current) setBusy(false);
     }
-
-    const next = {
-      ...state,
-      [selected.id]: { installed: false, enabled: false },
-    };
-    updateState(next);
   }
 
-  function toggleEnabled() {
-    if (!selectedState.installed) {
-      return;
+  async function delegatedRecovery(action: "pause" | "release") {
+    const generation = authVersion.current;
+    setRecoveryBusy(action);
+    setMessage(null);
+    try {
+      const result = await (action === "pause" ? api.pause() : api.releaseInput());
+      if (generation !== authVersion.current) return;
+      setMessage({ kind: "ok", text: result.message });
+      if (action === "pause") await load();
+    } catch (failure) {
+      if (generation === authVersion.current) setMessage({ kind: "error", text: failure instanceof Error ? failure.message : "Could not complete recovery." });
+    } finally {
+      if (generation === authVersion.current) setRecoveryBusy("");
     }
-    const next = {
-      ...state,
-      [selected.id]: {
-        ...selectedState,
-        enabled: !selectedState.enabled,
-      },
-    };
-    updateState(next);
   }
 
-  const isNativeShell = Boolean(window.__ND_BOOTSTRAP?.nativeHost);
+  const installedById = new Map(extensions.map((item) => [item.id, item]));
+  const catalogById = new Map(catalog.map((item) => [item.id, item]));
+  const allIds = [
+    ...extensions.map((item) => item.id),
+    ...catalog.filter((item) => !installedById.has(item.id)).map((item) => item.id),
+  ];
+  const selected = (
+    installedById.get(selectedId) ??
+    (catalogById.get(selectedId)
+      ? {
+          id: selectedId,
+          enabled: false,
+          name: catalogById.get(selectedId)?.name,
+          description: catalogById.get(selectedId)?.description,
+          type: catalogById.get(selectedId)?.type,
+          repository: catalogById.get(selectedId)?.repository,
+          source: "catalog",
+        }
+      : undefined)
+  ) as InstalledExtension | undefined;
+  const selectedInstalled = installedById.has(selectedId);
 
-  if (showSplash) {
+  const core = extensions.filter((item) => item.type === "desktop-integration" || item.id === "neuro-desktop");
+  const installedPlugins = extensions.filter((item) => !core.includes(item));
+
+  const relay: RelayStatus | undefined = status?.relay;
+  const executorOnline = !connectionError && Boolean(status?.executor.connected);
+
+  if (gate.kind === "signin" || gate.kind === "setup") {
+    return <SignIn mode={gate.kind} reason={gate.reason} onSignedIn={() => void load()} />;
+  }
+
+  if (gate.kind === "checking") {
     return (
-      <div className="splash-screen">
-        <div className="splash-overlay" />
-        <div className="splash-content">
+      <div className="signin-root">
+        <section className="signin-card" aria-live="polite">
           <h1>Neuro Desktop</h1>
-          <p>Integration Manager</p>
-          <span>2026.3</span>
-        </div>
+          <p>{connectionError || "Connecting to the bridge…"}</p>
+          {connectionError && <button className="primary" onClick={() => void load()}>Try again</button>}
+        </section>
       </div>
     );
   }
@@ -215,212 +260,300 @@ export default function App() {
         <div className="titlebar-left">
           <h1>Neuro Desktop</h1>
           <nav className="titlebar-nav">
-            <button
-              className={`nav-tab ${activeTab === "extensions" ? "active" : ""}`}
-              onClick={() => setActiveTab("extensions")}
-            >
-              Extensions
-            </button>
-            <button
-              className={`nav-tab ${activeTab === "permissions" ? "active" : ""}`}
-              onClick={() => setActiveTab("permissions")}
-            >
-              Permissions
-            </button>
-            <button
-              className={`nav-tab ${activeTab === "settings" ? "active" : ""}`}
-              onClick={() => setActiveTab("settings")}
-            >
-              Settings
-            </button>
+            {(["extensions", "marketplace", "games", ...(operator ? ["permissions", "activity"] : []), "settings"] as Tab[]).map((tab) => (
+              <button
+                key={tab}
+                className={`nav-tab ${activeTab === tab ? "active" : ""}`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {tab === "settings" ? "Status" : tab[0].toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
           </nav>
         </div>
         <div className="titlebar-right">
-          <span className="status-indicator">●</span>
+          <span className={`status-indicator ${executorOnline ? "online" : "offline"}`}>●</span>
           <span className="status-text">
-            {installedCount} installed, {enabledCount} enabled
+            {connectionError ? "bridge unreachable · reconnecting…" : status
+              ? `bridge ${status.version} · executor ${executorOnline ? "online" : "offline"} · ${
+                  status.actions.actions_received ?? 0
+                } actions`
+              : "connecting to the bridge…"}
           </span>
+          <button className="secondary" onClick={signOut}>Sign out</button>
         </div>
       </header>
 
-      <main
-        className={`manager-main ${activeTab === "extensions" ? "manager-main--extensions" : "manager-main--single"}`}
-      >
-        {activeTab === "extensions" && (
-          <>
-            <aside className="manager-sidebar">
-              <section>
-                <h2>Core Services</h2>
-                {coreServices.map((item, index) => {
-                  const itemState = state[item.id];
-                  return (
-                    <button
-                      key={item.id}
-                      className={`sidebar-item ${selected.id === item.id ? "selected" : ""}`}
-                      style={{ animationDelay: `${index * 0.04}s` }}
-                      onClick={() => setSelectedId(item.id)}
-                    >
-                      <div>
-                        <strong>{item.name}</strong>
-                        <small>{itemState?.enabled ? "Active" : "Installed"}</small>
-                      </div>
-                    </button>
-                  );
-                })}
-              </section>
+      {connectionError && (
+        <div className="scope-warning" role="alert">
+          {connectionError} {lastUpdated && `Showing data from ${lastUpdated.toLocaleTimeString()}. `}
+          Retrying automatically. <button className="secondary" onClick={() => void load()}>Retry now</button>
+        </div>
+      )}
 
-              <section>
-                <h2>Extensions</h2>
-                {plugins.map((item, index) => {
-                  const itemState = state[item.id];
-                  const status = itemState?.installed
-                    ? itemState.enabled
-                      ? "Enabled"
-                      : "Installed"
-                    : "Not installed";
-                  return (
-                    <button
-                      key={item.id}
-                      className={`sidebar-item ${selected.id === item.id ? "selected" : ""}`}
-                      style={{ animationDelay: `${index * 0.05 + 0.12}s` }}
-                      onClick={() => setSelectedId(item.id)}
-                    >
-                      <div>
-                        <strong>{item.name}</strong>
-                        <small>{status}</small>
-                      </div>
-                    </button>
-                  );
-                })}
-              </section>
-            </aside>
+      {operator ? <OperatorControls control={status?.control ?? null} connected={!connectionError && Boolean(status)} onChanged={load} /> : (
+        <section className="operator-controls" aria-label="Delegated controls">
+          <div><strong>Delegated session</strong><p className="hint">You can use your granted abilities, pause and release input. Permission changes and resuming require your operator session.{session?.expires_at && ` Expires ${new Date(session.expires_at).toLocaleTimeString()}.`}</p></div>
+          <div className="button-row">
+            <button className="danger" disabled={Boolean(recoveryBusy) || Boolean(connectionError) || !status || Boolean(status.control?.paused)} onClick={() => void delegatedRecovery("pause")}>{status?.control?.paused ? "Actions paused" : "Pause actions"}</button>
+            <button className="secondary" disabled={recoveryBusy === "release" || Boolean(connectionError) || !status} onClick={() => void delegatedRecovery("release")}>{recoveryBusy === "release" ? "Releasing…" : "Release all input"}</button>
+          </div>
+        </section>
+      )}
 
-            <section className="manager-panel">
+      {message && (
+        <div className={message.kind === "ok" ? "save-notice" : "scope-warning"}>
+          {message.kind === "ok" ? "✅" : "⚠️"} {message.text}
+        </div>
+      )}
+
+      {operator && activeTab === "permissions" && <PermissionsPage />}
+
+      {activeTab === "marketplace" && <MarketplacePanel operator={operator} />}
+
+      {activeTab === "games" && <GamesPanel executor={executorOnline ? status?.executor ?? null : null} />}
+
+      {operator && activeTab === "activity" && <ActivityPanel />}
+
+      {activeTab === "extensions" && (
+        <>
+        {extensionsError && <p className="scope-warning" role="alert">{extensionsError}</p>}
+        <main className="manager-main manager-main--extensions">
+          <aside className="manager-sidebar">
+            <section>
+              <h2>Core Services</h2>
+              {core.map((item) => (
+                <button
+                  key={item.id}
+                  className={`sidebar-item ${selectedId === item.id ? "selected" : ""}`}
+                  onClick={() => setSelectedId(item.id)}
+                >
+                  <div>
+                    <strong>{item.name || item.id}</strong>
+                    <small>{item.enabled ? "Active" : "Installed"}</small>
+                  </div>
+                </button>
+              ))}
+            </section>
+
+            <section>
+              <h2>Extensions</h2>
+              {installedPlugins.map((item) => (
+                <button
+                  key={item.id}
+                  className={`sidebar-item ${selectedId === item.id ? "selected" : ""}`}
+                  onClick={() => setSelectedId(item.id)}
+                >
+                  <div>
+                    <strong>{item.name || item.id}</strong>
+                    <small>
+                    {item.enabled ? "Enabled" : "Disabled"} · signature {item.signature_state ?? item.trust ?? "unknown"}
+                  </small>
+                  </div>
+                </button>
+              ))}
+              {catalog
+                .filter((item) => !installedById.has(item.id))
+                .map((item) => (
+                  <button
+                    key={item.id}
+                    className={`sidebar-item ${selectedId === item.id ? "selected" : ""}`}
+                    onClick={() => setSelectedId(item.id)}
+                  >
+                    <div>
+                      <strong>{item.name}</strong>
+                      <small>Not installed · signature {item.signature_state ?? "unknown"}</small>
+                    </div>
+                  </button>
+                ))}
+              {allIds.length === 0 && (
+                <p className="hint">
+                  No catalog entries. Check the catalog path in Status.
+                </p>
+              )}
+            </section>
+          </aside>
+
+          <section className="manager-panel">
+            {selected ? (
+              <>
+                <div className="panel-header">
+                  <div>
+                    <h1>{selected.name || selected.id}</h1>
+                    <p>{selected.description?.replace("once Vedal enables this extension", "after you enable this extension") || "No description in the catalog."}</p>
+                  </div>
+                  {safeExternalURL(selected.repository) && (
+                    <a href={safeExternalURL(selected.repository)} target="_blank" rel="noreferrer">
+                      Open Repository ↗
+                    </a>
+                  )}
+                </div>
+
+                {operator && <label style={{ display: "block", marginTop: "1rem" }}>Operator token for your next direct action (optional when management is delegated)
+                  <input type="password" value={operatorActionToken} autoComplete="new-password" onChange={(event) => setOperatorActionToken(event.target.value)} style={{ display: "block", width: "100%", maxWidth: "34rem", boxSizing: "border-box" }} />
+                </label>}
+
+                <div className="status-row">
+                  <span className={`pill ${selectedInstalled ? "ok" : "warn"}`}>
+                    {selectedInstalled ? "Installed" : "Not Installed"}
+                  </span>
+                  <span className={`pill ${selected.enabled ? "ok" : "idle"}`}>
+                    {selected.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                  <span className="pill neutral">{INSTALL_MODE_LABELS[installMode] ?? installMode}</span>
+                </div>
+
+                {operator && <div className="button-row"><button className="secondary" onClick={() => setEditingPolicy(!editingPolicy)}>{editingPolicy ? "Hide permissions and settings" : "Permissions and settings"}</button></div>}
+                {operator && editingPolicy && <ExtensionPolicyEditor key={selected.id} id={selected.id} onClose={() => setEditingPolicy(false)} onSaved={() => void load()} />}
+
+                <div className="button-row">
+                  <button
+                    className="primary"
+                    onClick={() => void extensionAction(selected.id, "install")}
+                    disabled={busy || selectedInstalled}
+                  >
+                    Install
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      void extensionAction(selected.id, selected.enabled ? "disable" : "enable")
+                    }
+                    disabled={busy || !selectedInstalled}
+                  >
+                    {selected.enabled ? "Disable" : "Enable"}
+                  </button>
+                  <button
+                    className="danger"
+                    onClick={() => void extensionAction(selected.id, "uninstall")}
+                    disabled={busy || !selectedInstalled}
+                  >
+                    Uninstall
+                  </button>
+                </div>
+
+                <div className="meta-grid">
+                  <article>
+                    <h3>Installed At</h3>
+                    <p>{selected.installed_at || "not installed"}</p>
+                  </article>
+                  <article>
+                    <h3>Source</h3>
+                    <p>{selected.source || "—"}</p>
+                  </article>
+                  <article>
+                    <h3>Path</h3>
+                    <p>{selected.path || extensionDir}</p>
+                  </article>
+                  <article>
+                    <h3>Type</h3>
+                    <p>{selected.type || "extension"}</p>
+                  </article>
+                </div>
+
+                <p className="hint">
+                  Installation follows the mode shown above. Grant management and runtime access separately in Permissions and settings. Metadata-only entries do not fetch code.
+                </p>
+              </>
+            ) : (
               <div className="panel-header">
                 <div>
-                  <h1>{selected.name}</h1>
-                  <p>{selected.description}</p>
+                  <h1>Nothing selected</h1>
+                  <p>Pick an extension on the left, or add one to the catalog.</p>
                 </div>
-                <a href={selected.repo} target="_blank" rel="noreferrer">
-                  Open Repository ↗
-                </a>
               </div>
+            )}
+          </section>
+        </main>
+        </>
+      )}
 
-              <div className="status-row">
-                <span className={`pill ${selectedState.installed ? "ok" : "warn"}`}>
-                  {selectedState.installed ? "Installed" : "Not Installed"}
-                </span>
-                <span className={`pill ${selectedState.enabled ? "ok" : "idle"}`}>
-                  {selectedState.enabled ? "Enabled" : "Disabled"}
-                </span>
-                <span className="pill neutral">{installMethodLabel(selected.installMethod)}</span>
-              </div>
-
-              <div className="option-row">
-                <label>
-                  <input type="radio" checked={selected.installMethod === "metadata_only"} readOnly />
-                  Metadata only
-                </label>
-                <label>
-                  <input type="radio" checked={selected.installMethod === "git_clone"} readOnly />
-                  GitHub clone
-                </label>
-                <label>
-                  <input type="radio" checked={selected.installMethod === "mcp_endpoint"} readOnly />
-                  MCP endpoint
-                </label>
-              </div>
-
+      {activeTab === "settings" && (
+        <section className="settings-panel">
+          {operator && <RuntimePanel />}
+          <h1>Bridge Status</h1>
+          <div className="settings-grid">
+            <article>
+              <h3>Runtime</h3>
+              <p>Version {status?.version ?? "unknown"}</p>
+              <p>Uptime {status ? Math.round(status.uptime / 60) : 0} minutes</p>
+              <p>Started {status?.started_at ?? "—"}</p>
+            </article>
+            <article>
+              <h3>Neuro API</h3>
+              <p>{status?.neuro?.connected ? "Connected" : "Waiting for Neuro API"}</p>
+              <p>{status?.neuro?.attempts ?? 0} connection attempt(s)</p>
+              {status?.neuro?.last_error && <p className="denied">{status.neuro.last_error}</p>}
+              {!status?.neuro?.connected && <p className="hint">Start Neuro's API server or a local test brain at the configured WebSocket address.</p>}
+            </article>
+            <article>
+              <h3>Executor</h3>
+              <p>{executorOnline ? `Connected (${status?.executor.remote})` : "Not connected"}</p>
+              <p>
+                {status?.executor.completed_commands ?? 0} commands, {status?.executor.failed_commands ?? 0} failed
+              </p>
+              {status?.executor.last_error && <p className="denied">{status.executor.last_error}</p>}
+            </article>
+            <article>
+              <h3>Relay / coexistence</h3>
+              <p>{relay?.enabled ? `Enabled → ${relay.url}` : "Disabled"}</p>
+              <p>
+                {relay?.registered ? "Registered" : "Not registered"} · {relay?.peer_count ?? 0} peer(s)
+              </p>
+              {relay?.peers && Object.keys(relay.peers).length > 0 && (
+                <ul className="list-items">
+                  {Object.entries(relay.peers).map(([name, kind]) => (
+                    <li key={name}>
+                      <code>{name}</code>
+                      <span>{kind}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {relay?.reserved_actions && relay.reserved_actions.length > 0 && (
+                <p>Reserved for other integrations: {relay.reserved_actions.join(", ")}</p>
+              )}
+              {relay?.last_error && <p className="denied">{relay.last_error}</p>}
+            </article>
+            <article>
+              <h3>Paths</h3>
+              {config &&
+                Object.entries(config.paths).map(([name, path]) => (
+                  <p key={name}>
+                    <strong>{name}:</strong> {path}
+                  </p>
+                ))}
+            </article>
+            <article>
+              <h3>Dashboard token</h3>
+              <p>
+                Every request to this dashboard is checked against the token from{" "}
+                <code>neuro-integration setup</code>, including requests from this machine.
+              </p>
+              <p>
+                <strong>Source:</strong> {status?.admin.token_source ?? "unknown"}
+              </p>
               <div className="button-row">
                 <button
-                  onClick={installSelected}
-                  disabled={selectedState.installed}
-                  className="primary"
-                >
-                  Install
-                </button>
-                <button
-                  onClick={toggleEnabled}
-                  disabled={!selectedState.installed}
                   className="secondary"
+                  onClick={signOut}
                 >
-                  {selectedState.enabled ? "Disable" : "Enable"}
-                </button>
-                <button
-                  onClick={uninstallSelected}
-                  disabled={selected.category === "core" || !selectedState.installed}
-                  className="danger"
-                >
-                  Uninstall
+                  Sign out
                 </button>
               </div>
-
-              <div className="meta-grid">
-                <article>
-                  <h3>Tags</h3>
-                  <p>{selected.tags.join(", ")}</p>
-                </article>
-                <article>
-                  <h3>Relay Dependency</h3>
-                  <p>{selected.requiresRelay ? "Requires Neuro Relay" : "No relay requirement"}</p>
-                </article>
-                <article>
-                  <h3>Installed Extensions</h3>
-                  <p>{installedCount} total, {enabledCount} enabled</p>
-                </article>
-                <article>
-                  <h3>Minimize Mode</h3>
-                  <p>
-                    {isNativeShell
-                      ? "Native shell enabled (minimize goes to system tray)."
-                      : "Browser mode fallback active."}
+            </article>
+            <article>
+              <h3>Features</h3>
+              {config &&
+                Object.entries(config.features).map(([name, enabled]) => (
+                  <p key={name}>
+                    <strong>{name}:</strong> {enabled ? "on" : "off"}
                   </p>
-                </article>
-              </div>
-            </section>
-          </>
-        )}
-
-        {activeTab === "permissions" && <PermissionsPage />}
-
-        {activeTab === "settings" && (
-          <section className="settings-panel">
-            <h1>Settings</h1>
-            <div className="settings-grid">
-              <article>
-                <h3>Runtime</h3>
-                <p>Configure Neuro Desktop runtime behavior and process management.</p>
-              </article>
-              <article>
-                <h3>Network</h3>
-                <p>Configure WebSocket URLs, relay settings, and network policies.</p>
-              </article>
-              <article>
-                <h3>Vision</h3>
-                <p>Configure vision server URL and context capture settings.</p>
-              </article>
-              <article>
-                <h3>About</h3>
-                <p>Neuro Desktop v0.0.3b-dev | Integration Manager 2026.3</p>
-              </article>
-            </div>
-          </section>
-        )}
-      </main>
-
-      <footer className="manager-footer">
-        <button className="linkish" onClick={() => window.ndHost?.send("open_logs")}>
-          Open Logs...
-        </button>
-        <div className="footer-actions">
-          <button className="secondary" onClick={() => window.ndHost?.send("open_config")}>
-            Settings
-          </button>
-          <button className="primary" onClick={() => window.ndHost?.send("quit_nd")}>
-            Quit Neuro Desktop
-          </button>
-        </div>
-      </footer>
+                ))}
+            </article>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

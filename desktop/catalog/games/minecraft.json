@@ -1,0 +1,40 @@
+{
+  "id": "minecraft",
+  "name": "Minecraft",
+  "description": "Voxel sandbox with keyboard movement and a mouse-look camera.",
+  "tags": ["sandbox", "mouse-look", "multiplayer"],
+  "match": {
+    "processes": ["javaw", "java", "minecraft", "minecraft-launcher", "prismlauncher"],
+    "window_titles": ["Minecraft"]
+  },
+  "control": {
+    "mode": "auto",
+    "external_integration": "minecraft",
+    "movement": "both",
+    "mouse_look": { "enabled": true, "sensitivity": 1.0, "max_step": 500 },
+    "move_hold_seconds": 0.75,
+    "max_actions_per_minute": 150,
+    "nd_actions": ["game_observe", "game_status", "game_press"]
+  },
+  "keys": {
+    "forward": "w",
+    "back": "s",
+    "left": "a",
+    "right": "d",
+    "jump": "space",
+    "crouch": "shift",
+    "sprint": "ctrl",
+    "attack": "left",
+    "use": "right",
+    "inventory": "e",
+    "drop": "q",
+    "chat": "t",
+    "pause": "esc",
+    "special": "f"
+  },
+  "vision": {
+    "recommended": true,
+    "prompt": "Describe the Minecraft scene: what is in front of the player, what the hotbar and health show, and whether anything is dangerous."
+  },
+  "notes": "Look before you walk. Movement is a bounded key hold, so long walks need several game_move calls. With control.mode \"auto\", a Minecraft integration connected through the relay takes over input and Neuro Desktop only observes."
+}

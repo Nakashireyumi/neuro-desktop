@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -99,6 +100,10 @@ type ClientConfig struct {
 	Game         string
 	WebsocketURL string
 	Logger       *log.Logger
+	// Headers are sent with the websocket handshake. Relays and hosted
+	// backends commonly require an Authorization header; without this the
+	// client could only connect to an unauthenticated local backend.
+	Headers http.Header
 }
 
 // Client
@@ -108,6 +113,12 @@ type Client struct {
 	config ClientConfig
 	conn   *websocket.Conn
 	connMu sync.RWMutex
+
+	// writeMu serialises websocket writes. gorilla/websocket permits exactly one
+	// concurrent writer per connection; sending an action result from an action
+	// goroutine while the read loop replies to a force used to interleave frames
+	// (and trip Go's race detector).
+	writeMu sync.Mutex
 
 	// Registered actions
 	actions   map[string]ActionHandler
@@ -183,7 +194,7 @@ func (c *Client) Connect() error {
 	dialer := *websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
 
-	conn, resp, err := dialer.Dial(u.String(), nil)
+	conn, resp, err := dialer.Dial(u.String(), c.config.Headers)
 	if err != nil {
 		if resp != nil {
 			return fmt.Errorf("failed to connect (HTTP %d): %w", resp.StatusCode, err)
@@ -227,7 +238,7 @@ func (c *Client) readLoop() {
 		default:
 			_, msgBytes, err := c.conn.ReadMessage()
 			if err != nil {
-				if !c.closed {
+				if !c.isClosed() {
 					c.logger.Printf("Read error: %v", err)
 					c.errChan <- fmt.Errorf("read error: %w", err)
 				}
@@ -338,11 +349,29 @@ func (c *Client) OnCommand(command string, handler func(json.RawMessage)) {
 
 // Message Sending
 
-func (c *Client) send(msg Message) error {
+// isClosed reports whether Close has been called. Lock order is always
+// writeMu -> connMu; isClosed is only ever called while holding neither.
+func (c *Client) isClosed() bool {
 	c.connMu.RLock()
 	defer c.connMu.RUnlock()
+	return c.closed
+}
 
-	if !c.connected {
+func (c *Client) send(msg Message) error {
+	// One writer at a time, for the whole frame.
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	c.connMu.RLock()
+	conn := c.conn
+	connected := c.connected
+	closed := c.closed
+	c.connMu.RUnlock()
+
+	if closed {
+		return errors.New("client is closed")
+	}
+	if !connected || conn == nil {
 		return errors.New("not connected")
 	}
 
@@ -355,7 +384,7 @@ func (c *Client) send(msg Message) error {
 
 	c.logger.Printf("Sending: %s - %s", msg.Command, string(msgBytes))
 
-	if err := c.conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+	if err := conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
 
@@ -571,6 +600,10 @@ func (c *Client) Errors() <-chan error {
 
 // Close closes the websocket connection
 func (c *Client) Close() error {
+	// Wait for an in-flight frame so the connection is not closed mid-write.
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
@@ -580,6 +613,7 @@ func (c *Client) Close() error {
 
 	c.logger.Printf("Closing client...")
 	c.closed = true
+	c.connected = false
 	close(c.closeChan)
 
 	if c.conn != nil {

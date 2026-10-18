@@ -13,7 +13,8 @@
 	"customizations": {
 		"vscode": {
 			"extensions": [
-				"twxs.cmake"
+				"golang.go",
+				"ms-python.python"
 			]
 		}
 	}

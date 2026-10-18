@@ -5,35 +5,93 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	neuro "github.com/cassitly/neuro-integration-sdk"
 )
 
+// reservedActionNames lists action names owned by another integration (for
+// example a dedicated Minecraft integration running beside Neuro Desktop
+// through the relay). Neuro Desktop must not register those, or the two
+// integrations would shadow each other.
+func (n *NDIntegration) reservedActionNames() map[string]bool {
+	reserved := map[string]bool{}
+	for _, name := range n.reservedActionList() {
+		reserved[strings.ToLower(name)] = true
+	}
+	return reserved
+}
+
+// registeredActionNames returns the action names currently registered with
+// Neuro (empty when Neuro has not connected yet).
+func (n *NDIntegration) registeredActionNames() []string {
+	currentActionListMu.Lock()
+	out := make([]string, 0, len(currentActionList))
+	for name := range currentActionList {
+		out = append(out, name)
+	}
+	currentActionListMu.Unlock()
+	sort.Strings(out)
+	return out
+}
+
+func (n *NDIntegration) reservedActionList() []string {
+	if n.relay == nil {
+		return nil
+	}
+	return n.relay.ReservedActionNames()
+}
+
+func specAllowed(spec actionSpec, reserved map[string]bool) bool {
+	return !reserved[strings.ToLower(string(spec.Name))]
+}
+
 func (n *NDIntegration) registerActions() error {
 	handlers := make([]neuro.ActionHandler, 0)
+	reserved := n.reservedActionNames()
+	skipped := make([]string, 0)
 
 	actionModeMu.Lock()
 	registerHL := RegisterHLActionsOnStartup
 	registerLL := RegisterLLActionsOnStartup
+	registerGame := RegisterGameActionsOnStartup
 	actionModeMu.Unlock()
 
+	var specs []actionSpec
 	if registerHL {
-		for _, spec := range HLActionSpecs {
-			handlers = append(handlers, &IPCProxyAction{
-				integration: n,
-				spec:        spec,
-			})
+		specs = append(specs, HLActionSpecs...)
+	}
+	if registerLL {
+		specs = append(specs, LLActionSpecs...)
+	}
+	// The game interface stays registered in both high- and low-level modes:
+	// it is how Neuro plays a game that has no integration of its own.
+	if registerGame {
+		specs = append(specs, gameActionSpecs()...)
+	}
+	// The shell, the guide, and the permission request are registered in every
+	// mode (see alwaysRegisteredSpecs).
+	specs = append(specs, alwaysRegisteredSpecs()...)
+
+	for _, spec := range specs {
+		if !specAllowed(spec, reserved) {
+			skipped = append(skipped, string(spec.Name))
+			continue
 		}
+		handlers = append(handlers, &IPCProxyAction{
+			integration: n,
+			spec:        spec,
+		})
 	}
 
-	if registerLL {
-		for _, spec := range LLActionSpecs {
-			handlers = append(handlers, &IPCProxyAction{
-				integration: n,
-				spec:        spec,
-			})
-		}
+	// Tools from running MCP servers survive a mode switch.
+	if n.mcp != nil {
+		handlers = append(handlers, n.mcp.handlers(n)...)
+	}
+
+	if len(skipped) > 0 {
+		log.Printf("Left %d action(s) to other integrations: %s", len(skipped), strings.Join(skipped, ", "))
 	}
 
 	currentActionListMu.Lock()
@@ -90,7 +148,11 @@ func (n *NDIntegration) executeScriptIntent(script string) neuro.ExecutionResult
 		ClearAfter: true,
 	}
 
-	resp, err := n.sendToRust(cmd)
+	action := ""
+	if name, ok := scriptIntentAction(strings.ToUpper(script)); ok {
+		action = string(name)
+	}
+	resp, err := n.sendToExecutorForAction(cmd, action)
 	if err != nil {
 		return neuro.NewFailureResult(fmt.Sprintf("IPC error: %v", err))
 	}
@@ -122,11 +184,11 @@ func (n *NDIntegration) handleGracefulShutdown(data json.RawMessage) {
 
 	log.Println("Graceful shutdown requested")
 
-	resp, err := n.sendToRust(IPCCommand{
+	resp, err := n.sendToExecutor(IPCCommand{
 		Type: CmdShutdownGracefully,
 	})
 	if err != nil || !resp.Success {
-		log.Printf("Warning: Rust graceful shutdown failed: %v", err)
+		log.Printf("Warning: executor graceful shutdown failed: %v", err)
 	}
 
 	if err := n.client.SendShutdownReady(); err != nil {
@@ -139,7 +201,7 @@ func (n *NDIntegration) handleGracefulShutdown(data json.RawMessage) {
 func (n *NDIntegration) handleImmediateShutdown(_ json.RawMessage) {
 	log.Println("Immediate shutdown requested")
 
-	_, _ = n.sendToRust(IPCCommand{
+	_, _ = n.sendToExecutor(IPCCommand{
 		Type: CmdShutdownImmediately,
 	})
 
@@ -163,6 +225,23 @@ type CatalogItem struct {
 	Homepage    string   `json:"homepage,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 	LaunchHints []string `json:"launch_hints,omitempty"`
+
+	// Publisher, Commit and Signature make an item installable. Commit pins the
+	// git revision that gets fetched; Signature is ed25519 over the item's JSON
+	// (see catalog_trust.go). Publisher names the key that must have signed it.
+	Publisher string `json:"publisher,omitempty"`
+	Commit    string `json:"commit,omitempty"`
+	Signature string `json:"signature,omitempty"`
+
+	// MCP, when set, makes this an MCP server extension (see mcp.go).
+	MCP *CatalogMCP `json:"mcp,omitempty"`
+
+	Permissions    []ExtensionPermissionDeclaration `json:"permissions,omitempty"`
+	SettingsSchema map[string]interface{}           `json:"settings_schema,omitempty"`
+
+	// Raw is the item exactly as it appeared in the index. It is what the
+	// signature covers, so it is never serialised back out.
+	Raw json.RawMessage `json:"-"`
 }
 
 func catalogFilePath() string {
@@ -182,6 +261,18 @@ func loadCatalogIndex(catalogPath string) (CatalogIndex, error) {
 	var index CatalogIndex
 	if err := json.Unmarshal(data, &index); err != nil {
 		return CatalogIndex{}, fmt.Errorf("catalog file is invalid JSON")
+	}
+
+	// Keep each item's exact bytes for signature checks.
+	var raw struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(data, &raw); err == nil {
+		for i := range index.Items {
+			if i < len(raw.Items) {
+				index.Items[i].Raw = raw.Items[i]
+			}
+		}
 	}
 
 	return index, nil
@@ -239,6 +330,7 @@ func (n *NDIntegration) findCatalogItems(query string, limit int) neuro.Executio
 
 	lines := make([]string, 0, len(matches))
 	for _, item := range matches {
+		item = catalogPresentationItem(item, false)
 		lines = append(lines, fmt.Sprintf("%s (%s): %s", item.ID, item.Name, item.Description))
 	}
 
@@ -260,6 +352,7 @@ func (n *NDIntegration) getCatalogItem(itemID string) neuro.ExecutionResult {
 		if strings.ToLower(strings.TrimSpace(item.ID)) != target {
 			continue
 		}
+		item = catalogPresentationItem(item, false)
 
 		parts := []string{
 			fmt.Sprintf("id=%s", item.ID),

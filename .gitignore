@@ -1,18 +1,39 @@
 .venv/
 dist/
-target/
 
 __pycache__/
 
 libs/
+target/
 build/
+
+# Testing tools from other repositories.
+neuro-sdk/Randy
+Randy/
+
 .idea/
 _external/
+
+# Repository-specific build files during development
 desktop/apps/neuro-integration/*.exe
+desktop/apps/neuro-integration/integration-code
+desktop/apps/neuro-integration/integration-code.exe
 desktop/apps/neuro-integration/dist/*.exe
-desktop/apps/neuro-desktop/target/**/*.exe
 desktop/dist/**/*.exe
-desktop/apps/process-handler/build-*/
-desktop/apps/process-handler/build-ci/
-desktop/apps/process-handler/build-ci-tests/
-desktop/frontend/package-lock.json
+
+*.zip
+
+# Runtime state written by the bridge (installed extensions, relay and dashboard tokens). Never commit it.
+**/catalog/extensions-state.json
+**/catalog/extension-permissions.json
+**/catalog/integrations.json
+relay-token
+**/relay-token
+dashboard-token
+**/dashboard-token
+*.tsbuildinfo
+
+# These items are meant to be in a different repository / different branch of neuro-desktop.
+# They're locally in the same repository folder during development, as they need to be developed together.
+ecosystem/
+marketplace/

@@ -4,8 +4,11 @@ import math
 import random
 import time
 
-import pyautogui
+from ..gui_stub import load_pyautogui
 
+# Real pyautogui on a desktop session, a self-explaining stub without one: this
+# module is imported by the controller everywhere, including on headless boxes.
+pyautogui = load_pyautogui()
 pyautogui.PAUSE = 0
 @dataclass
 class PathProfile:

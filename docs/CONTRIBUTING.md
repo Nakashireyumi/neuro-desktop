@@ -49,14 +49,14 @@ Before contributing, ensure you have:
 
 ```bash
 # 1. Fork the repository on GitHub
-# Click "Fork" button on https://github.com/Nakashireyumi/neuro-desktop
+# Click "Fork" button on https://github.com/cassitly/neuro-desktop
 
 # 2. Clone your fork
 git clone https://github.com/cassitly/neuro-desktop.git
 cd neuro-desktop
 
 # 3. Add upstream remote
-git remote add upstream https://github.com/Nakashireyumi/neuro-desktop.git
+git remote add upstream https://github.com/cassitly/neuro-desktop.git
 
 # 4. Create a branch for your changes
 git checkout -b feature/my-awesome-feature
@@ -72,9 +72,10 @@ cd desktop
 ./scripts/build-all.sh   # Linux/macOS
 
 # Run tests
-cargo test               # Rust tests
-go test ./...            # Go tests
-npm test                 # Frontend tests (if applicable)
+(cd apps/neuro-integration && go test -race ./...)   # the server: Go
+python3 -m unittest discover backend/python/tests -t backend/python   # the agent: Python
+python3 tools/ci/repo_checks.py                      # repository checks
+(cd frontend && npm run build)                       # the dashboard: type-checks and bundles
 ```
 
 ## How to Contribute
@@ -180,48 +181,20 @@ See [Pull Request Process](#pull-request-process) below.
 
 ```
 desktop/
-├── apps/              # Applications
-│   ├── neuro-desktop/        # Rust main app
-│   └── neuro-integration/    # Go WebSocket client
-├── backend/           # Backend services
-│   └── python/controller/    # Python control drivers
-├── frontend/          # Web UI (TypeScript/Vite)
-├── config/            # Configuration
-├── scripts/           # Build and deployment scripts
-├── docs/              # Documentation
-└── tests/             # Integration tests
+├── apps/
+│   ├── neuro-integration/    # Go server: Neuro client, permissions, dashboard API, relay host
+│   └── nd-vision-server/     # optional Python vision service
+├── backend/python/
+│   └── controller/           # Python agent and its drivers
+├── catalog/                  # signed extension index, publisher keys, game profiles
+├── config/                   # example policy and integration config
+├── frontend/                 # dashboard (TypeScript, React, Vite)
+├── scripts/                  # build and bundle scripts
+└── tools/                    # CI checks, fake executor, Ollama test client
+docs/                         # documentation (repository root)
 ```
 
 ### Coding Standards
-
-#### Rust
-
-**Follow Rust conventions**:
-```rust
-// Use descriptive names
-fn process_ipc_command() -> Result<()>  // ✓
-fn proc() -> Result<()>                 // ✗
-
-// Document public APIs
-/// Processes an IPC command from the queue.
-///
-/// # Arguments
-/// * `command` - The command to process
-///
-/// # Errors
-/// Returns error if command is invalid
-pub fn process_command(command: &str) -> Result<()>
-
-// Handle errors properly
-let result = some_operation()?;  // ✓
-let result = some_operation().unwrap();  // ✗ (avoid unwrap)
-```
-
-**Run formatters**:
-```bash
-cargo fmt
-cargo clippy
-```
 
 #### Go
 
@@ -296,38 +269,21 @@ function moveMouse(action)                     // ✗
 
 ### Testing Guidelines
 
-**Write tests for**:
-- New features
-- Bug fixes
-- Edge cases
+Every change comes with a test where one is possible. The bar is higher for
+anything that touches permissions, the relay, the catalog, or the input path.
 
-**Test structure**:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_mouse_move_valid_coordinates() {
-        let cmd = IPCCommand::MoveMouseTo { x: 100, y: 200 };
-        assert!(cmd.validate().is_ok());
-    }
-    
-    #[test]
-    fn test_mouse_move_negative_coordinates() {
-        let cmd = IPCCommand::MoveMouseTo { x: -10, y: -10 };
-        assert!(cmd.validate().is_err());
-    }
-}
-```
-
-**Run tests before submitting**:
-```bash
-cargo test
-go test ./...
-pytest backend/python/tests
-```
+- **Go (the server):** `cd desktop/apps/neuro-integration && go test -race ./...`.
+  Tests use real handlers, not mocks of them. Keep tests off the executor: a test
+  must never call a function that reaches the agent or file IPC.
+- **Weak-model cases:** a new error message or action rule gets a case in
+  `desktop/apps/neuro-integration/testdata/weak_model_cases.json`, with the call a
+  small model would make and the reply it must get.
+- **Python (the agent):** `python3 -m unittest discover backend/python/tests -t backend/python`.
+  It runs with no display, as CI does.
+- **Dashboard:** there are no unit tests yet. `npm run build` type-checks it, and the
+  Settings and Permissions pages should be checked in a browser before a release.
+- **Repository:** `python3 desktop/tools/ci/repo_checks.py`. It checks JSON, the example
+  policies, the signed catalog, the docs, and stale references.
 
 ### Commit Messages
 
@@ -486,57 +442,45 @@ git pull upstream develop
 
 ### Code Comments
 
-```rust
-// Good: Explain WHY, not WHAT
-// Clamp to prevent coordinate overflow on multi-monitor setups
-let x = x.clamp(0, screen_width - 1);
+```go
+// Good: explain WHY, not WHAT
+// Clamp so a coordinate on a secondary monitor cannot leave the virtual screen.
+x = clamp(x, 0, screenWidth-1)
 
-// Bad: States the obvious
+// Bad: states the obvious
 // Clamp x
-let x = x.clamp(0, screen_width - 1);
+x = clamp(x, 0, screenWidth-1)
 ```
 
 ### Error Messages
 
-```rust
-// Good: Actionable, specific
-return Err("Failed to parse IPC command: missing 'type' field");
+Refusals reach a small model as text. Name the action, the parameter, and a valid example.
 
-// Bad: Vague, unhelpful
-return Err("Error");
+```go
+// Good: actionable and specific
+return neuro.NewFailureResult(`move_mouse_to needs numeric x and y in screen pixels, for example {"x": 640, "y": 360}`)
+
+// Bad: vague
+return neuro.NewFailureResult("Error")
 ```
 
 ### Variable Naming
 
-```rust
-// Good: Descriptive
-let mouse_x_coordinate = 500;
-let action_execution_timeout_ms = 1000;
+```go
+// Good: descriptive
+mouseXCoordinate := 500
+actionExecutionTimeoutMS := 1000
 
-// Bad: Too short or cryptic
-let x = 500;
-let t = 1000;
+// Bad: too short or cryptic
+x := 500
+t := 1000
 ```
 
 ### File Organization
 
-```rust
-// Organize imports
-use std::fs;           // Standard library
-use anyhow::Result;    // External crates
-use crate::config;     // Local modules
-
-// Group related functions
-impl IPCHandler {
-    // Public API first
-    pub fn new() -> Self { }
-    pub fn process() -> Result<()> { }
-    
-    // Private helpers after
-    fn validate() -> bool { }
-    fn execute() -> Result<()> { }
-}
-```
+Group imports the standard way (`gofmt` sorts them), and keep one concern per file:
+`action-registry.go` for what Neuro may call, `permissions.go` for the policy,
+`relay_host.go` for the relay host.
 
 ## Community
 

@@ -1,54 +1,35 @@
 {
   "items": [
     {
-      "id": "neuro-desktop",
-      "name": "Neuro Desktop",
-      "description": "Windows control integration for Neuro and Evil",
-      "type": "desktop-integration",
-      "repository": "https://github.com/cassitly/neuro-desktop",
-      "homepage": "https://github.com/Nakashireyumi/neuro-desktop",
-      "tags": ["windows", "desktop", "control", "input"],
+      "description": "Gives Neuro a small knowledge graph that lasts between sessions: entities, relations and observations, searchable. Its tools appear to Neuro as mcp_memory_* actions once Vedal enables this extension.",
+      "homepage": "https://www.npmjs.com/package/@modelcontextprotocol/server-memory",
+      "id": "memory",
       "launch_hints": [
-        "Run neuro-desktop.exe from the bundled dist folder",
-        "Set NEURO_PERMISSIONS_FILE to a restrictive policy in production"
-      ]
-    },
-    {
-      "id": "neuro-relay",
-      "name": "Neuro Relay",
-      "description": "Multiplexing relay for multiple integrations and games",
-      "type": "relay",
-      "repository": "https://github.com/recassity/neuro-relay",
-      "homepage": "https://github.com/Nakashireyumi/neuro-relay",
-      "tags": ["relay", "multiplex", "backend", "go"],
-      "launch_hints": [
-        "Bundle neuro-relay.exe next to neuro-desktop.exe",
-        "Set NEURO_RELAY_ENABLED=true to route integrations through relay"
-      ]
-    },
-    {
-      "id": "nd-vision-server",
-      "name": "ND Vision Server",
-      "description": "Experimental model inference server for visual understanding",
-      "type": "vision-service",
-      "repository": "https://github.com/Ubuntufanboy/neuro-desktop",
-      "tags": ["vision", "python", "inference", "experimental"],
-      "launch_hints": [
-        "Run as an external process and expose HTTP endpoint before ND startup"
-      ]
-    },
-    {
-      "id": "mcp-bridge",
-      "name": "MCP Bridge",
-      "description": "Model Context Protocol bridge plugin for external tool servers",
-      "type": "mcp-plugin",
+        "Installs disabled. Vedal turns it on in the Extensions page; Neuro cannot start it herself.",
+        "Runs @modelcontextprotocol/server-memory 2026.8.31 through npx, so Node.js and network access are needed on first start.",
+        "Set MEMORY_FILE_PATH in the bridge's environment to choose where memory is saved. The bridge passes only that one variable to the server."
+      ],
+      "mcp": {
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-memory@2026.8.31"
+        ],
+        "command": "npx",
+        "env": [
+          "MEMORY_FILE_PATH"
+        ],
+        "timeout_seconds": 60
+      },
+      "name": "MCP Memory",
+      "publisher": "neuro-desktop",
       "repository": "https://github.com/modelcontextprotocol/servers",
-      "tags": ["mcp", "plugin", "tools", "optional"],
-      "launch_hints": [
-        "Not installed by default",
-        "Install from the Extensions page or use install_extension action",
-        "Set NEURO_EXTENSION_INSTALL_MODE=git_clone to clone plugin repositories"
-      ]
+      "signature": "h7CyPIXImbe0WNlkmkHgkfw9yFgRDKsQvgktpKfRThFtcrX0kO2p1SCjXjojzU/t6fij3PWjgk0BflsTEfNoAw==",
+      "tags": [
+        "mcp",
+        "memory",
+        "reference"
+      ],
+      "type": "mcp-plugin"
     }
   ]
 }

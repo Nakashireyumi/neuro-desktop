@@ -13,6 +13,31 @@
   --shadow: 0 10px 36px rgba(14, 27, 58, 0.12);
 }
 
+.operator-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.7rem 1.2rem;
+  padding: 1rem 1.4rem;
+  border-bottom: 1px solid var(--line);
+  background: #edf5ff;
+}
+
+.operator-controls--stopped { background: #fff4df; }
+.operator-controls .hint { margin: 0.3rem 0 0; }
+.operator-controls .button-row { margin: 0; }
+.operator-controls > p { flex-basis: 100%; margin: 0; }
+.operator-notice { color: var(--ok); }
+.activity-panel { padding: 1.4rem; min-width: 0; }
+.activity-filter { width: min(100%, 440px); margin: 1rem 0; padding: 0.7rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.activity-table-wrap { overflow-x: auto; }
+.activity-table { width: 100%; border-collapse: collapse; text-align: left; }
+.activity-table th, .activity-table td { padding: 0.8rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.activity-table td:last-child { overflow-wrap: anywhere; }
+.activity-table time { white-space: nowrap; color: var(--muted); font-size: 0.88rem; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
 * {
   box-sizing: border-box;
 }
@@ -89,8 +114,8 @@ body {
   overflow: hidden;
   background: var(--panel);
   box-shadow: var(--shadow);
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
   min-height: calc(100vh - 2.4rem);
   animation: fade-up 0.45s ease both;
 }
@@ -106,6 +131,7 @@ body {
 
 .manager-main {
   display: grid;
+  flex: 1;
   min-height: 0;
 }
 
@@ -892,4 +918,153 @@ button.danger {
   .limits-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ============================================================
+   Live dashboard additions (Games tab, status strip, notices)
+   ============================================================ */
+
+.status-indicator.online {
+  color: var(--ok);
+}
+
+.status-indicator.offline {
+  color: var(--danger);
+}
+
+.save-notice {
+  margin: 0.75rem 1.25rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #97ddb0;
+  background: #e6f8ed;
+  color: #14532d;
+  font-size: 0.9rem;
+}
+
+.games-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.session-card {
+  margin: 0.5rem 1.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.session-card h3 {
+  margin: 0 0 0.25rem;
+}
+
+.session-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin: 0.5rem 0 0;
+}
+
+.observation {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 0.85rem;
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0;
+}
+
+.list-items .allowed {
+  color: var(--ok);
+}
+
+.list-items .denied {
+  color: var(--danger);
+}
+
+/* Live runtime (Extensions page) */
+.runtime-panel { margin: 0 0 16px; }
+.runtime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.runtime-card { border: 1px solid var(--border, #2a2f3a); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface, #161a22); }
+.runtime-card header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.runtime-card small { opacity: 0.8; word-break: break-all; }
+.runtime-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.04em; }
+.runtime-badge--ok, .runtime-card--ok { border-color: #2f7d4f; }
+.runtime-badge--ok { background: #1f4d33; color: #bff3d2; }
+.runtime-badge--warn { background: #4d3f1f; color: #ffe7a6; }
+.runtime-badge--bad { background: #5a2323; color: #ffc9c9; }
+.runtime-badge--muted { background: #2a2f3a; color: #b8c0cc; }
+.runtime-card--bad { border-color: #8a3a3a; }
+.runtime-card--warn { border-color: #8a7330; }
+.runtime-error { color: #ffc9c9; }
+
+/* Permission requests (Permissions page) */
+.permission-requests { border: 1px solid var(--border, #2a2f3a); border-radius: 12px; padding: 14px 16px; margin: 0 0 18px; }
+.permission-requests h3 { margin: 14px 0 6px; font-size: 0.95rem; }
+.request-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.request-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; background: var(--surface, #161a22); }
+.request-item p { margin: 4px 0; }
+.request-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.request-recent { list-style: none; margin: 0; padding: 0; font-size: 0.9rem; }
+.requestable-row { display: flex; gap: 12px; align-items: center; margin: 12px 0; padding: 10px 12px; border-radius: 8px; background: var(--surface, #161a22); }
+.requestable-row p { margin: 4px 0 0; font-size: 0.9rem; opacity: 0.85; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Sign-in gate: shown until the server accepts the dashboard token. */
+.signin-root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.signin-card {
+  width: min(440px, 100%);
+  padding: 28px;
+  border-radius: 12px;
+  background: rgba(20, 22, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.signin-card h1 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+}
+
+.signin-card h2 {
+  margin: 12px 0 8px;
+  font-size: 1.1rem;
+}
+
+.signin-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.signin-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.signin-error {
+  color: #ff8a8a;
+  margin: 12px 0 0;
 }

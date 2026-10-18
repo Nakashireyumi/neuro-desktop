@@ -1,42 +1,41 @@
 # ============================================================
-# desktop/scripts/bundle/build-go.ps1 (Standalone script)
+# desktop/scripts/build-go.ps1
+# Cross-compiles the server (Go) for every platform we ship.
+#   .\scripts\build-go.ps1
 # ============================================================
+$ErrorActionPreference = 'Stop'
 
-Write-Host "Building Go integration for multiple platforms..."
+Write-Host 'Building the Neuro Desktop server for every platform...'
 
-$OUTPUT_DIR = "native/go-neuro-integration/build"
-Remove-Item -Recurse -Force $OUTPUT_DIR -ErrorAction SilentlyContinue
+$OUTPUT_DIR = 'apps/neuro-integration/dist'
+if (Test-Path $OUTPUT_DIR) { Remove-Item -Recurse -Force $OUTPUT_DIR }
 New-Item -ItemType Directory -Force -Path $OUTPUT_DIR | Out-Null
 
-Push-Location native/go-neuro-integration
+Push-Location 'apps/neuro-integration'
+try {
+    $targets = @(
+        @{ GOOS = 'windows'; GOARCH = 'amd64'; Name = 'windows-amd64.exe' },
+        @{ GOOS = 'linux';   GOARCH = 'amd64'; Name = 'linux-amd64' },
+        @{ GOOS = 'darwin';  GOARCH = 'amd64'; Name = 'darwin-amd64' },
+        @{ GOOS = 'darwin';  GOARCH = 'arm64'; Name = 'darwin-arm64' }
+    )
 
-# Windows
-Write-Host "Building for Windows..."
-$env:GOOS = "windows"
-$env:GOARCH = "amd64"
-go build -o "$OUTPUT_DIR/go-neuro-integration-windows-amd64.exe" main.go
+    foreach ($target in $targets) {
+        Write-Host ("  -> {0}/{1}" -f $target.GOOS, $target.GOARCH)
+        $env:GOOS = $target.GOOS
+        $env:GOARCH = $target.GOARCH
+        $env:CGO_ENABLED = '0'
+        go build -trimpath -o "$OUTPUT_DIR/neuro-integration-$($target.Name)" .
+        if ($LASTEXITCODE -ne 0) { throw "go build failed for $($target.GOOS)/$($target.GOARCH)" }
+    }
+} finally {
+    Pop-Location
+    Remove-Item Env:\GOOS -ErrorAction SilentlyContinue
+    Remove-Item Env:\GOARCH -ErrorAction SilentlyContinue
+    Remove-Item Env:\CGO_ENABLED -ErrorAction SilentlyContinue
+}
 
-# Linux
-Write-Host "Building for Linux..."
-$env:GOOS = "linux"
-$env:GOARCH = "amd64"
-go build -o "$OUTPUT_DIR/go-neuro-integration-linux-amd64" main.go
-
-# macOS (Intel)
-Write-Host "Building for macOS (Intel)..."
-$env:GOOS = "darwin"
-$env:GOARCH = "amd64"
-go build -o "$OUTPUT_DIR/go-neuro-integration-darwin-amd64" main.go
-
-# macOS (Apple Silicon)
-Write-Host "Building for macOS (ARM64)..."
-$env:GOOS = "darwin"
-$env:GOARCH = "arm64"
-go build -o "$OUTPUT_DIR/go-neuro-integration-darwin-arm64" main.go
-
-Pop-Location
-
-Write-Host ""
-Write-Host "=== Cross-platform builds complete ==="
+Write-Host ''
+Write-Host '=== Cross-platform builds complete ==='
 Write-Host "Binaries in: $OUTPUT_DIR"
 Get-ChildItem $OUTPUT_DIR

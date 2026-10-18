@@ -1,614 +1,170 @@
-# Neuro Desktop Architecture
+# Architecture
 
-> **Deep dive into the technical architecture and design decisions of Neuro Desktop**
+Neuro Desktop lets Neuro and Evil use applications and operating systems, including
+applications without a dedicated integration. The native manager, server and
+controlled-machine client run as separate processes:
 
-## Table of Contents
+* the **server** (`neuro-integration`) receives Neuro's commands, applies Vedal's policy,
+  and does the heavy work (the dashboard API, the vision client, the relay);
+* the **native manager** (`neuro-manager`) provides GTK 4 desktop controls and a
+  startup splash, with no embedded browser;
+* the optional **dashboard program** (`neuro-dashboard`) serves the browser dashboard and forwards
+  its API to the server. It is optional: the server serves the page too;
+* the **client** (`neuro-client`) runs on the PC Neuro controls. It carries out the
+  commands the server sends, and nothing else.
 
-- [Overview](#overview)
-- [System Design](#system-design)
-- [Component Architecture](#component-architecture)
-- [Communication Patterns](#communication-patterns)
-- [Data Flow](#data-flow)
-- [Security Model](#security-model)
-- [Performance Considerations](#performance-considerations)
-- [Design Decisions](#design-decisions)
-
-## Overview
-
-Neuro Desktop is a **bridge + executor** architecture:
-
-- **Bridge (`neuro-integration`, Go)** — WebSocket client of the
-  [Neuro API](https://github.com/VedalAI/neuro-sdk). Registers actions, enforces
-  Vedal's permission policy, and returns `action/result` promptly (SDK requires
-  results within ~20s; long work happens on the executor).
-- **Executor (`neuro-desktop` + Python)** — Runs on the controlled machine.
-  Receives validated IPC commands and drives mouse/keyboard/scripts.
-
-Both usually co-locate today (file IPC). The split is the seam for a future
-remote executor under a managed bridge.
-
-### Design Philosophy
-
-1. **Right Tool for the Job**: Each component uses the language best suited for its task
-2. **Fault Isolation**: Process boundaries prevent cascading failures
-3. **Simple Communication**: JSON-based IPC for easy debugging and extensibility
-4. **Graceful Degradation**: Automatic recovery from component failures
-5. **Safety First**: Permission scopes + allow/deny lists before execution
-6. **Cross-Platform Intents**: High-level actions map to OS-specific shortcuts
-
-## System Design
-
-### High-Level Architecture
+The split exists so that the PC Neuro controls does not need to be powerful. The heavy
+work runs on the server, and that PC only needs the client.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Neuro API                               │
-│                    (External WebSocket)                         │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                │ WS Protocol
-                                │ (JSON Messages)
-                                │
-┌───────────────────────────────▼─────────────────────────────────┐
-│                     Go Integration                              │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  • WebSocket Client (gorilla/websocket)                 │   │
-│  │  • Action Registry (15+ action types)                   │   │
-│  │  • Message Router                                       │   │
-│  │  • IPC Writer                                          │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                │ File IPC
-                                │ (neuro_ipc.json)
-                                │
-┌───────────────────────────────▼─────────────────────────────────┐
-│                     Rust Main Process                           │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  IPC Handler Thread                                     │   │
-│  │  • File Watcher (50ms poll)                            │   │
-│  │  • JSON Parser & Validator                             │   │
-│  │  • Command Router                                      │   │
-│  │  • Response Writer                                     │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  Go Process Manager                                     │   │
-│  │  • Spawns Go integration as child                      │   │
-│  │  • Health monitoring (5s heartbeat)                    │   │
-│  │  • Auto-restart on crash (max 5 attempts)              │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  Python FFI Bridge (PyO3)                               │   │
-│  │  • Python interpreter embedded                          │   │
-│  │  • GIL-safe calls                                       │   │
-│  │  • Exception handling                                   │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │
-                                │ PyO3 FFI
-                                │ (Function Calls)
-                                │
-┌───────────────────────────────▼─────────────────────────────────┐
-│                  Python Controller                              │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  Action Parser                                          │   │
-│  │  • Lexer (shlex)                                        │   │
-│  │  • Command dispatcher                                   │   │
-│  │  • Error handling                                       │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  Mouse Controller                                       │   │
-│  │  • Instruction queue                                    │   │
-│  │  • Algorithmic pathfinding (Bézier + Perlin)          │   │
-│  │  • Coordinate clamping                                  │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  Keyboard Controller                                    │   │
-│  │  • Instruction queue                                    │   │
-│  │  • Key mapping                                          │   │
-│  │  • Timing control                                       │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │  Desktop Monitor                                        │   │
-│  │  • Mouse tracking (pynput)                              │   │
-│  │  • Action history (1000 events)                         │   │
-│  │  • Window detection                                     │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+                 Neuro API (websocket, Neuro-sama's backend)
+                                  │
+                                  ▼
+ ┌─────────────────────── SERVER (Go, neuro-integration) ───────────────────────┐
+ │ Neuro client (vendored SDK port)   policy · scopes · rate limits · audit     │
+ │ stop switch: pause / kill file     executor hub ◀── clients (TCP, token)    │
+ │ dashboard API + UI at /ui/         file IPC fallback (co-located client)    │
+ │ relay client ──▶ Neuro Relay       relay host (`relay` subcommand, optional) │
+ │ MCP bridge ──▶ enabled MCP servers (child processes)                   │
+ │ catalog (signed) · game profiles · extension state · vision client           │
+ └──────────────────────────────────────────────────────────────────────────────┘
+      ▲ dashboard API (token)                  │ commands        ▲ results, telemetry
+      │                                        ▼                 │
+ ┌──── DASHBOARD PROGRAM (Go, neuro-dashboard) ────┐   ┌──── CLIENT (neuro-client) ────────┐
+ │ serves the dashboard page; forwards /api and    │   │ on the PC Neuro controls: input,  │
+ │ /health only. No secret, no policy, adds no     │   │ screen, shell, scripts. No UI,    │
+ │ token of its own. Optional.                     │   │ vision or policy. Python agent,   │
+ └─────────────────────────────────────────────────┘   │ packaged with PyInstaller.        │
+                                                       └───────────────────────────────────┘
+
+ NATIVE MANAGER (GTK 4) / OPTIONAL DASHBOARD (TypeScript + Vite):
+ Extensions · Marketplace · Games · Permissions · Activity · Status
 ```
 
-## Component Architecture
-
-### Go Integration Layer
-
-**Purpose**: Bridge between Neuro API and local system
-
-**Responsibilities**:
-- Maintain WebSocket connection to Neuro
-- Register available actions with Neuro
-- Parse incoming action commands
-- Translate to IPC format
-- Handle action results
-
-**Key Files**:
-- `main.go` - Entry point, WebSocket loop
-- `action-registry.go` - Action schema definitions
-- `action-handling.go` - Action → IPC translation
-- `utils.go` - Helper functions
-- `types.go` - Data structures
-
-**Design Patterns**:
-- Event loop with goroutines
-- Channel-based communication
-- Graceful shutdown handling
-
-**Error Handling**:
-```go
-// Automatic reconnection
-for {
-    err := integration.listen()
-    if err != nil {
-        log.Printf("Connection lost: %v", err)
-        time.Sleep(5 * time.Second)
-        integration.reconnect()
-    }
-}
-```
-
-### Rust Main Process
-
-**Purpose**: System integration and process orchestration
-
-**Responsibilities**:
-- Start and monitor Go integration
-- Process IPC commands
-- Bridge to Python via FFI
-- Manage application lifecycle
-
-**Key Files**:
-- `main.rs` - Entry point, orchestration
-- `ipc_handler.rs` - IPC command processor
-- `controller.rs` - Python FFI bridge
-- `go_manager.rs` - Go process lifecycle
-
-**Design Patterns**:
-- Actor model (threads with message passing)
-- Builder pattern for initialization
-- RAII for resource management
-
-**Thread Architecture**:
-```
-Main Thread
-├── IPC Handler Thread (background)
-│   └── Polls neuro_ipc.json every 50ms
-├── Go Process Monitor Thread (background)
-│   └── Health check every 5s
-└── Signal Handler (Ctrl+C)
-```
-
-**Safety Features**:
-- Mutex-protected state
-- AtomicBool for shutdown coordination
-- Panic handlers with recovery
-
-### Python Controller Layer
-
-**Purpose**: Cross-platform input control
-
-**Responsibilities**:
-- Parse action scripts
-- Control mouse and keyboard
-- Track telemetry
-- Provide cross-platform abstraction
-
-**Key Files**:
-- `lib.py` - Initialization
-- `actions.py` - Script parser
-- `controls/mouse.py` - Mouse control
-- `controls/keyboard.py` - Keyboard control
-- `desktop.py` - System monitoring
-- `libraries/mouse_pathfinder.py` - Motion algorithms
-
-**Design Patterns**:
-- Command pattern (instruction queues)
-- Strategy pattern (different motion algorithms)
-- Observer pattern (telemetry)
-
-**Instruction Queue System**:
-```python
-# Instructions are queued, not executed immediately
-mouse.queue_move(500, 300)
-mouse.queue_click("left")
-mouse.queue_wait(0.5)
-
-# Execute all at once
-mouse.execute()
-mouse.clear()
-```
-
-## Communication Patterns
-
-### File-Based IPC
-
-**Why Files?**
-- ✅ Simple to implement and debug
-- ✅ No port conflicts
-- ✅ Easy to inspect (just open the JSON)
-- ✅ Works across all platforms
-- ❌ Slower than pipes/sockets (~50ms latency)
-
-**Protocol**:
-
-1. **Command File** (`neuro_ipc.json`):
-```json
-{
-  "type": "move_mouse_to",
-  "params": {
-    "x": 500,
-    "y": 300
-  },
-  "execute_now": true,
-  "clear_after": true
-}
-```
-
-2. **Response File** (`neuro_ipc.json.response`):
-```json
-{
-  "success": true,
-  "data": null,
-  "error": null,
-  "timestamp": 1704067200,
-  "execution_time_ms": 12
-}
-```
-
-**Lifecycle**:
-```
-Go                    Rust                    Python
-│                     │                       │
-├─ Write command ────>│                       │
-│                     ├─ Read & parse         │
-│                     ├─ Validate             │
-│                     ├─ Call Python ────────>│
-│                     │                       ├─ Execute
-│                     │<──── Return ──────────┤
-│                     ├─ Write response       │
-│<─── Read ───────────┤                       │
-├─ Delete files       │                       │
-```
-
-### PyO3 FFI Bridge
-
-**Why PyO3?**
-- ✅ Type-safe Rust ↔ Python calls
-- ✅ Automatic GIL handling
-- ✅ Exception propagation
-- ✅ Zero-copy data transfer (where possible)
-
-**Example Call**:
-```rust
-// Rust side
-Python::with_gil(|py| {
-    self.keyboard
-        .bind(py)
-        .getattr("type")?
-        .call1((text,))?;
-    Ok::<(), PyErr>(())
-})
-```
-
-```python
-# Python side
-class KeyboardController:
-    def type(self, text: str):
-        self.queue.append(TypeText(text))
-```
-
-### WebSocket Protocol
-
-**Message Format** (Neuro → Go):
-```json
-{
-  "command": "action",
-  "data": {
-    "id": "action-12345",
-    "name": "move_mouse_to",
-    "data": "{\"x\": 500, \"y\": 300}"
-  }
-}
-```
-
-**Message Format** (Go → Neuro):
-```json
-{
-  "command": "action/result",
-  "game": "Neuro Desktop",
-  "data": {
-    "id": "action-12345",
-    "success": true,
-    "message": ""
-  }
-}
-```
-
-## Data Flow
-
-### Action Execution Flow
-
-```
-Neuro API
-    │
-    │ 1. Send action command
-    │    {"name": "type_text", "data": {...}}
-    ▼
-Go Integration
-    │
-    │ 2. Parse action data
-    │    Extract parameters
-    ▼
-    │ 3. Build IPC command
-    │    Convert to standard format
-    ▼
-    │ 4. Write to neuro_ipc.json
-    │    {"type": "type_text", "params": {...}}
-    ▼
-Rust IPC Handler
-    │
-    │ 5. Read & validate JSON
-    │    Check syntax, schema
-    ▼
-    │ 6. Dispatch to handler
-    │    Route by command type
-    ▼
-    │ 7. Call Python (PyO3)
-    │    controller.type_text("...")
-    ▼
-Python Controller
-    │
-    │ 8. Queue instruction
-    │    keyboard.queue.append(TypeText(...))
-    ▼
-    │ 9. Execute instruction
-    │    pyautogui.write(...)
-    ▼
-    │ 10. Return result
-    │     Ok(()) or Err(...)
-    ▼
-Rust IPC Handler
-    │
-    │ 11. Write response
-    │     {"success": true, ...}
-    ▼
-Go Integration
-    │
-    │ 12. Read response
-    │     Parse JSON
-    ▼
-    │ 13. Send result to Neuro
-    │     {"id": "...", "success": true}
-    ▼
-Neuro API
-```
-
-**Timing**:
-- Average latency: ~50-100ms
-- Breakdown:
-  - Go → Rust (file write): ~5ms
-  - Rust polling: ~0-50ms (depends on timing)
-  - Python execution: ~10-50ms (varies by action)
-  - Response write: ~5ms
-
-### Error Propagation
-
-```
-Python Exception
-    │
-    ├─> PyO3 catches
-    │   └─> Converts to Result<T, PyErr>
-    │
-    ├─> Rust handler catches
-    │   └─> Creates error response
-    │       {"success": false, "error": "..."}
-    │
-    ├─> Go reads error response
-    │   └─> Sends to Neuro
-    │       {"success": false, "message": "..."}
-    │
-    └─> Neuro retries or logs
-```
-
-## Security Model
-
-### Input Validation
-
-**Layer 1: Go Integration**
-- JSON schema validation
-- Parameter type checking
-- Range bounds enforcement
-
-**Layer 2: Rust IPC Handler**
-- JSON syntax validation
-- Command whitelist check
-- Payload size limits (5MB max)
-- Rate limiting (100 commands/sec)
-
-**Layer 3: Python Controller**
-- Coordinate clamping
-- Text length limits
-- Key name validation
-
-### Sandboxing
-
-**Process Isolation**:
-- Go runs as separate process
-- Can be killed without affecting Rust
-- No shared memory (only files)
-
-**Python Isolation**:
-- Embedded interpreter (controlled by Rust)
-- No filesystem access beyond controller package
-- No network access
-- No subprocess spawning (except pyautogui internals)
-
-### Safe Shutdown
-
-```rust
-// Graceful shutdown on Ctrl+C
-tokio::select! {
-    _ = tokio::signal::ctrl_c() => {
-        println!("Shutting down...");
-        
-        // 1. Stop accepting new commands
-        ipc_handler.store(false, Ordering::SeqCst);
-        
-        // 2. Stop Go integration
-        go_manager.stop();
-        
-        // 3. Wait for pending actions
-        thread::sleep(Duration::from_millis(500));
-        
-        // 4. Clean up Python
-        controller.shutdown()?;
-        
-        // 5. Exit
-        break;
-    }
-}
-```
-
-## Performance Considerations
-
-### Optimization Strategies
-
-**1. Lazy Execution**
-```python
-# Commands are queued, not executed immediately
-mouse.queue_move(100, 100)  # Fast: just appends to list
-mouse.queue_move(200, 200)
-mouse.queue_move(300, 300)
-
-# Execute all at once
-mouse.execute()  # Batch execution reduces overhead
-```
-
-**2. Instruction Batching**
-```python
-# Bad: Execute after each action
-for i in range(100):
-    mouse.queue_move(i, i)
-    mouse.execute()  # 100 executions!
-
-# Good: Execute once at the end
-for i in range(100):
-    mouse.queue_move(i, i)
-mouse.execute()  # 1 execution
-```
-
-**3. Adaptive Motion**
-```python
-# Distance-based duration
-distance = math.sqrt(dx**2 + dy**2)
-duration = 0.0005 + (distance / 1000) * 0.3
-duration = min(duration, 0.0012)  # Cap at max
-
-# Fewer steps for short distances
-steps = max(15, int(distance / 10))
-steps = min(steps, 60)  # Cap for long distances
-```
-
-### Bottlenecks
-
-**Identified**:
-1. File I/O polling (50ms worst case)
-2. JSON serialization/deserialization
-3. Python GIL contention
-4. pyautogui internal delays
-
-**Mitigation**:
-1. Could use named pipes (lower latency)
-2. Could use binary format (faster parsing)
-3. Release GIL where possible
-4. Set `pyautogui.PAUSE = 0`
-
-### Benchmarks
-
-**Action Latency** (Go → Python execution):
-```
-move_mouse_to:    50-100ms
-click:            50-80ms
-type_text:        50ms + 20ms/char
-run_script:       varies (depends on script)
-```
-
-**Throughput**:
-```
-Commands/sec:     ~100 (rate limited)
-Mouse movements:  ~60 steps/sec (smooth)
-Key presses:      ~50 keys/sec
-```
-
-## Design Decisions
-
-### Why Multi-Language?
-
-**Go for Neuro API**:
-- ✅ Excellent WebSocket libraries
-- ✅ Goroutines for concurrent connections
-- ✅ Easy JSON handling
-- ✅ Simple deployment (single binary)
-
-**Rust for Main Process**:
-- ✅ System-level control
-- ✅ FFI capabilities (PyO3)
-- ✅ Memory safety
-- ✅ Process management
-- ✅ Zero-cost abstractions
-
-**Python for Input Control**:
-- ✅ pyautogui (battle-tested)
-- ✅ Cross-platform support
-- ✅ Rapid development
-- ✅ Easy to extend
-
-### Why File-Based IPC?
-
-**Alternatives Considered**:
-1. ❌ Named Pipes - Platform-specific code
-2. ❌ TCP Sockets - Port conflicts, overhead
-3. ❌ Shared Memory - Complex, unsafe
-4. ✅ **Files - Simple, debuggable, works everywhere**
-
-Trade-off: Simplicity over performance
-
-### Why Instruction Queues?
-
-**Benefits**:
-- Atomic execution of complex sequences
-- Easy to inspect before execution
-- Can be cleared/modified before running
-- Separates intent from execution
-
-**Drawback**:
-- Extra memory for queue storage
-
-Trade-off: Flexibility over immediate execution
-
-### Future Improvements
-
-1. **Optional STDIO IPC**: Faster than files
-2. **Binary Protocol**: Reduce JSON overhead
-3. **Shared Memory for Vision**: Large image data
-4. **Plugin System**: External action providers
-5. **Distributed Mode**: Control remote machines
-
-## Conclusion
-
-Neuro Desktop's architecture prioritizes:
-1. **Reliability** - Multiple recovery mechanisms
-2. **Debuggability** - Clear data flow, inspectable state
-3. **Safety** - Validation at every layer
-4. **Extensibility** - Easy to add new actions
-5. **Cross-platform** - Works on Windows, Linux, macOS
-
-The multi-language approach allows each component to use the best tool for its job while maintaining clear boundaries and simple communication protocols.
+## Components
+
+| Component | Where | Language | Role |
+| --- | --- | --- | --- |
+| Native manager | `desktop/apps/neuro-manager` | Python + GTK 4 | Desktop controls, native splash, bounded background API requests; standalone builds include GTK |
+| Server | `desktop/apps/neuro-integration` | Go | Everything Neuro can reach, and every gate between Neuro and the machine |
+| Client (`neuro-client`) | `desktop/backend/python/controller`, entry `desktop/apps/neuro-client`, packaged by `desktop/scripts/build-client.sh` | Python (stdlib-first), PyInstaller | Executes commands on the PC Neuro controls; reconnects on its own. Also run from source as `python3 -m controller.agent` |
+| Dashboard program | `desktop/apps/neuro-dashboard` | Go (stdlib only) | Serves the dashboard page and forwards `/api` and `/health` to the server. Optional |
+| Go client (slice 1, not shipped) | `desktop/apps/neuro-client-go` | Go (stdlib only) | The port of the client under way: the executor link, status, shell and lifecycle. Input and screen are not ported yet |
+| Dashboard page | `desktop/frontend` | TypeScript | Vedal's controls. The server serves it at `/ui/`; the dashboard program serves it too |
+| Relay host | the server binary, `relay` subcommand | Go | Neuro Relay socket for integrations and watchers |
+| Vision | `desktop/apps/nd-vision-server` | Python (stdlib HTTP) | Optional screen description for `game_observe` |
+| MCP servers | catalog-installed | any | Optional tools, started only after Vedal enables them |
+| Test tools | `desktop/tools/` | Python | `fake-executor` (protocol simulator), `ollama-neuro` (small-model tester) |
+
+The Go SDK port is vendored under `desktop/apps/neuro-integration/third_party/`
+and pinned in `go.mod`.
+
+## How a command flows
+
+1. Neuro sends an action over the Neuro API websocket.
+2. The server checks, in order: the **stop switch** (paused, or the kill-switch
+   file exists), the **permission policy** (is the action's scope allowed, or
+   requestable?), and the **per-scope rate limit**. A refusal is returned to
+   Neuro with a message that says what to do next. The refusal is audited.
+3. The command goes to an **agent** connected to the executor hub. If no agent is
+   connected and one runs on the same machine, the server falls back to file IPC
+   (`NEURO_IPC_FILE`).
+4. The agent runs it and reports back. The server answers Neuro's `action/result`
+   early, then sends the output as context when it arrives, for long commands.
+
+Watcher commands from the relay take the same path, with the same gates
+(`denyRelayCommand` in `relay.go`).
+
+## Where state lives
+
+| State | Where | Notes |
+| --- | --- | --- |
+| Policy | `NEURO_PERMISSIONS_FILE` (`permissions.json`) | the example is `desktop/config/permissions.example.json` |
+| Permission requests and approvals | in memory, shown on the Permissions page | Neuro asks; Vedal approves or denies. A restart clears both |
+| Audit | `NEURO_AUDIT_LOG` (JSON lines) | refusals, accepted actions, relay commands, policy changes |
+| Extension state | `NEURO_EXTENSIONS_STATE_FILE` (runtime, not tracked by Git) | what is installed and enabled |
+| Catalog snapshot | `desktop/catalog/`, pinned by `snapshot.json` | canonical metadata lives on upstream `catalog`; CI compares the shipped snapshot |
+| Per-extension grants/settings | `NEURO_EXTENSION_PERMISSIONS_FILE` | separate management delegation, runtime approval and capability grants; fresh operator reentry |
+| SDK registrations | `NEURO_INTEGRATIONS_FILE` | manifests and hashed scoped credentials; live leases and viewer visibility are in memory |
+
+## Decisions
+
+* **Three programs, split at the process boundary.** The server and the dashboard
+  program are Go; the client is the Python agent packaged with PyInstaller as
+  `neuro-client`. The split puts the power on the server, not on the PC Neuro
+  controls. The first version of this decision deferred a full rewrite of the client
+  into Go, because the input and capture code cannot be run on Windows or macOS from the
+  development environment. **The maintainer then chose to start the Go client now.** That
+  is the work in progress in `desktop/apps/neuro-client-go`: slice 1 covers the executor
+  link, the headless rules, `get_status`, `shell_command` and the lifecycle commands,
+  with the same firewall and messages as the Python client. Input, screen, window and
+  `run_script` commands are refused there and still run only in the Python client. The
+  Go client is not in the bundle yet. The next slices, and the rule for when the Python
+  client can be retired, are in `docs/PRODUCTION_TODO.md`.
+* **Screenshots travel as bytes, never as paths.** The server may run on another PC.
+  The old design had the server open the path that the agent named, which was an
+  arbitrary-file-read risk. The status reply now carries `screenshot_png_b64`, and the
+  server checks the bytes before use. See `docs/EXECUTOR_PROTOCOL.md`.
+* **Two languages on the machine: Go and Python**, plus the TypeScript dashboard.
+  Rust and C++ were removed from the shipped path, and `tools/ci/repo_checks.py`
+  fails if they come back. The history is in `CHANGELOG.md`.
+* **One setup step, one shared secret file.** `neuro-integration setup` creates the
+  relay token, which the relay host and the server both read. The dashboard never pushes
+  tokens to another process. The dashboard token is printed once and kept only as a hash.
+  This answers upstream issue Nakashireyumi/neuro-desktop#16, which asked how the UI and a
+  relay that the bundle did not ship keep their tokens in step.
+* **Development builds are separate.** The unsigned-extension switch
+  (`NEURO_EXTENSIONS_ALLOW_UNSIGNED`) compiles in only with `-tags neurodev`, which the
+  development bundle uses. A release build has no way to turn it on, and it logs once
+  that the variable is ignored.
+* **The server does not start other programs.** It does not start a relay, and it
+  does not supervise the agent. Operators run each process (or the bundle's
+  `start.sh` / `start.bat`) and point the server at the others.
+* **Native manager, optional browser dashboard.** The GTK manager runs independently
+  of the server. It polls only the visible page, backs off when unfocused or offline,
+  and never polls vision. The server and client can run headlessly with
+  `NEURO_NO_MANAGER=1`. See `desktop/apps/neuro-manager/README.md`.
+* **Headless first.** On a machine with no display (`NEURO_HEADLESS=1`), the agent
+  runs its command-line parts and the server still serves the dashboard and the
+  policy. CI runs the agent with no display as a regression test.
+* **The default is closed.** Without a policy file the server uses a built-in
+  default, and an action is denied unless its scope is on. Input, process,
+  network, vision, and game are on; filesystem, system, shell, and extensions are
+  off. `desktop_guide`, `reset_controls`, and `request_permission` are always
+  allowed. Shell and system access need explicit consent.
+
+## Security boundaries
+
+* Client connections require the executor token (`NEURO_EXECUTOR_TOKEN`). The link is
+  plain TCP until the pinned-TLS work in `docs/PRODUCTION_TODO.md` lands.
+* The dashboard program adds no token and holds no secret. It forwards the caller's
+  `X-ND-Token` (or `Authorization: Bearer`) to the server unchanged, and the server
+  decides. It forwards only `/api/` and `/health`.
+* The server reads no file that a client names (see screenshots, above).
+* Every dashboard API call needs the dashboard token that `setup` makes. There is no
+  exception for loopback. The server keeps only the token's SHA-256 hash.
+* The relay refuses browsers, binary frames, and weak tokens. Its token comes from the
+  relay token file that `setup` writes, which the server reads too. See `docs/RELAY.md`.
+* Extensions must have a valid signature from a publisher in `publishers.json`.
+  See `docs/SAFETY.md`.
+
+## Testing
+
+| Layer | Command | Where it runs |
+| --- | --- | --- |
+| Server | `go test -race ./...` | CI on Linux, Windows and macOS (race detector on Linux) |
+| Server, development build | `go test -race -tags neurodev ./...` | CI on Linux |
+| Relay, MCP, vision, catalog, eval | see `.github/workflows/ci.yml` | their own CI jobs |
+| Agent (client) | `python3 -m unittest discover backend/python/tests` | CI, with no display |
+| Dashboard program | `go vet` and `go test ./...` in `desktop/apps/neuro-dashboard` | CI, all three systems |
+| Client build | `desktop/scripts/build-client.sh`, then `neuro-client --help` | CI on Linux (`client-build` job) |
+| Go client (slice 1) | `go vet` and `go test` in `desktop/apps/neuro-client-go`, including the command-set parity check with `agent.py`; cross-compile for three systems | CI, all three systems |
+| Repository | `python3 desktop/tools/ci/repo_checks.py` | CI, first job |
+| Dashboard | `npm run build` in `desktop/frontend` | CI |
+| End to end | the `agent-e2e` job starts the server and the agent | CI |
+
+What is **not** verified here: the client on a real Windows or macOS desktop
+(input, screen capture), the PyInstaller build on Windows and macOS, and real Windows/macOS desktop input and screen capture. The native manager and
+browser dashboard were exercised visually on Linux. Cross-platform manager builds
+and GTK UI tests have their own CI matrix; local Linux execution alone does not
+verify other systems.

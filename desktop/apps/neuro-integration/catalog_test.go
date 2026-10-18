@@ -82,7 +82,7 @@ func TestGetCatalogItem(t *testing.T) {
       "name":"Neuro Relay",
       "description":"Multiplexing relay",
       "type":"relay",
-      "repository":"https://github.com/recassity/neuro-relay",
+      "repository":"https://github.com/example/relay",
       "tags":["relay","backend"],
       "launch_hints":["set NEURO_RELAY_ENABLED=true"]
     }
