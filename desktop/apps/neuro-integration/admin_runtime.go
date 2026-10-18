@@ -24,7 +24,13 @@ func (a *AdminServer) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		executor = integration.executorHub.Info()
 	}
 	relay := integration.relay.status()
-	vision := probeVisionServer(false)
+	visionService := integration.visionServiceSnapshot()
+	vision := visionStatus{Configured: visionService.Configured, URL: visionService.Endpoint}
+	visionState := "disabled"
+	if visionService.Effective {
+		vision = probeVisionServer(false)
+		visionState = visionRuntimeState(vision)
+	}
 	servers := integration.mcpSnapshotForRuntime()
 
 	writeJSON(w, map[string]interface{}{
@@ -53,7 +59,12 @@ func (a *AdminServer) handleRuntime(w http.ResponseWriter, r *http.Request) {
 			"last_error": relay.LastError,
 		},
 		"vision": map[string]interface{}{
-			"state":      visionRuntimeState(vision),
+			"state":      visionState,
+			"enabled":    visionService.Enabled,
+			"effective":  visionService.Effective,
+			"actors":     visionService.Actors,
+			"persona":    visionService.Persona,
+			"reason":     visionService.Reason,
 			"configured": vision.Configured,
 			"url":        redactURL(vision.URL),
 			"reachable":  vision.Reachable,

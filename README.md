@@ -596,6 +596,7 @@ Randy will send random actions to test your integration.
 - [Development and Release Workflow](docs/WORKFLOW.md) — repositories, catalog updates, checks and releases
 - [Delegated Manager Sessions](docs/DELEGATED_MANAGER.md) — let Neuro/Evil manage approved integrations
 - [Extension Permissions](docs/EXTENSION_PERMISSIONS.md) — management, runtime capabilities and settings
+- [Vision Service Controls](docs/VISION.md) — built-in service, per-twin settings and image privacy
 - [Integration SDK](https://github.com/cassitly/neuro-desktop-sdk) and [Vencord Adapter](https://github.com/cassitly/neuro-desktop-vencord) — separate source and setup guides
 - ✅ [Current Capabilities](docs/CAPABILITIES.md) — what works today (honest)
 - 🐣 [Driving it with a small/weak model](docs/LLM_GUIDE.md) — prompting tactics and parameter shapes

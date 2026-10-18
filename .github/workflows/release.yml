@@ -259,7 +259,7 @@ jobs:
           if (bundle/'manager'/'launch.py').exists():
               raise SystemExit('A source-only manager cannot be published as a standalone bundle')
           for path in bundle.rglob('*'):
-              if path.name in {'dashboard-token','relay-token','executor-token','extension-permissions.json','integrations.json','extensions-state.json'}:
+              if path.name in {'dashboard-token','relay-token','executor-token','extension-permissions.json','integrations.json','extensions-state.json','builtin-services.json'}:
                   raise SystemExit(f'Runtime state must not ship in a new release: {path.relative_to(bundle)}')
               if path.is_symlink() and (not path.exists() or not path.resolve().is_relative_to(bundle)):
                   raise SystemExit(f'Bundle contains a broken or non-portable symlink: {path.relative_to(bundle)}')

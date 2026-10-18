@@ -475,6 +475,9 @@ class ManagerApplication(Gtk.Application):
         clear(parent)
         parent.append(label("Extensions", "nd-heading"))
         parent.append(label("Install trusted catalog entries and choose which integrations run.", "nd-muted"))
+        from .vision_dialog import service_card
+        self.vision_card = service_card(self, (data.get("built_in_services") or {}).get("vision"))
+        parent.append(self.vision_card)
         installed = {item["id"]: item for item in data.get("installed") or []}
         catalog = {item["id"]: item for item in data.get("catalog") or []}
         items = {**catalog, **{key: {**catalog.get(key, {}), **value} for key, value in installed.items()}}

@@ -7,6 +7,7 @@ import GamesPanel from "./GamesPanel";
 import MarketplacePanel from "./MarketplacePanel";
 import PermissionsPage from "./PermissionsPage";
 import SignIn from "./SignIn";
+import VisionServicePanel from "./VisionServicePanel";
 import {
   ApiError,
   AUTH_REQUIRED_EVENT,
@@ -19,6 +20,7 @@ import {
   type ManagerSession,
   type RelayStatus,
   type StatusPayload,
+  type VisionServiceState,
 } from "./api";
 
 type Tab = "extensions" | "marketplace" | "games" | "permissions" | "activity" | "settings";
@@ -36,6 +38,7 @@ export default function App() {
   const [config, setConfig] = useState<ConfigPayload | null>(null);
   const [extensions, setExtensions] = useState<InstalledExtension[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [visionService, setVisionService] = useState<VisionServiceState | null>(null);
   const [installMode, setInstallMode] = useState<string>("");
   const [extensionDir, setExtensionDir] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string>("");
@@ -76,6 +79,7 @@ export default function App() {
     setConfig(null);
     setExtensions([]);
     setCatalog([]);
+    setVisionService(null);
     setMessage(null);
     setConnectionError("");
     setExtensionsError("");
@@ -103,6 +107,7 @@ export default function App() {
         const extensionsPayload = extensionsResult.value;
         setExtensions(extensionsPayload.installed);
         setCatalog(extensionsPayload.catalog);
+        setVisionService(extensionsPayload.built_in_services?.vision ?? null);
         setInstallMode(extensionsPayload.install_mode);
         setExtensionDir(extensionsPayload.extension_dir);
         setExtensionsError("");
@@ -113,6 +118,7 @@ export default function App() {
       } else if (extensionsResult?.error) {
         setExtensions([]);
         setCatalog([]);
+        setVisionService(null);
         setExtensionsError(extensionsResult.error instanceof Error ? extensionsResult.error.message : "Could not read the extension catalog.");
       }
       if (configPayload) {
@@ -318,6 +324,7 @@ export default function App() {
       {activeTab === "extensions" && (
         <>
         {extensionsError && <p className="scope-warning" role="alert">{extensionsError}</p>}
+        <VisionServicePanel state={visionService} operator={operator} onSaved={(next) => { setVisionService(next); void load(); }} />
         <main className="manager-main manager-main--extensions">
           <aside className="manager-sidebar">
             <section>

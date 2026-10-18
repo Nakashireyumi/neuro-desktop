@@ -10,13 +10,13 @@ The native manager is a separate GTK application with its own startup splash. Th
 | --- | --- |
 | Application and official releases | [Nakashireyumi/neuro-desktop](https://github.com/Nakashireyumi/neuro-desktop), protected `master` |
 | Working fork | [cassitly/neuro-desktop](https://github.com/cassitly/neuro-desktop) |
-| Current development PR | [Fork #6](https://github.com/cassitly/neuro-desktop/pull/6), feature branch into fork `dev` |
-| Existing upstream development PR | [Upstream #28](https://github.com/Nakashireyumi/neuro-desktop/pull/28), fork `dev` into upstream `dev/latest` |
+| Completed development staging | [Fork #6](https://github.com/cassitly/neuro-desktop/pull/6) and [upstream #28](https://github.com/Nakashireyumi/neuro-desktop/pull/28), merged on 2026-10-18 |
+| Release review | [Upstream #29](https://github.com/Nakashireyumi/neuro-desktop/pull/29), `dev/latest` into protected upstream `master` |
 | Canonical marketplace directory | [Upstream `catalog` branch](https://github.com/Nakashireyumi/neuro-desktop/tree/catalog) |
 | Standalone integration SDK | [cassitly/neuro-desktop-sdk](https://github.com/cassitly/neuro-desktop-sdk) |
 | Standalone Discord viewer adapter/plugin | [cassitly/neuro-desktop-vencord](https://github.com/cassitly/neuro-desktop-vencord) |
 
-Use short-lived `codex/` feature branches for new application work. Reuse the existing development PRs while consolidating this work; their descriptions must describe the final code and verification. The final release PR must explicitly target **`Nakashireyumi/neuro-desktop:master`**. A PR to the fork's `master` does not update upstream.
+Use short-lived `codex/` feature branches for new application work. Stage subsequent reviewed changes through fork `dev` and upstream `dev/latest`; the open release PR follows that upstream branch. Keep its description and draft status aligned with the final implementation and verification. The release PR must explicitly target **`Nakashireyumi/neuro-desktop:master`**. Updating the fork's `master` does not update upstream.
 
 Upstream's development branch is currently named `dev/latest`; the fork's is `dev`. Check the actual refs before choosing a base. The [branch review](BRANCH_REVIEW.md) records the earlier master revert, the existing PRs, duplicate branches, and unique work that needs preserving. It is a dated snapshot, not a reason to reset a newer branch.
 

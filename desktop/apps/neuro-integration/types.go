@@ -12,10 +12,14 @@ type CommandType string
 
 type NDIntegration struct {
 	// rate enforces the per-scope actions-per-minute budgets from the policy.
-	rate                actionRateLimiter
-	client              *neuro.Client
-	ipcFilePath         string
-	permissionsPath     string
+	rate            actionRateLimiter
+	client          *neuro.Client
+	ipcFilePath     string
+	permissionsPath string
+	// persona is chosen by the operator for this whole Neuro API connection.
+	// Model action arguments and manager presentation labels cannot change it.
+	persona             string
+	builtinServices     builtinServiceRuntime
 	executorHub         *ExecutorHub
 	done                chan struct{}
 	doneOnce            sync.Once

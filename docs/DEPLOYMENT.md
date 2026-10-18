@@ -17,6 +17,11 @@ The manager, server and controlled-machine client can run together or on separat
 
 The reasons for the split are in [architecture](ARCHITECTURE.md). Native build dependencies and performance measurements are in the [manager guide](../desktop/apps/neuro-manager/README.md). Set `NEURO_NO_MANAGER=1` for a headless launcher. Existing Neuro/Evil integrations can connect through the [SDK](https://github.com/cassitly/neuro-desktop-sdk) without replacing their private backend.
 
+For independent image permissions, configure each bridge connection with
+`NEURO_PERSONA=neuro` or `evil` (or `--persona`). The default `shared` connection
+requires both actors to be enabled. [Vision Service controls](VISION.md) explain
+the separate global permission, built-in settings and external analysis process.
+
 ## Requirements
 
 | What | Version | Needed for |

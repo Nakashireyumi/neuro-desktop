@@ -1068,3 +1068,15 @@ button.danger {
   color: #ff8a8a;
   margin: 12px 0 0;
 }
+:root .vision-service-card {
+  margin: 1.25rem 1.5rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.vision-service-card h2 { margin-top: 0; }
+.vision-service-switches { display: flex; flex-wrap: wrap; gap: 1.5rem; margin: 1rem 0; }
+.vision-service-switches label { display: flex; gap: 0.5rem; align-items: center; }
+.vision-service-switches input { width: auto; margin: 0; }

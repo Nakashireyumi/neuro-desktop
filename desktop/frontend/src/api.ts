@@ -265,7 +265,23 @@ export type ExtensionsPayload = {
   install_mode: string;
   extension_dir: string;
   state_file: string;
+  built_in_services?: { vision?: VisionServiceState };
 };
+
+export type VisionServiceSettings = {
+  enabled: boolean;
+  actors: { neuro: boolean; evil: boolean };
+};
+
+export type VisionServiceState = VisionServiceSettings & {
+  persona: "neuro" | "evil" | "shared";
+  effective: boolean;
+  configured: boolean;
+  reason?: string;
+  endpoint?: string;
+};
+
+export type VisionServicePayload = { ok: boolean; vision: VisionServiceState };
 
 export type ManagerSession = {
   ok: boolean;
@@ -540,6 +556,11 @@ export const api = {
   actions: () => request<ActionsPayload>("/api/actions"),
 
   extensions: () => request<ExtensionsPayload>("/api/extensions"),
+  visionService: () => request<VisionServicePayload>("/api/services/vision"),
+  saveVisionService: (settings: VisionServiceSettings, operatorToken: string, signal?: AbortSignal) =>
+    request<VisionServicePayload>("/api/services/vision", {
+      method: "PUT", headers: operatorHeaders(operatorToken), body: JSON.stringify(settings), signal,
+    }),
   extensionPolicy: (id: string, signal?: AbortSignal) =>
     request<ExtensionPolicyPayload>(`/api/extensions/${encodeURIComponent(id)}/permissions`, { signal }),
   saveExtensionPolicy: (id: string, policy: ExtensionPermissionPolicy, operatorToken: string) =>

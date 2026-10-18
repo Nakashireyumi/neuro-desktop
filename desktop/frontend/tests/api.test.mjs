@@ -128,6 +128,31 @@ test("global permission writes and decisions all require an explicit fresh appro
   assert.deepEqual(seen, ["/api/permissions", "/api/permission-requests/request%2Fwith%20spaces/approve", "/api/permissions/grants/extensions/revoke"]);
 });
 
+test("built-in vision settings require fresh approval and send persona switches without changing session authority", async () => {
+  setAdminToken("operator-session");
+  const settings = { enabled: false, actors: { neuro: true, evil: false } };
+  const snapshot = { ...settings, persona: "shared", configured: true, effective: false, reason: "Vision Service is disabled." };
+  const seen = [];
+  globalThis.fetch = async (url, init) => {
+    seen.push([url, init.method]);
+    assert.equal(url, "/api/services/vision");
+    assert.equal(init.headers.get("X-ND-Token"), "operator-session");
+    if (init.method === "PUT") {
+      assert.equal(init.headers.get("X-ND-Operator-Token"), "fresh-vision-approval");
+      assert.deepEqual(JSON.parse(init.body), settings);
+    } else {
+      assert.equal(init.headers.get("X-ND-Operator-Token"), null);
+    }
+    return Response.json({ ok: true, vision: snapshot });
+  };
+  assert.throws(() => api.saveVisionService(settings, " "), /Re-enter your operator token/);
+  assert.deepEqual(seen, []);
+  assert.deepEqual(await api.visionService(), { ok: true, vision: snapshot });
+  assert.deepEqual(await api.saveVisionService(settings, " fresh-vision-approval "), { ok: true, vision: snapshot });
+  assert.deepEqual(seen, [["/api/services/vision", undefined], ["/api/services/vision", "PUT"]]);
+  assert.equal(adminToken(), "operator-session");
+});
+
 test("source downloads and delegated extension actions do not invent operator authority", async () => {
   setAdminToken("delegated-session");
   const seen = [];

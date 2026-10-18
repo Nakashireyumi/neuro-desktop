@@ -63,12 +63,16 @@ class NativeManagerTests(unittest.TestCase):
         widget.emit("clicked")
 
     @contextmanager
-    def session_fixture(self, *, sign_in=True):
+    def session_fixture(self, *, sign_in=True, role="operator", catalog=None):
         """A real GTK manager with a bounded, isolated credential-test server."""
         state = SimpleNamespace(
             valid=True, seen=[], hold_token=False, token_started=threading.Event(),
             token_release=threading.Event(), token_finished=threading.Event(),
             minted_token="fixture-once-only-scoped-token-0123456789",
+            role=role, catalog=[{"id": "memory", "name": "Memory"}] if catalog is None else catalog,
+            vision={"enabled": True, "actors": {"neuro": True, "evil": True}, "persona": "shared", "effective": True, "configured": True},
+            vision_writes=[], hold_vision=False, vision_started=threading.Event(),
+            vision_release=threading.Event(), vision_finished=threading.Event(),
         )
         status = {"version": "test", "uptime": 0, "control": {"paused": False}, "executor": {"connected": True}, "neuro": {"connected": True}}
 
@@ -80,8 +84,23 @@ class NativeManagerTests(unittest.TestCase):
                     self.end_headers()
                     self.wfile.write(b'{"error":"fixture session expired"}')
                     return
-                self.rfile.read(int(self.headers.get("Content-Length", "0")))
-                if self.path == "/api/integrations/fixture/token":
+                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                if self.path == "/api/services/vision":
+                    if self.command == "PUT":
+                        if state.role != "operator" or self.headers.get("X-ND-Operator-Token") != "fixture-token":
+                            self.send_response(403)
+                            self.end_headers()
+                            self.wfile.write(b'{"error":"fresh operator approval required"}')
+                            return
+                        state.vision_started.set()
+                        if state.hold_vision:
+                            state.vision_release.wait(8)
+                        values = json.loads(body)
+                        state.vision_writes.append(values)
+                        state.vision.update(values)
+                        state.vision["effective"] = values["enabled"] and all(values["actors"].values())
+                    result = {"ok": True, "vision": state.vision}
+                elif self.path == "/api/integrations/fixture/token":
                     if self.headers.get("X-ND-Operator-Token") != "fixture-token":
                         self.send_response(403)
                         self.end_headers()
@@ -94,9 +113,9 @@ class NativeManagerTests(unittest.TestCase):
                 else:
                     result = {
                         "/health": {"ok": True},
-                        "/api/session": {"ok": True, "role": "operator"},
+                        "/api/session": {"ok": True, "role": state.role},
                         "/api/status": status,
-                        "/api/extensions": {"installed": [], "catalog": [{"id": "memory", "name": "Memory"}]},
+                        "/api/extensions": {"installed": [], "catalog": state.catalog, "built_in_services": {"vision": state.vision}},
                         "/api/permissions": {"default_allow": False, "scopes": {"input": True}},
                         "/api/permission-requests": {"pending": [], "grants": []},
                         "/api/extensions/memory/permissions": {
@@ -109,6 +128,8 @@ class NativeManagerTests(unittest.TestCase):
                 self.wfile.write(json.dumps(result).encode())
                 if self.path == "/api/integrations/fixture/token":
                     state.token_finished.set()
+                if self.path == "/api/services/vision" and self.command == "PUT":
+                    state.vision_finished.set()
 
             do_GET = do_POST = do_PUT = handle_request
 
@@ -133,6 +154,7 @@ class NativeManagerTests(unittest.TestCase):
             yield app, state
         finally:
             state.token_release.set()
+            state.vision_release.set()
             app.on_close()
             app.pool.shutdown(wait=True, cancel_futures=True)
             if app.window:
@@ -192,6 +214,14 @@ class NativeManagerTests(unittest.TestCase):
                 self.assertIsNone(extension_settings.get_property("im-module"))
                 extension_dialog.close()
 
+                from neuro_manager.vision_dialog import show_service
+                show_service(app)
+                self.pump(lambda: self.dialog(app, "Vision Service settings") is not None)
+                vision_dialog = self.dialog(app, "Vision Service settings")
+                vision_approval = self.widgets(vision_dialog, Gtk.PasswordEntry)[0]
+                self.assertEqual(vision_approval.get_delegate().get_property("im-module"), "simple")
+                vision_dialog.close()
+
                 app.sign_out()
                 self.assertEqual(app.token_entry.get_delegate().get_property("im-module"), "simple")
 
@@ -202,6 +232,65 @@ class NativeManagerTests(unittest.TestCase):
         for platform in ("linux", "darwin"):
             with self.subTest(platform=platform), patch("neuro_manager.app.sys", SimpleNamespace(platform=platform)):
                 self.assertIsNone(credential_entry().get_delegate().get_property("im-module"))
+
+    def test_builtin_vision_survives_empty_catalog_and_requires_fresh_approval(self):
+        with self.session_fixture(catalog=[]) as (app, state):
+            self.assertFalse(app.extension_items)
+            labels = [widget.get_text() for widget in self.widgets(app.vision_card, Gtk.Label)]
+            self.assertIn("Vision Service", labels)
+            self.assertIn("Default built-in service", labels)
+            self.assertTrue(any("Bridge persona: shared" in text for text in labels))
+            self.assertFalse(any(widget.get_label() in ("Install", "Uninstall") for widget in self.widgets(app.vision_card, Gtk.Button)))
+            self.click(app.vision_card, "Configure Vision Service…")
+            self.pump(lambda: self.dialog(app, "Vision Service settings") is not None)
+            dialog = self.dialog(app, "Vision Service settings")
+            approval = self.widgets(dialog, Gtk.PasswordEntry)[0]
+            self.assertEqual(approval.get_text(), "")
+            switches = self.widgets(dialog, Gtk.Switch)
+            self.assertEqual([switch.get_active() for switch in switches], [True, True, True])
+            switches[0].set_active(False)
+            switches[2].set_active(False)
+            self.click(dialog, "Approve and save")
+            self.assertFalse(state.vision_writes, "signed-in authority must not fill fresh approval")
+            approval.set_text("fixture-token")
+            self.click(dialog, "Approve and save")
+            self.assertEqual(approval.get_text(), "")
+            self.pump(lambda: not dialog.get_visible() and not app.refresh_pending)
+            self.assertEqual(state.vision_writes, [{"enabled": False, "actors": {"neuro": True, "evil": False}}])
+            self.assertIn(("PUT", "/api/services/vision", "fixture-token"), state.seen)
+            self.assertFalse(state.vision["effective"])
+            self.assertFalse(any(path == "/api/runtime" for _, path, _ in state.seen))
+
+    def test_vision_approval_signout_closes_and_ignores_late_completion(self):
+        with self.session_fixture(catalog=[]) as (app, state):
+            state.hold_vision = True
+            self.click(app.vision_card, "Configure Vision Service…")
+            self.pump(lambda: self.dialog(app, "Vision Service settings") is not None)
+            dialog = self.dialog(app, "Vision Service settings")
+            approval = self.widgets(dialog, Gtk.PasswordEntry)[0]
+            approval.set_text("fixture-token")
+            self.click(dialog, "Approve and save")
+            self.pump(state.vision_started.is_set)
+            app.sign_out()
+            self.assertEqual(approval.get_text(), "")
+            self.assertFalse(dialog.get_visible())
+            self.assertFalse(app.session_dialogs)
+            state.vision_release.set()
+            self.pump(state.vision_finished.is_set)
+            self.assertIsNone(app.client)
+            self.assertFalse(app.extension_data)
+            self.assertIsNone(self.dialog(app, "Vision Service settings"))
+
+    def test_delegated_vision_controls_are_read_only(self):
+        with self.session_fixture(role="neuro", catalog=[]) as (app, state):
+            from neuro_manager.vision_dialog import show_service
+
+            self.assertEqual(app.session_role, "neuro")
+            self.assertFalse(self.widgets(app.vision_card, Gtk.Button))
+            self.assertTrue(any("operator session" in widget.get_text() for widget in self.widgets(app.vision_card, Gtk.Label)))
+            show_service(app)
+            self.assertFalse(any(path == "/api/services/vision" for _, path, _ in state.seen))
+            self.assertFalse(state.vision_writes)
 
     def test_focused_approval_closes_after_focus_out_and_clears_credentials(self):
         with self.session_fixture() as (app, state):

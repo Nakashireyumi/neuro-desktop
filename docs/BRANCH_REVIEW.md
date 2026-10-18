@@ -1,5 +1,48 @@
 # Branch review
 
+## Consolidation completed on 2026-10-18
+
+The original inventory below is retained as the audit trail. The reviewed
+application tree at `6efb7de` passed the complete [push CI and release gate](https://github.com/cassitly/neuro-desktop/actions/runs/39118669921), including native GTK controls,
+standalone manager startup/packaging and the installed SDK/server contract on
+Linux, Windows and macOS. Real desktop input/capture acceptance on Windows/macOS
+remains separate from those tests.
+
+[Fork #6](https://github.com/cassitly/neuro-desktop/pull/6) merged as `572daaf`;
+[upstream #28](https://github.com/Nakashireyumi/neuro-desktop/pull/28) merged as
+`ddae583`. Both merge trees match the tested application tree. Fork `master`,
+`dev`, `arena/456c497d-neuro-desktop`, `codex/production-readiness-batch` and
+`temp-upload` were fast-forwarded to `ddae583` after fresh ancestry checks proved
+they had no unique commits. The independent `catalog` branch remains at
+`7d4504c9ba063ffd41df3fe8bca7928bfb353e48` in both repositories.
+
+[Release PR #29](https://github.com/Nakashireyumi/neuro-desktop/pull/29) targets
+**Nakashireyumi/neuro-desktop:master** from upstream `dev/latest`. It remains a
+draft while subsequent requested work is completed. Protected upstream master
+is still `aaf860d`; its ruleset is unchanged. Master history was reconciled with
+ordinary merge `2d67dc1` and carried into development by `19ea8fe`, preserving
+the original GPL license and attribution.
+
+Obsolete PRs #19 and #24 were closed. The seven obsolete upstream heads in the
+table below were preserved as tags named `archive/2026-10-18/<original-branch>`,
+then removed. Deletion checked both the current head and exact archive tag and
+used atomic expected-head leases, so a concurrently changed branch would stop
+the cleanup. Upstream now retains `master`, `dev/latest` and `catalog`.
+
+To recover an archived branch, fetch its tag and create a new topic branch from
+it; for example:
+
+```sh
+git fetch https://github.com/Nakashireyumi/neuro-desktop.git \
+  refs/tags/archive/2026-10-18/implementations/neuro-desktop-ui
+git switch -c codex/review-historical-ui FETCH_HEAD
+```
+
+New development can advance maintained branches beyond this dated snapshot.
+Refresh remote refs before further synchronization or cleanup.
+
+## Original inventory
+
 Reviewed on 2026-10-15 using local Git history and authenticated, read-only GitHub REST requests. This review changed no Git refs, pull requests, repository settings, or remote branches. The remote inventory below is a snapshot; refresh it before publishing or deleting branches.
 
 ## Repositories and working history

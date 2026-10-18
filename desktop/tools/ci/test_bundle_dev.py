@@ -50,6 +50,7 @@ class BundleRebuildTests(unittest.TestCase):
                 "catalog/extensions-state.json": "must not replace operator state",
                 "catalog/extension-permissions.json": "must not copy source approvals",
                 "catalog/integrations.json": "must not copy source credential hashes",
+                "catalog/builtin-services.json": "must not copy source service choices",
                 "catalog/games/stock.json": "stock profile",
                 "config/permissions.example.json": "example",
             }.items():
@@ -67,6 +68,7 @@ class BundleRebuildTests(unittest.TestCase):
                 "catalog/extensions-state.json": "operator extensions",
                 "catalog/extension-permissions.json": "per-extension approvals",
                 "catalog/integrations.json": "private integration configuration",
+                "catalog/builtin-services.json": "operator built-in service choices",
                 "catalog/games/custom.json": "custom profile",
                 "catalog/games/stock.json": "edited stock profile",
                 "config/permissions.example.json": "edited config",

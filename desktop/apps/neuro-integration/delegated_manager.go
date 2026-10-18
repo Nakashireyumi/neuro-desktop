@@ -205,7 +205,7 @@ func (a *AdminServer) authorizeDelegatedRoute(r *http.Request) error {
 	path := r.URL.Path
 	if r.Method == http.MethodGet {
 		switch path {
-		case "/api/session", "/api/delegation/session", "/api/status", "/api/control", "/api/config", "/api/actions", "/api/permissions", "/api/permissions/schema", "/api/relay":
+		case "/api/session", "/api/delegation/session", "/api/status", "/api/control", "/api/config", "/api/actions", "/api/permissions", "/api/permissions/schema", "/api/relay", "/api/services/vision":
 			return nil
 		case "/api/catalog":
 			return a.delegatedActionAllowed(string(CmdListCatalogItems), false)

@@ -8,6 +8,7 @@ This project aims to follow semantic versioning once stable releases begin.
 
 ### Added
 
+- Built-in Vision Service controls in native and browser Extensions, with persistent global/per-twin choices, fresh operator approval, and explicit bridge personas. Disabling cancels pending analysis and prevents stale screenshot results without stopping an external vision process.
 - Native GTK 4 manager with a real startup splash, standalone packaging, bounded visible-page refresh and restricted Neuro/Evil sessions; the browser dashboard remains available.
 - Reviewed marketplace index on a separate catalog branch, pinned source staging, per-extension runtime/management grants and settings, SDK game-presence leases, and opt-in actor-specific viewer feeds.
 - Separate integration SDK and Vencord adapter repositories, cross-platform native UI/package CI, and a gated draft-release workflow with checksums and provenance.

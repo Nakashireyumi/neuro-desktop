@@ -973,6 +973,11 @@ func (n *NDIntegration) buildGameObservation(vision bool, prompt string) (string
 }
 
 func (n *NDIntegration) buildGameObservationGuarded(vision bool, prompt string, permit *observationPermit) (string, error) {
+	if vision {
+		if err := permit.requireVisionService(); err != nil {
+			return "", err
+		}
+	}
 	if err := permit.check(); err != nil {
 		return "", err
 	}
@@ -995,7 +1000,10 @@ func (n *NDIntegration) buildGameObservationGuarded(vision bool, prompt string, 
 		if prompt == "" {
 			prompt = "Describe what is happening in this game screenshot for an AI that is playing it. Mention the player's situation, the HUD, and anything urgent in one or two sentences."
 		}
-		captured, visionErr := summarizeWithVisionServer(visionURL, shot, prompt)
+		if err := permit.check(); err != nil {
+			return "", err
+		}
+		captured, visionErr := summarizeWithVisionServerContext(permit.vision.ctx, visionURL, shot, prompt)
 		if visionErr != nil {
 			log.Printf("Vision summarise failed: %v", visionErr)
 		} else {

@@ -88,9 +88,33 @@ func (n *NDIntegration) sendToExecutorForAction(cmd IPCCommand, action string, g
 			cmd.Type,
 		)
 	}
+	// All transports share this gate, including raw get_status actions and
+	// relayed commands. Never let an undeclared argument bypass service controls
+	// (Python would otherwise treat a nonempty string as a capture request).
+	var capturePermit *visionServicePermit
+	if cmd.Type == CmdGetStatus {
+		if value, present := cmd.Params["capture_screenshot"]; present {
+			capture, ok := value.(bool)
+			if !ok {
+				return nil, fmt.Errorf("capture_screenshot must be a boolean")
+			}
+			if capture {
+				var err error
+				capturePermit, err = n.visionServicePermit()
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 
 	n.ipcMu.Lock()
 	defer n.ipcMu.Unlock()
+	if capturePermit != nil {
+		if err := capturePermit.check(); err != nil {
+			return nil, err
+		}
+	}
 
 	for _, guard := range guards {
 		if err := guard(); err != nil {
@@ -117,6 +141,16 @@ func (n *NDIntegration) sendToExecutorForAction(cmd IPCCommand, action string, g
 		(cmd.Type == CmdClearActionQueue || cmd.Type == CmdShutdownGracefully || cmd.Type == CmdShutdownImmediately ||
 			(queuesExecutorInput(cmd.Type) && cmd.ClearAfter)) {
 		n.executorQueue = scriptPermissions{}
+	}
+	if capturePermit != nil {
+		if guardErr := capturePermit.check(); guardErr != nil {
+			return nil, guardErr // Discard a late private screenshot completely.
+		}
+	} else if cmd.Type == CmdGetStatus && response != nil {
+		// An old or faulty executor may attach a frame that was not requested.
+		// Never expose or process those bytes through a metadata-only call.
+		delete(response.Data, "screenshot_png_b64")
+		delete(response.Data, "screenshot_path")
 	}
 	return response, err
 }

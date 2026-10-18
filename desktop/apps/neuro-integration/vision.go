@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -167,6 +168,10 @@ func screenshotPNG(status map[string]interface{}) (data []byte, ok bool, err err
 // summarizeWithVisionServer sends PNG bytes to the vision server and returns its
 // summary. The caller gets the bytes from screenshotPNG.
 func summarizeWithVisionServer(serverURL string, png []byte, prompt string) (string, error) {
+	return summarizeWithVisionServerContext(context.Background(), serverURL, png, prompt)
+}
+
+func summarizeWithVisionServerContext(ctx context.Context, serverURL string, png []byte, prompt string) (string, error) {
 	if len(png) == 0 {
 		return "", fmt.Errorf("there is no screenshot to summarize")
 	}
@@ -196,7 +201,7 @@ func summarizeWithVisionServer(serverURL string, png []byte, prompt string) (str
 		Timeout: 20 * time.Second,
 	}
 
-	req, err := http.NewRequest(http.MethodPost, serverURL, bytes.NewReader(requestBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, bytes.NewReader(requestBody))
 	if err != nil {
 		return "", fmt.Errorf("vision request could not be built: %w", err)
 	}

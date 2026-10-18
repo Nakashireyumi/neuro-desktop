@@ -4,6 +4,10 @@ An optional screen-description service for Neuro Desktop. The server calls it
 through `NEURO_VISION_URL` when Neuro asks what is on screen (`game_observe`), and
 the dashboard shows whether it is reachable.
 
+You control Neuro Desktop's image use from **Extensions → Built-in services →
+Vision Service**. Review the [per-twin controls and privacy guide](../../../docs/VISION.md).
+Those controls do not stop this independently managed HTTP process.
+
 It is Python on the standard library, so it runs on a machine with no GUI and
 needs nothing installed to start. Pillow and tesseract add capabilities; see
 `requirements.txt`.

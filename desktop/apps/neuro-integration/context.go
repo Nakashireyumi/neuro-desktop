@@ -176,6 +176,11 @@ func (n *NDIntegration) getDesktopContext(captureScreenshot bool) (string, error
 }
 
 func (n *NDIntegration) getDesktopContextGuarded(captureScreenshot bool, permit *observationPermit) (string, error) {
+	if captureScreenshot {
+		if err := permit.requireVisionService(); err != nil {
+			return "", err
+		}
+	}
 	if err := permit.check(); err != nil {
 		return "", err
 	}
@@ -193,7 +198,10 @@ func (n *NDIntegration) getDesktopContextGuarded(captureScreenshot bool, permit 
 		if shotErr != nil {
 			log.Printf("Vision skipped: %v", shotErr)
 		} else if ok {
-			summary, visionErr := summarizeWithVisionServer(serverURL, shot, "")
+			if err := permit.check(); err != nil {
+				return "", err
+			}
+			summary, visionErr := summarizeWithVisionServerContext(permit.vision.ctx, serverURL, shot, "")
 			if visionErr != nil {
 				log.Printf("Vision summarize failed: %v", visionErr)
 			} else {

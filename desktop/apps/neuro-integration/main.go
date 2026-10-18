@@ -22,6 +22,7 @@ const Version = "0.2.0-dev"
 type IntegrationOptions struct {
 	WSURL           string
 	GameName        string
+	Persona         string
 	IPCPath         string
 	PermissionsPath string
 	ExecutorListen  string
@@ -33,6 +34,10 @@ type IntegrationOptions struct {
 }
 
 func NewNDIntegration(opts IntegrationOptions) (*NDIntegration, error) {
+	persona, err := normalizedPersona(opts.Persona)
+	if err != nil {
+		return nil, err
+	}
 	client, err := neuro.NewClient(neuro.ClientConfig{
 		Game:         opts.GameName,
 		WebsocketURL: opts.WSURL,
@@ -60,6 +65,7 @@ func NewNDIntegration(opts IntegrationOptions) (*NDIntegration, error) {
 		ipcFilePath:      opts.IPCPath,
 		executionSession: executionSession,
 		permissionsPath:  opts.PermissionsPath,
+		persona:          persona,
 		permissions:      policy,
 		done:             make(chan struct{}),
 		contextStopChan:  make(chan struct{}),
@@ -79,6 +85,11 @@ func NewNDIntegration(opts IntegrationOptions) (*NDIntegration, error) {
 	// names (owned by other integrations) come from it, even when the relay
 	// socket itself is disabled.
 	integration.relay.setOwner(integration)
+	// Invalid persisted settings keep capture off, while leaving the operator
+	// dashboard available to repair them with fresh approval.
+	if service := integration.visionServiceSnapshot(); service.Reason != "" {
+		log.Printf("Vision Service: %s", service.Reason)
+	}
 
 	return integration, nil
 }
@@ -160,6 +171,7 @@ func (n *NDIntegration) Start() error {
 }
 
 func (n *NDIntegration) Close() error {
+	n.cancelVisionServiceRequests()
 	n.stopGrantExpiryTimers()
 	n.neuroConnection.disconnected()
 	n.stopAllMCPServers()
@@ -198,6 +210,7 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	wsURLFlag := flag.String("ws-url", "", "Neuro API websocket URL")
+	personaFlag := flag.String("persona", "", "Persona for this connection: neuro, evil or shared (NEURO_PERSONA; default shared)")
 	ipcPathFlag := flag.String("ipc-file", "", "Legacy file-IPC path (fallback when no TCP executor)")
 	permissionsPathFlag := flag.String("permissions-file", "", "Permissions policy file path")
 	executorListenFlag := flag.String("executor-listen", "", "TCP listen addr for executor clients (default 127.0.0.1:9876)")
@@ -212,6 +225,7 @@ func main() {
 	RegisterGameActionsOnStartup = *gameActionsFlag
 
 	wsURL := firstNonEmpty(*wsURLFlag, os.Getenv("NEURO_SDK_WS_URL"), "ws://localhost:8000")
+	persona := firstNonEmpty(*personaFlag, os.Getenv("NEURO_PERSONA"), "shared")
 
 	ipcPath := firstNonEmpty(*ipcPathFlag, os.Getenv("NEURO_IPC_FILE"), "./neuro-integration-code-ipc.json")
 	permissionsPath := firstNonEmpty(*permissionsPathFlag, os.Getenv("NEURO_PERMISSIONS_FILE"), "./permissions.json")
@@ -274,6 +288,7 @@ func main() {
 	integration, err := NewNDIntegration(IntegrationOptions{
 		WSURL:           wsURL,
 		GameName:        "Neuro Desktop",
+		Persona:         persona,
 		IPCPath:         ipcPath,
 		PermissionsPath: permissionsPath,
 		ExecutorListen:  executorListen,

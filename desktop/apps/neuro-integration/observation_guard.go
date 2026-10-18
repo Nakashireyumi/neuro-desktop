@@ -11,6 +11,7 @@ type observationPermit struct {
 	action      CommandType
 	grant       ScopeGrant
 	temporary   bool
+	vision      *visionServicePermit
 }
 
 func (n *NDIntegration) observationPermit(action CommandType) (*observationPermit, error) {
@@ -45,5 +46,22 @@ func (p *observationPermit) check() error {
 	if reason := n.stop.blockReason(string(p.action)); reason != "" {
 		return fmt.Errorf("%s", reason)
 	}
+	if p.vision != nil {
+		return p.vision.check()
+	}
 	return nil
+}
+
+// Metadata-only observation still needs the global Vision permission, but it
+// does not use the built-in screenshot service. Capture explicitly adds this
+// stronger, generation-bound permit before entering the executor queue.
+func (p *observationPermit) requireVisionService() error {
+	if p.vision == nil {
+		permit, err := p.integration.visionServicePermit()
+		if err != nil {
+			return err
+		}
+		p.vision = permit
+	}
+	return p.check()
 }

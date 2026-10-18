@@ -67,6 +67,7 @@ func (a *AdminServer) routes() *http.ServeMux {
 	mux.HandleFunc("/api/actions", a.guard(a.handleActions))
 	mux.HandleFunc("/api/catalog", a.guard(a.handleCatalog))
 	mux.HandleFunc("/api/extensions", a.guard(a.handleExtensions))
+	mux.HandleFunc("/api/services/vision", a.guard(a.handleVisionService))
 	mux.HandleFunc("/api/extensions/", a.guard(a.handleExtensionAction))
 	mux.HandleFunc("/api/integrations", a.handleIntegrations)
 	mux.HandleFunc("/api/integrations/", a.handleIntegrationAdapter)
@@ -646,6 +647,9 @@ func (a *AdminServer) handleExtensions(w http.ResponseWriter, _ *http.Request) {
 		"extension_dir": extensionRootPath(),
 		"state_file":    extensionStatePath(),
 		"unsigned_ok":   extensionAllowsUnsigned(),
+		"built_in_services": map[string]interface{}{
+			"vision": a.integration.visionServiceSnapshot(),
+		},
 	})
 }
 

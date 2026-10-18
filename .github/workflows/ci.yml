@@ -248,6 +248,7 @@ jobs:
             'relay-token' = 'fixture-relay-token'
             'permissions.json' = '{"default_allow":false,"metadata":{"owner":"fixture"}}'
             'catalog/extensions-state.json' = '{"installed":{"fixture":{"enabled":true}}}'
+            'catalog/builtin-services.json' = '{"version":1,"vision":{"enabled":false,"actors":{"neuro":true,"evil":false}}}'
             'catalog/games/custom.json' = '{"id":"custom","name":"Custom fixture"}'
             'catalog/games/minecraft.json' = '{"id":"minecraft","name":"Edited fixture"}'
             'config/custom.json' = '{"fixture":true}'

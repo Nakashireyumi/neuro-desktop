@@ -2,6 +2,11 @@
 
 You control which integrations can run and which ones Neuro and Evil can manage. Installing an item records or stages it; installation leaves it disabled and grants no runtime capabilities.
 
+The Extensions page also shows [Vision Service](VISION.md) under **Built-in
+services**. Its image-use switches are separate from catalog installation and
+per-extension grants. They require your approval and cannot be changed by a
+delegated session. Global Vision permission still applies.
+
 Three independent decisions apply:
 
 1. The global `extensions` permission allows model actions that manage or call extensions.

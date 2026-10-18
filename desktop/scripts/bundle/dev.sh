@@ -94,7 +94,7 @@ cp -Rn config/. "$DIST/config/"
 mkdir -p "$DIST/catalog"
 for item in catalog/*; do
   name="$(basename "$item")"
-  case "$name" in extensions-state.json|extension-permissions.json|integrations.json) continue ;; esac
+  case "$name" in extensions-state.json|extension-permissions.json|integrations.json|builtin-services.json) continue ;; esac
   if [[ -d "$item" ]]; then
     mkdir -p "$DIST/catalog/$name"
     cp -Rn "$item/." "$DIST/catalog/$name/"

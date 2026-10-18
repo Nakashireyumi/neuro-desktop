@@ -90,7 +90,7 @@ try {
     Copy-SeedDirectory 'config' "$Dist/config"
     New-Item -ItemType Directory -Force -Path "$Dist/catalog" | Out-Null
     foreach ($Item in Get-ChildItem -LiteralPath 'catalog' -Force) {
-        if ($Item.Name -in @('extensions-state.json', 'extension-permissions.json', 'integrations.json')) { continue }
+        if ($Item.Name -in @('extensions-state.json', 'extension-permissions.json', 'integrations.json', 'builtin-services.json')) { continue }
         if ($Item.PSIsContainer) {
             Copy-SeedDirectory $Item.FullName (Join-Path "$Dist/catalog" $Item.Name)
         } else {

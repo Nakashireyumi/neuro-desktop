@@ -40,6 +40,11 @@ runtime catalog separately. New installs start disabled. See
 [extension permissions](../../../docs/EXTENSION_PERMISSIONS.md) and the
 [integration workflow](../../../docs/WORKFLOW.md).
 
+**Extensions → Built-in services** contains the Vision Service controls even
+when the catalog is empty. You can disable image use globally or for either
+twin with fresh operator approval. Review the [connection persona and privacy
+guide](../../../docs/VISION.md) before using independent per-twin settings.
+
 For the [Vencord adapter](https://github.com/cassitly/neuro-desktop-vencord), use
 its `manifest.json` and approve `discord.viewer`. Its plugin needs a development
 Vencord build and a scoped connection token; it does not provide Vedal's private

@@ -27,6 +27,7 @@ desktop/dist/**/*.exe
 **/catalog/extensions-state.json
 **/catalog/extension-permissions.json
 **/catalog/integrations.json
+**/catalog/builtin-services.json
 relay-token
 **/relay-token
 dashboard-token
