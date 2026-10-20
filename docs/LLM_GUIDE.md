@@ -1,121 +1,118 @@
-# Driving Neuro Desktop with a small or "dumb" model
+# Context and actions for Neuro and Evil
 
-Neuro Desktop works with strong models out of the box. Most of the trouble with
-desktop control comes from weak models: wrong parameter names, guessed action
-names, "I moved the mouse" without moving it, or repeating a call that already
-failed.
+Neuro Desktop exposes registered actions, a short connection brief, and help on
+demand. This follows the [Neuro SDK best practices](https://github.com/VedalAI/neuro-sdk/blob/main/API/BEST_PRACTICES.md):
+use readable, meaningful context, concise action descriptions, and prompt results
+after validation. Reconnecting does not erase Neuro's existing context.
 
-Everything here is written so a small model can still succeed. Nothing depends on
-the model reading JSON Schema, using tools reliably, or planning ahead.
+## What is sent automatically
 
-## 1. What the surface gives a weak model
+After action registration, the bridge sends one brief of approximately 800 UTF-8
+bytes. It explains observation, acceptance versus completion, permissions, and
+recovery. It does not read a manual from the working directory or send a second
+script reference. Re-registering actions, including after a mode change, does not
+repeat the brief. `NEURO_PROMPT_ASSIST=false` disables it.
 
-| Signal | Where it comes from | Why it helps |
-| ------ | ------------------- | ------------ |
-| One-sentence descriptions, each ending with an example | every action's `description` | the model can pick by name and description alone |
-| Parameter list in plain text | `/api/actions` → `params`, for example `direction (string, required: forward\|back\|left\|right\|up\|down)` | no JSON Schema knowledge needed |
-| Required parameters | the `required` array and the `(required: …)` marker | a missing parameter is the most common failure |
-| Corrective refusals | `action-registry.go` and `guide.go` | a refusal names the action and the parameter, and gives a valid example. Section 5 lists them |
-| Ground truth about the desktop | `get_status`, `game_observe`, `game_list` | the model does not have to guess what is on screen |
-| A briefing on demand | `desktop_guide` (always allowed) | the model can ask how the desktop works, at any time |
-| A way out | `reset_controls` (always allowed) | a stuck input can be cleared without guessing |
+Detailed help uses `desktop_guide {"topic":"script"}`. The default topic is
+`overview`; other topics are `desktop`, `script`, `games`, `shell`, `safety`, and
+`all`. Every result is limited to 2 KiB of valid UTF-8. `all` summarizes every
+topic; request a named topic for detail. Help describes the registered mode: it
+does not advertise low-level scripts when only high-level controls are available.
 
-The registration sent to Neuro carries the same information, so the model sees it
-*before* it acts.
+Periodic observation is separately opt-in with `NEURO_CONTEXT_POLL_SECONDS`
+(default `0`, disabled). Automatic updates send meaningful changes such as the
+active application, available input, or a changed visual description. Pointer
+position, action counters, and screenshot byte size do not create updates on their
+own. A failed send does not consume the change: the next poll can retry it.
+Repeated explicit observations still return a fresh snapshot.
 
-## 2. Shortest useful system prompt
+Desktop context is capped at 2 KiB. Titles, process names, error details, and
+visual summaries have smaller field budgets; newlines and control characters in
+these observed values are flattened. Text from a window remains untrusted data,
+even after formatting. The global Vision permission is checked before collection
+and again before delivery. Image capture additionally needs the built-in Vision
+Service enabled for this connection's configured persona; a changed approval or
+service configuration invalidates an observation already in flight.
 
+## A compact operator prompt
+
+Use this only if the backend needs an additional prompt. The bridge already
+provides its startup brief and registered action descriptions.
+
+```text
+Use only your registered Neuro Desktop actions with their exact parameters.
+Request get_desktop_context {} before acting on an unknown desktop; read the
+snapshot that follows. Accepted work is queued, not proof that an action finished.
+Use short sequences and observe again when the next step depends on screen state.
+For syntax help, request desktop_guide with the relevant topic.
+Correct a malformed call once. Do not repeat a permission denial or pending
+permission request: Vedal decides approvals. If input is stuck, reset_controls {}.
 ```
-You control a desktop through Neuro Desktop.
 
-Rules:
-1. Call get_status first. It tells you the platform and whether the executor is connected.
-2. Only use actions from the list you were given, with the exact parameter names shown
-   after them. Never invent an action or a parameter.
-3. If an action is refused, read the reply. It names the parameter it wants and gives an
-   example. Fix the call once and resend it. If it fails again, call desktop_guide.
-4. If something is stuck (a key keeps running, input does not respond), call
-   reset_controls. It takes no parameters.
-5. If you need a permission that is not on, call request_permission with a short reason.
-   Wait for the answer before you retry.
-6. Nothing you say moves the mouse. Only the actions do.
-7. One action at a time. Look at the result, then decide the next one.
-```
+## Public action shapes
 
-Rules 6 and 7 matter most. Small models often announce an action without calling it, or
-call five actions in one turn and lose track of which one failed.
+Neuro sees the currently registered schemas. `/api/actions` exposes the same
+surface to the manager. High-level and low-level modes have different controls;
+the following table is a reference, not a second action list to inject into every
+turn.
 
-## 3. Parameter shapes worth prompting explicitly
+| Action | Example | Meaning |
+| --- | --- | --- |
+| `get_desktop_context` | `{}` | Requests platform, input availability, geometry, and application context in either mode; the snapshot follows as a message. |
+| `move_mouse_to` | `{"x":640,"y":360}` | Low-level absolute pointer movement, in screen pixels. |
+| `mouse_click` | `{"button":"left"}` | Clicks at the pointer; move to the target first. |
+| `type_text` | `{"text":"hello"}` | Types into the focused control. |
+| `key_press` | `{"key":"enter"}` | Taps one key. |
+| `run_script` | `{"script":"COMBO ctrl c"}` | Low-level ordered script; use `command` on macOS where appropriate. |
+| `shell_command` | `{"command":"echo hello"}` | Requires the shell scope and effective program allowlist. Output follows acceptance as a message. |
+| `desktop_guide` | `{"topic":"desktop"}` | Bounded help for the current mode; `{}` means overview. |
+| `reset_controls` | `{}` | Clears pending input and releases held controls, including while paused; partial failures are reported. |
+| `request_permission` | `{"scope":"extensions","reason":"install a memory tool","minutes":15}` | Requests a scope only when you have allowed requests for it; it does not grant access. |
+| `game_list_profiles` | `{}` | Lists configured profile IDs and their control maps. |
+| `game_start_session` | `{"profile_id":"minecraft"}` | Selects a configured profile. It does not grant permissions or override a dedicated integration's ownership. |
+| `game_move` | `{"direction":"forward","seconds":1}` | Uses profile bindings; directions are forward, back, left, right, up, down. |
+| `game_look` | `{"dx":120,"dy":0}` | Relative mouse-look offsets. |
+| `game_action` | `{"action":"jump"}` | Uses a named action from the selected profile's control map. |
+| `game_observe` | `{}` | Requests game/window state, with approved vision when configured. |
 
-| Action | Call it like | Common mistake, and what the reply says |
-| ------ | ------------ | --------------------------------------- |
-| `move_mouse_to` | `{"x": 640, "y": 360}` | `"x": "640"` (a string). The reply asks for numeric x and y in screen pixels |
-| `mouse_click` | `{"button": "left"}` or `{}` | nothing: `button` defaults to left |
-| `type_text` | `{"text": "hello"}` | `{"message": …}` or an empty `text`. The reply names `"text"` |
-| `key_press` | `{"key": "enter"}` | `{"keys": […]}`. The reply names `"key"` |
-| `run_script` | `{"script": "…"}` | an empty script. The reply names `"script"` |
-| `shell_command` | `{"command": "ls -la"}` | expecting a free shell. It runs only when the shell scope is on and the program is on the allowlist |
-| `reset_controls` | `{}` | extra fields are ignored. Use it when something is stuck |
-| `desktop_guide` | `{"topic": "shell"}` or `{}` | an unknown topic gets the list of valid topics. No topic means the whole guide |
-| `request_permission` | `{"scope": "extensions", "reason": "install a memory tool", "minutes": 15}` | asking for a scope that is not requestable is refused |
-| `game_move` | `{"direction": "forward", "seconds": 1}` | `"dir"`. Directions are `forward`, `back`, `left`, `right`, `up`, `down` |
-| `game_look` | `{"dx": 120, "dy": 0}` | absolute coordinates. These are relative offsets |
-| `game_action` | `{"action": "jump"}` | an invented name. Call `game_list` for the real ones |
+`get_status` and `key_combo` are executor protocol commands, not public Neuro
+actions. Use `get_desktop_context` for observation and `COMBO` inside a registered
+`run_script` for key combinations. There is no `game_list` action.
 
-`/api/actions` is the authority for all of these at runtime, including any change made
-on the dashboard.
+An executor connection alone cannot prove input works. A snapshot reports a missing
+display or unavailable input backend honestly. Use approved command-line work on
+a headless machine. Desktop shortcuts also depend on the OS and desktop settings.
 
-## 4. Tactics that reliably rescue a weak model
+## Results and recovery
 
-1. **Ground first.** `get_status`, then `game_observe` or `game_list`, before any input
-   action. A model that has been told "the active window is Minecraft" stops guessing.
-2. **One action per turn while debugging.** The action result window is short (about
-   20 seconds, per the Neuro API), and a batch hides which call failed.
-3. **Let the refusal do the teaching.** Do not paraphrase the failure back to the model.
-   The reply already contains the corrected shape. Resend the call with that shape.
-4. **Escalate, do not improvise.** If two calls fail, the model calls `desktop_guide`
-   (or `game_list`, for a game). It does not try raw keys.
-5. **Use named actions over raw keys.** `game_action {"action": "jump"}` survives a
-   keybind change in the profile. `key_press {"key": "space"}` does not.
-6. **Get unstuck with one call.** `reset_controls` releases held keys and buttons and
-   clears queued input. It works while the bridge is paused, and under a deny-all
-   policy.
-7. **Ask instead of retrying.** A refused scope that is requestable can be asked for
-   with `request_permission`. Retrying a refused action does not change the answer.
-8. **Bound the run.** `NEURO_DENY_ACTIONS`, the pause switch, and the kill switch exist
-   so a stuck model cannot cause damage while you fix the prompt.
+Validate required arguments and policy before acknowledging a call. Accepted work
+runs after acknowledgement; outcome messages report failures and useful output.
+Acceptance means queued, so a following decision that depends on the screen needs
+a requested observation. A timeout cannot undo input, shell commands, or launches
+that already happened. Inspect before retrying an uncertain operation.
 
-## 5. Refusals a small model will see
+Keep scripts short: a script is limited to 64 KiB, 512 pending instructions, and a
+20-second estimated delay budget, with a cooperative execution deadline. The
+whole script is checked before it is appended to one ordered queue. Parsing never
+runs a shell command or launches an application. A runtime failure clears pending
+work and releases held input; it cannot roll back completed OS effects.
 
-These are the replies the eval pins (`testdata/weak_model_cases.json`), so a change
-that weakens one fails CI.
+Incorrect parameter names and types receive corrective refusals. A permission
+refusal is different from a malformed call: repeating it does not create approval.
+`reset_controls` reports whether queue clearing and release succeeded. If it only
+partly succeeds, stop and inspect the affected executor.
 
-| Call | Reply (abridged) |
-| ---- | ---------------- |
-| `move_mouse_to` with `{"x": "640", "y": "360"}` | `move_mouse_to needs numeric x and y in screen pixels, for example {"x": 640, "y": 360}` |
-| `type_text` with `{}` | a reply that names `"text"` |
-| `type_text` with `{"text": 5}` | a reply that asks for a non-empty `"text"` string |
-| `"hello"` (a bare string) | a reply that says the arguments must be a JSON object |
-| `shell_command` while the shell scope is off | a reply that names the shell scope and says how Vedal can allow it |
-| `reset_controls` (any fields) | `Controls reset: …` when it works, or `Controls reset only partly worked. …` with what may still be held. Both end with a `Next:` hint |
-| `request_permission` for a scope the operator has not made requestable | the operator has not allowed requests for that scope, so use another action |
-| `request_permission` with no reason, or minutes out of range | the reply says what to add or what range to use |
-| `request_permission` again while the first is pending | the request is still waiting for the operator. Do not send it again |
+## Verification
 
-Every refusal names the action, so the model knows which call failed. The eval also checks
-this for each refusal case.
-
-## 6. Checking the surface yourself
+The Go suite includes a real WebSocket test for registration-before-brief,
+startup opt-out, and one-time briefing. It checks help in both control modes,
+automatic deduplication, failed-send retries, UTF-8 limits, and observed-field
+formatting. `testdata/weak_model_cases.json` checks corrective validation without
+requiring a model or touching the desktop.
 
 ```bash
-# What the model will be offered, including parameter hints:
-curl -s http://127.0.0.1:8300/api/actions | python3 -m json.tool | head -40
-
-# The briefing a model gets for a game (needs the dashboard token, on every address):
-curl -s -H "X-ND-Token: $TOKEN" http://127.0.0.1:8300/api/games | python3 -m json.tool
+cd desktop/apps/neuro-integration
+go test ./... -run 'StartupContext|PromptAssist|DesktopGuide|AutomaticContext|ContextBounds|WeakModel'
 ```
 
-`TestActionsExposeLLMFriendlyMetadata` (Go) enforces the invariants: every action has a
-real description, every parameterised action exposes a schema, and the plain-text `params`
-rendering names every parameter, its type, and whether it is required. The weak-model eval
-(`go test -run WeakModel`) checks the refusals in section 5. CI runs both.
+For script syntax and valid examples, see the [language reference](action_script/LANGUAGE_REFERENCE.md).

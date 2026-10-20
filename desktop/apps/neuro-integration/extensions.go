@@ -274,17 +274,17 @@ func (n *NDIntegration) listInstalledExtensions() neuro.ExecutionResult {
 		if install.Enabled {
 			status = "enabled"
 		}
-		line := fmt.Sprintf("%s (%s)", itemID, status)
+		line := fmt.Sprintf("%s (%s)", contextField(itemID, 64), status)
 		if install.Trust != "" {
-			line += " signature=" + install.Trust
-		}
-		if install.Source != "" {
-			line += " source=" + install.Source
+			line += " signature=" + contextField(install.Trust, 32)
 		}
 		lines = append(lines, line)
+		if len(lines) >= modelCatalogResultLimit {
+			break
+		}
 	}
 
-	return neuro.NewSuccessResult("Installed extensions -> " + strings.Join(lines, " | "))
+	return neuro.NewSuccessResult(boundedContextMessage(fmt.Sprintf("Installed extensions (%d of %d) -> %s", len(lines), len(ids), strings.Join(lines, " | "))))
 }
 
 func (n *NDIntegration) installExtension(itemID string) neuro.ExecutionResult {

@@ -403,11 +403,17 @@ func TestBridgeGameSessionDrivesTheGame(t *testing.T) {
 	harness := newBridgeHarness(t, allowEverythingPolicy)
 	harness.backend.waitFor("actions/register", 5*time.Second)
 
-	// Start a session for the profile Neuro Desktop drives itself.
+	// Send the session start and its first inputs back-to-back. Validation runs
+	// ahead of execution, so the move/look must not require an already-created
+	// session; ordered execution creates it first.
 	harness.backend.sendAction("s1", "game_start_session", `{"profile_id": "minecraft"}`)
-	result := harness.backend.waitForActionResult("s1", 5*time.Second)
-	if success, _ := result["success"].(bool); !success {
-		t.Fatalf("game_start_session failed: %v", result)
+	harness.backend.sendAction("s2", "game_move", `{"direction": "forward", "seconds": 0.3}`)
+	harness.backend.sendAction("s3", "game_look", `{"dx": 40, "dy": -10}`)
+	for _, id := range []string{"s1", "s2", "s3"} {
+		result := harness.backend.waitForActionResult(id, 5*time.Second)
+		if success, _ := result["success"].(bool); !success {
+			t.Fatalf("%s was refused before ordered execution: %v", id, result)
+		}
 	}
 	summary := harness.backend.waitForContextContaining("Game interface: Minecraft", 5*time.Second)
 	if !strings.Contains(summary, "forward=w") {
@@ -415,12 +421,6 @@ func TestBridgeGameSessionDrivesTheGame(t *testing.T) {
 	}
 
 	// Walking forward becomes one hold-for primitive, never a raw key down.
-	harness.backend.sendAction("s2", "game_move", `{"direction": "forward", "seconds": 0.3}`)
-	result = harness.backend.waitForActionResult("s2", 5*time.Second)
-	if success, _ := result["success"].(bool); !success {
-		t.Fatalf("game_move failed: %v", result)
-	}
-
 	hold := harness.waitForExecutorCommand(CmdKeyHoldFor, 3*time.Second)
 	if key, _ := hold.Params["key"].(string); key != "w" {
 		t.Fatalf("expected the forward keybind 'w', got %v", hold.Params)
@@ -430,11 +430,6 @@ func TestBridgeGameSessionDrivesTheGame(t *testing.T) {
 	}
 
 	// Looking is a relative move, not an absolute jump across the screen.
-	harness.backend.sendAction("s3", "game_look", `{"dx": 40, "dy": -10}`)
-	if result = harness.backend.waitForActionResult("s3", 5*time.Second); result["success"] != true {
-		t.Fatalf("game_look failed: %v", result)
-	}
-
 	look := harness.waitForExecutorCommand(CmdMoveMouseRelative, 3*time.Second)
 	if dx, _ := look.Params["dx"].(float64); int(dx) != 40 {
 		t.Fatalf("expected dx=40, got %v", look.Params)
@@ -442,7 +437,7 @@ func TestBridgeGameSessionDrivesTheGame(t *testing.T) {
 
 	// Ending the session releases anything held.
 	harness.backend.sendAction("s4", "game_end_session", `{}`)
-	if result = harness.backend.waitForActionResult("s4", 5*time.Second); result["success"] != true {
+	if result := harness.backend.waitForActionResult("s4", 5*time.Second); result["success"] != true {
 		t.Fatalf("game_end_session failed: %v", result)
 	}
 	harness.waitForExecutorCommand(CmdKeyReleaseAll, 3*time.Second)
@@ -461,13 +456,14 @@ func TestBridgeHandsTheGameToAnotherIntegration(t *testing.T) {
 		t.Fatalf("game_start_session in external mode failed: %v", result)
 	}
 
-	// ...and then Neuro Desktop must refuse to drive it itself.
+	// ...and then Neuro Desktop must refuse to drive it itself. Input actions are
+	// acknowledged before execution, so the refusal arrives as bounded context.
 	harness.backend.sendAction("e2", "game_move", `{"direction": "forward"}`)
 	result = harness.backend.waitForActionResult("e2", 5*time.Second)
-	if success, _ := result["success"].(bool); success {
-		t.Fatal("Neuro Desktop must not drive a game another integration owns")
+	if success, _ := result["success"].(bool); !success {
+		t.Fatalf("deferred game input should be accepted before its outcome: %v", result)
 	}
-	message, _ := result["message"].(string)
+	message := harness.backend.waitForContextContaining("game_move failed", 5*time.Second)
 	if !strings.Contains(message, "stardew-valley") {
 		t.Fatalf("the refusal should name the owning integration, got %q", message)
 	}

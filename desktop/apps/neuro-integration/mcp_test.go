@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -300,12 +301,23 @@ func TestMCPToolActionIsGatedByPolicyThenRuns(t *testing.T) {
 	policy := integration.policy()
 	policy.scopes[ScopeExtensions] = ScopeConfig{Allowed: true}
 
+	client := integration.mcp.client("memory")
+	before := atomic.LoadInt64(&client.nextID)
 	state, result := action.Validate(json.RawMessage(`{"text":"hi"}`))
-	if !result.Successful || result.Message != "hi" {
-		t.Fatalf("with the scope on the call should succeed: %+v", result)
+	if !result.Successful || !strings.Contains(result.Message, "Accepted") {
+		t.Fatalf("with the scope on the call should be acknowledged: %+v", result)
 	}
-	if state != nil {
-		t.Fatalf("a fast call should not defer: %v", state)
+	job, ok := state.(*mcpCallJob)
+	if !ok || atomic.LoadInt64(&client.nextID) != before {
+		t.Fatal("validation must not call even a fast MCP tool")
+	}
+	action.Execute(job)
+	if job.failed || job.text != "hi" || atomic.LoadInt64(&client.nextID) != before+1 {
+		t.Fatalf("accepted tool did not execute exactly once: text=%q failed=%v", job.text, job.failed)
+	}
+	action.Execute(job)
+	if atomic.LoadInt64(&client.nextID) != before+1 {
+		t.Fatal("reusing a job replayed its tool call")
 	}
 }
 
@@ -320,10 +332,6 @@ func TestMCPToolActionRejectsNonObjectArguments(t *testing.T) {
 }
 
 func TestMCPSlowCallDefersThenDelivers(t *testing.T) {
-	original := mcpInlineWait
-	mcpInlineWait = 20 * time.Millisecond
-	t.Cleanup(func() { mcpInlineWait = original })
-
 	integration := newMCPTestIntegration(t, `{"scopes": {"extensions": true}}`)
 	attachFakeServer(t, integration, "memory")
 	t.Cleanup(func() { integration.mcp.forget("memory") })
@@ -338,15 +346,20 @@ func TestMCPSlowCallDefersThenDelivers(t *testing.T) {
 		t.Fatal("no slow tool")
 	}
 
+	client := integration.mcp.client("memory")
+	before := atomic.LoadInt64(&client.nextID)
 	state, result := slow.Validate(json.RawMessage(`{}`))
-	if !result.Successful || !strings.Contains(result.Message, "may take a while") {
+	if !result.Successful || !strings.Contains(result.Message, "result will follow") {
 		t.Fatalf("a slow call should be acknowledged, got %+v", result)
 	}
 	job, ok := state.(*mcpCallJob)
 	if !ok {
 		t.Fatalf("a slow call should return its job, got %T", state)
 	}
-	// Execute waits for the job and then delivers it. With no client attached it
+	if atomic.LoadInt64(&client.nextID) != before {
+		t.Fatal("slow tool started during validation, before acknowledgement")
+	}
+	// Execute starts the job and then delivers it. With no client attached it
 	// must still finish without panicking.
 	done := make(chan struct{})
 	go func() {
@@ -360,6 +373,89 @@ func TestMCPSlowCallDefersThenDelivers(t *testing.T) {
 	}
 	if job.failed || job.text != "finally" {
 		t.Fatalf("job = %q failed=%v", job.text, job.failed)
+	}
+}
+
+func TestMCPDeferredCallRechecksApprovalBeforeIO(t *testing.T) {
+	integration := newMCPTestIntegration(t, `{"scopes":{"extensions":true}}`)
+	action := attachFakeServer(t, integration, "memory")
+	t.Cleanup(func() { integration.mcp.forget("memory") })
+	client := integration.mcp.client("memory")
+	state, result := action.Validate(json.RawMessage(`{"text":"private result"}`))
+	if !result.Successful {
+		t.Fatal(result.Message)
+	}
+	before := atomic.LoadInt64(&client.nextID)
+	policy, err := loadPermissionPolicy(writeTempPolicy(t, `{"scopes":{"extensions":false}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	integration.setPolicy(policy)
+	job := state.(*mcpCallJob)
+	action.Execute(job)
+	if !job.failed || strings.Contains(job.text, "private result") || atomic.LoadInt64(&client.nextID) != before {
+		t.Fatalf("revoked queued work ran or disclosed output: %q failed=%v", job.text, job.failed)
+	}
+}
+
+func TestMCPTemporaryReapprovalCannotReusePendingCall(t *testing.T) {
+	integration := newMCPTestIntegration(t, `{"scopes":{"extensions":{"allowed":false,"requestable":true}}}`)
+	action := attachFakeServer(t, integration, "memory")
+	t.Cleanup(func() { integration.mcp.forget("memory") })
+	policy := integration.policy()
+	grant := ScopeGrant{Scope: ScopeExtensions, RequestID: "first", GrantedAt: time.Now(), ExpiresAt: time.Now().Add(time.Minute)}
+	policy.grants.put(grant)
+	state, result := action.Validate(json.RawMessage(`{"text":"stale"}`))
+	if !result.Successful {
+		t.Fatal(result.Message)
+	}
+	client := integration.mcp.client("memory")
+	before := atomic.LoadInt64(&client.nextID)
+	grant.RequestID = "replacement"
+	policy.grants.put(grant)
+	job := state.(*mcpCallJob)
+	action.Execute(job)
+	if !job.failed || atomic.LoadInt64(&client.nextID) != before {
+		t.Fatal("replacement approval inherited a previously accepted tool call")
+	}
+}
+
+func TestMCPDiscardsOutputRevokedDuringCall(t *testing.T) {
+	integration := newMCPTestIntegration(t, `{"scopes":{"extensions":true}}`)
+	attachFakeServer(t, integration, "memory")
+	t.Cleanup(func() { integration.mcp.forget("memory") })
+	var action *mcpToolAction
+	for _, handler := range integration.mcp.handlersFor(integration, "memory") {
+		if candidate, ok := handler.(*mcpToolAction); ok && candidate.toolName == "slow" {
+			action = candidate
+		}
+	}
+	if action == nil {
+		t.Fatal("slow fixture tool missing")
+	}
+	state, result := action.Validate(json.RawMessage(`{}`))
+	if !result.Successful {
+		t.Fatal(result.Message)
+	}
+	job := state.(*mcpCallJob)
+	client := integration.mcp.client("memory")
+	before := atomic.LoadInt64(&client.nextID)
+	go job.run()
+	deadline := time.Now().Add(time.Second)
+	for atomic.LoadInt64(&client.nextID) == before && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if atomic.LoadInt64(&client.nextID) == before {
+		t.Fatal("fixture tool did not start")
+	}
+	policy, err := loadPermissionPolicy(writeTempPolicy(t, `{"scopes":{"extensions":false}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	integration.setPolicy(policy)
+	<-job.done
+	if !job.failed || strings.Contains(job.text, "finally") {
+		t.Fatalf("revoked tool output survived: %q failed=%v", job.text, job.failed)
 	}
 }
 

@@ -421,7 +421,7 @@ func (n *NDIntegration) sendToNeuro(message string, silent bool) {
 	if n == nil || n.client == nil {
 		return
 	}
-	if err := n.client.SendContext(message, silent); err != nil {
+	if err := n.client.SendContext(boundedContextMessage(message), silent); err != nil {
 		log.Printf("could not tell Neuro about a permission decision: %v", err)
 	}
 }

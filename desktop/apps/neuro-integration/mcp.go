@@ -49,11 +49,6 @@ const (
 	mcpStopGrace         = 2 * time.Second
 )
 
-// mcpInlineWait is how long a tool call may hold Neuro's action result. Neuro's
-// window is short, so a slower call is acknowledged and its result follows as a
-// context message. It is a variable so the tests can shorten it.
-var mcpInlineWait = 12 * time.Second
-
 var mcpSupportedVersions = map[string]bool{
 	"2025-06-18": true,
 	"2025-03-26": true,
@@ -515,10 +510,7 @@ func (c *mcpClient) stop() {
 }
 
 func truncateText(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-	return text[:limit] + " ...[truncated]"
+	return boundedText(text, limit)
 }
 
 // mcpToolName builds the Neuro action name for one tool: mcp_<server>_<tool>,
@@ -547,41 +539,72 @@ func mcpSchema(input map[string]interface{}) *neuro.ActionSchema {
 	return &neuro.ActionSchema{Type: "object", Properties: properties, Required: required}
 }
 
-// mcpCallJob is one tool call. Validate waits briefly for it; if it is slower,
-// Execute delivers the result later as a context message.
+// mcpCallJob performs no tool I/O until Execute, after the action acknowledgement.
+// Consent and the exact managed process are rechecked before calling and before
+// disclosure; reapproval cannot recover the output of an older process/session.
 type mcpCallJob struct {
-	action *mcpToolAction
-	args   map[string]interface{}
-	done   chan struct{}
-	text   string
-	failed bool
+	action      *mcpToolAction
+	args        map[string]interface{}
+	client      *mcpClient
+	policy      *PermissionPolicy
+	grant       ScopeGrant
+	temporary   bool
+	runOnce     sync.Once
+	deliverOnce sync.Once
+	done        chan struct{}
+	text        string
+	failed      bool
+}
+
+func extensionScopeGrant(policy *PermissionPolicy) ScopeGrant {
+	if policy == nil || policy.grants == nil {
+		return ScopeGrant{}
+	}
+	policy.grants.mu.Lock()
+	defer policy.grants.mu.Unlock()
+	return policy.grants.grants[ScopeExtensions]
+}
+
+func (job *mcpCallJob) checkAllowed() error {
+	if reason := job.action.integration.stop.blockReason(job.action.name); reason != "" {
+		return errors.New(reason)
+	}
+	policy := job.action.integration.policy()
+	if policy == nil || policy != job.policy || !policy.IsAllowed(job.action.name) || !policy.ScopeAllowed(ScopeExtensions) {
+		return errors.New("the tool approval changed; request a new call after approval")
+	}
+	if job.temporary && !sameScopeGrant(job.grant, extensionScopeGrant(policy)) {
+		return errors.New("the temporary tool approval changed; request a new call")
+	}
+	if err := job.action.integration.extensionItemRuntimeAllowed(job.action.serverID); err != nil {
+		return err
+	}
+	client := job.action.integration.mcp.client(job.action.serverID)
+	if client == nil || client != job.client {
+		return errors.New("the MCP server stopped or was replaced; request a new call")
+	}
+	if state, _, _, _ := client.status(); state != "running" {
+		return errors.New("the MCP server is no longer running")
+	}
+	return nil
 }
 
 func (job *mcpCallJob) run() {
-	defer close(job.done)
-	if reason := job.action.integration.stop.blockReason(job.action.name); reason != "" {
-		job.text, job.failed = reason, true
-		return
-	}
-	if policy := job.action.integration.policy(); policy == nil || !policy.IsAllowed(job.action.name) {
-		job.text, job.failed = "the tool is no longer allowed by the permission policy", true
-		return
-	}
-	if err := job.action.integration.extensionItemRuntimeAllowed(job.action.serverID); err != nil {
-		job.text, job.failed = err.Error(), true
-		return
-	}
-	client := job.action.integration.mcp.client(job.action.serverID)
-	if client == nil {
-		job.text, job.failed = "the MCP server stopped before the call", true
-		return
-	}
-	text, isError, err := client.callTool(job.action.toolName, job.args)
-	if err != nil {
-		job.text, job.failed = err.Error(), true
-		return
-	}
-	job.text, job.failed = text, isError
+	job.runOnce.Do(func() {
+		defer close(job.done)
+		if err := job.checkAllowed(); err != nil {
+			job.text, job.failed = err.Error(), true
+			return
+		}
+		text, isError, err := job.client.callTool(job.action.toolName, job.args)
+		if approvalErr := job.checkAllowed(); approvalErr != nil {
+			job.text, job.failed = approvalErr.Error(), true
+		} else if err != nil {
+			job.text, job.failed = err.Error(), true
+		} else {
+			job.text, job.failed = text, isError
+		}
+	})
 }
 
 // mcpToolAction is one MCP tool exposed to Neuro. It implements neuro.ActionHandler.
@@ -630,6 +653,9 @@ func (a *mcpToolAction) Validate(data json.RawMessage) (interface{}, neuro.Execu
 			return nil, neuro.NewFailureResult("the arguments must be a JSON object that matches the tool's schema")
 		}
 	}
+	if reason := validateActionParameters(actionSpec{Name: CommandType(a.name), Schema: a.schema, Kind: "mcp"}, args); reason != "" {
+		return nil, neuro.NewFailureResult(reason)
+	}
 
 	client := n.mcp.client(a.serverID)
 	if client == nil {
@@ -644,21 +670,12 @@ func (a *mcpToolAction) Validate(data json.RawMessage) (interface{}, neuro.Execu
 		return nil, neuro.NewFailureResult(err.Error())
 	}
 
-	job := &mcpCallJob{action: a, args: args, done: make(chan struct{})}
-	go job.run()
-
-	select {
-	case <-job.done:
-		n.audit.record("action", map[string]interface{}{"action": a.name, "decision": "allowed", "server": a.serverID})
-		if job.failed {
-			n.stats.noteDenied(a.name)
-			return nil, neuro.NewFailureResult(job.text)
-		}
-		return nil, neuro.NewSuccessResult(job.text)
-	case <-time.After(mcpInlineWait):
-		n.audit.record("action", map[string]interface{}{"action": a.name, "decision": "allowed", "server": a.serverID, "slow": true})
-		return job, neuro.NewSuccessResult(fmt.Sprintf("%s is running and may take a while. Its result will arrive as a message.", a.name))
+	job := &mcpCallJob{action: a, args: args, client: client, policy: policy, done: make(chan struct{})}
+	if policy != nil && !policy.scopes[ScopeExtensions].Allowed {
+		job.temporary, job.grant = true, extensionScopeGrant(policy)
 	}
+	n.audit.record("action", map[string]interface{}{"action": a.name, "decision": "accepted", "server": a.serverID})
+	return job, neuro.NewSuccessResult("Accepted. The tool result will follow as context.")
 }
 
 func (a *mcpToolAction) Execute(state interface{}) {
@@ -666,14 +683,20 @@ func (a *mcpToolAction) Execute(state interface{}) {
 	if !ok {
 		return
 	}
-	<-job.done
-	heading := "## " + a.name + " finished"
-	if job.failed {
-		heading = "## " + a.name + " failed"
-	}
-	if a.integration.client != nil {
-		_ = a.integration.client.SendContext(heading+"\n"+job.text, false)
-	}
+	job.run()
+	job.deliverOnce.Do(func() {
+		if err := job.checkAllowed(); err != nil {
+			job.text, job.failed = err.Error(), true
+		}
+		heading := "## " + a.name + " finished"
+		if job.failed {
+			heading = "## " + a.name + " failed"
+			a.integration.stats.noteFailure(a.name)
+		}
+		if a.integration.client != nil {
+			_ = a.integration.client.SendContext(boundedContextMessage(heading+"\n"+job.text), false)
+		}
+	})
 }
 
 // mcpManager keeps the running servers and the actions they registered.

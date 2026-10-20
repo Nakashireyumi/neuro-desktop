@@ -7,6 +7,7 @@
     "script": {
       "type": "string",
       "minLength": 1,
+      "maxLength": 65536,
       "description": "Action script body. See Action Script Documentation.md for supported commands."
     },
     "execute_now": {
@@ -17,7 +18,7 @@
     "clear_after": {
       "type": "boolean",
       "default": true,
-      "description": "Clear instruction queues after execution."
+      "description": "Discard pending instructions after this request; set false with execute_now:false only when deliberately retaining work."
     }
   },
   "required": [

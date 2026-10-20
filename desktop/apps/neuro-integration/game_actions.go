@@ -192,65 +192,125 @@ func gameActionSpecs() []actionSpec {
 	}
 }
 
-// handleGameAction implements every game_* action. Read-only actions answer
-// immediately; anything that touches the machine returns pendingWork so the
-// action is acknowledged before the desktop work happens.
+// Game work is admitted in wire order, acknowledged, then executed. Validation
+// must not inspect the desktop or require a session that an earlier queued
+// game_start_session has not created yet.
+type gameActionRequest struct {
+	params map[string]interface{}
+	permit *observationPermit
+}
+
 func (a *IPCProxyAction) handleGameAction(params map[string]interface{}) (interface{}, neuro.ExecutionResult) {
-	integration := a.integration
-
-	switch a.spec.Name {
-	case CmdGameListProfiles:
-		return nil, integration.listGameProfiles()
-
-	case CmdGameDetect:
-		refresh := getBoolParam(params, "refresh", true)
-		detected, err := integration.detectGame(refresh)
-		if err != nil {
-			return nil, neuro.NewFailureResult(err.Error())
-		}
-		return nil, neuro.NewSuccessResult(describeDetection(detected))
-
-	case CmdGameStatus:
-		return nil, neuro.NewSuccessResult(integration.describeGameStatus())
-
-	case CmdGameStartSession:
-		profileID := strings.TrimSpace(stringParam(params, "profile_id"))
-		launch := getBoolParam(params, "launch", false)
-		modeOverride := strings.ToLower(strings.TrimSpace(stringParam(params, "mode")))
-		return nil, integration.startGameSession(profileID, launch, modeOverride)
-
-	case CmdGameEndSession:
-		return nil, integration.endGameSession("requested by Neuro")
-
-	case CmdGameReleaseAll:
-		return nil, integration.releaseAllInput()
-
-	case CmdGameObserve:
-		request := &gameObserveRequest{
-			vision:            getBoolParam(params, "vision", true),
-			prompt:            strings.TrimSpace(stringParam(params, "prompt")),
-			recordActionAs:    string(a.spec.Name),
-			recordActionNamed: string(a.spec.Name),
-		}
-		return pendingWork{gameObserve: request}, neuro.NewSuccessResult("accepted")
-
-	case CmdGameMove:
-		return integration.buildGameMove(a, params)
-
-	case CmdGameLook:
-		return integration.buildGameLook(a, params)
-
-	case CmdGameAction:
-		return integration.buildGameAction(a, params)
-
-	case CmdGamePress:
-		return integration.buildGamePress(a, params)
-
-	case CmdGameLaunch:
-		return integration.buildGameLaunch(a, params)
+	n := a.integration
+	if a.spec.Name == CmdGameListProfiles {
+		return nil, n.listGameProfiles()
 	}
+	if n.games == nil {
+		return nil, neuro.NewFailureResult("No game profile registry is loaded")
+	}
+	request := &gameActionRequest{params: params}
+	var err error
+	switch a.spec.Name {
+	case CmdGameDetect, CmdGameStatus, CmdGameObserve:
+		request.permit, err = n.observationPermit(a.spec.Name)
+		if err == nil && a.spec.Name == CmdGameObserve && getBoolParam(params, "vision", true) {
+			err = request.permit.requireVisionService()
+		}
+	case CmdGameStartSession, CmdGameLaunch:
+		profileID := strings.TrimSpace(stringParam(params, "profile_id"))
+		var profile *GameProfile
+		if profileID != "" {
+			var ok bool
+			profile, ok = n.games.ProfileByID(profileID)
+			if !ok {
+				return nil, neuro.NewFailureResult("Unknown game profile; use game_list_profiles")
+			}
+		} else if a.spec.Name == CmdGameStartSession {
+			request.permit, err = n.observationPermit(CmdGameDetect)
+		}
+		if a.spec.Name == CmdGameLaunch || getBoolParam(params, "launch", false) {
+			if policy := n.policy(); policy != nil && !policy.IsAllowed(string(CmdGameLaunch)) {
+				err = fmt.Errorf("%s", policyDenialMessage(string(CmdGameLaunch), policy))
+			} else if profile != nil {
+				err = n.validateGameLaunch(profile)
+			}
+		}
+	case CmdGameLook:
+		if _, x := params["dx"]; !x {
+			if _, y := params["dy"]; !y {
+				err = fmt.Errorf("dx and/or dy are required")
+			}
+		}
+	case CmdGamePress:
+		if strings.TrimSpace(stringParam(params, "key")) == "" && len(stringSliceParam(params, "keys")) == 0 {
+			err = fmt.Errorf("Provide key (single) or keys (combination)")
+		}
+	case CmdGameEndSession, CmdGameReleaseAll, CmdGameMove, CmdGameAction:
+	default:
+		err = fmt.Errorf("Unhandled game action: %s", a.spec.Name)
+	}
+	if err != nil {
+		return nil, neuro.NewFailureResult(err.Error())
+	}
+	return pendingWork{game: request}, neuro.NewSuccessResult("accepted; the outcome follows when ready")
+}
 
-	return nil, neuro.NewFailureResult(fmt.Sprintf("Unhandled game action: %s", a.spec.Name))
+func (a *IPCProxyAction) executeGameAction(request *gameActionRequest) neuro.ExecutionResult {
+	n, params := a.integration, request.params
+	if request.permit != nil {
+		if err := request.permit.check(); err != nil {
+			return neuro.NewFailureResult(err.Error())
+		}
+	}
+	var result neuro.ExecutionResult
+	switch a.spec.Name {
+	case CmdGameDetect:
+		detected, err := n.detectGameGuarded(getBoolParam(params, "refresh", true), request.permit)
+		if err != nil {
+			return neuro.NewFailureResult(err.Error())
+		}
+		result = neuro.NewSuccessResult(describeDetection(detected))
+	case CmdGameStatus:
+		result = neuro.NewSuccessResult(n.describeGameStatusGuarded(request.permit))
+	case CmdGameStartSession:
+		result = n.startGameSessionGuarded(strings.TrimSpace(stringParam(params, "profile_id")), getBoolParam(params, "launch", false), strings.ToLower(strings.TrimSpace(stringParam(params, "mode"))), request.permit)
+	case CmdGameEndSession:
+		result = n.endGameSession("requested by Neuro")
+	case CmdGameReleaseAll:
+		result = n.releaseAllInput()
+	case CmdGameObserve:
+		message, err := n.buildGameObservationGuarded(getBoolParam(params, "vision", true), strings.TrimSpace(stringParam(params, "prompt")), request.permit)
+		if err != nil {
+			return neuro.NewFailureResult(err.Error())
+		}
+		result = neuro.NewSuccessResult(message)
+	case CmdGameLaunch:
+		_, result = n.buildGameLaunch(a, params)
+	default:
+		var state interface{}
+		switch a.spec.Name {
+		case CmdGameMove:
+			state, result = n.buildGameMove(a, params)
+		case CmdGameLook:
+			state, result = n.buildGameLook(a, params)
+		case CmdGameAction:
+			state, result = n.buildGameAction(a, params)
+		case CmdGamePress:
+			state, result = n.buildGamePress(a, params)
+		}
+		if !result.Successful {
+			return result
+		}
+		if work, ok := state.(pendingWork); ok {
+			result = a.executeGameCommands(work)
+		}
+	}
+	if request.permit != nil {
+		if err := request.permit.check(); err != nil {
+			return neuro.NewFailureResult(err.Error())
+		}
+	}
+	return result
 }
 
 func stringParam(params map[string]interface{}, key string) string {
@@ -291,17 +351,22 @@ func (n *NDIntegration) listGameProfiles() neuro.ExecutionResult {
 			"No game profiles are configured. Add JSON profiles to the game profile directory (NEURO_GAME_PROFILES_DIR, default catalog/games).")
 	}
 
-	lines := make([]string, 0)
-	for _, profile := range n.games.Profiles() {
+	profiles := n.games.Profiles()
+	lines := []string{"## Game profiles"}
+	for index, profile := range profiles {
+		if index >= 6 {
+			lines = append(lines, fmt.Sprintf("- %d more profiles; use a configured profile_id to start one.", len(profiles)-index))
+			break
+		}
 		owner := ""
 		if profile.Control.Mode != ControlModeND {
-			owner = fmt.Sprintf(", owner=%s", nonEmptyOr(profile.Control.ExternalName, profile.ID))
+			owner = ", owner=" + contextField(nonEmptyOr(profile.Control.ExternalName, profile.ID), 80)
 		}
-		lines = append(lines, fmt.Sprintf(
-			"%s (%s) — control=%s%s — keys=%d",
-			profile.ID, profile.Name, profile.Control.Mode, owner, len(profile.Keys)))
+		lines = append(lines, fmt.Sprintf("- %s: %s (control=%s%s, keybinds=%d)",
+			contextField(profile.ID, 80), contextField(profile.Name, 120), contextField(string(profile.Control.Mode), 16), owner, len(profile.Keys)))
 	}
-	return neuro.NewSuccessResult("Game profiles -> " + strings.Join(lines, " | "))
+	lines = append(lines, "Use game_start_session with profile_id for its controls.")
+	return neuro.NewSuccessResult(boundedContextMessage(strings.Join(lines, "\n")))
 }
 
 func describeDetection(detected GameDetected) string {
@@ -322,9 +387,17 @@ func describeDetection(detected GameDetected) string {
 }
 
 func (n *NDIntegration) describeGameStatus() string {
+	permit, err := n.observationPermit(CmdGameStatus)
+	if err != nil {
+		return "No game observation is available: " + err.Error()
+	}
+	return n.describeGameStatusGuarded(permit)
+}
+
+func (n *NDIntegration) describeGameStatusGuarded(permit *observationPermit) string {
 	session := n.games.Session()
 	if session == nil {
-		detected, err := n.detectGame(false)
+		detected, err := n.detectGameGuarded(false, permit)
 		if err != nil {
 			return "No game session is active."
 		}
@@ -419,6 +492,10 @@ func (n *NDIntegration) resolveAutoMode(profile *GameProfile) GameControlMode {
 }
 
 func (n *NDIntegration) startGameSession(profileID string, launch bool, modeOverride string) neuro.ExecutionResult {
+	return n.startGameSessionGuarded(profileID, launch, modeOverride, nil)
+}
+
+func (n *NDIntegration) startGameSessionGuarded(profileID string, launch bool, modeOverride string, permit *observationPermit) neuro.ExecutionResult {
 	session := n.games.Session()
 
 	var profile *GameProfile
@@ -438,7 +515,14 @@ func (n *NDIntegration) startGameSession(profileID string, launch bool, modeOver
 	}
 
 	if profile == nil {
-		detected, err := n.detectGame(true)
+		if permit == nil {
+			var err error
+			permit, err = n.observationPermit(CmdGameDetect)
+			if err != nil {
+				return neuro.NewFailureResult(err.Error())
+			}
+		}
+		detected, err := n.detectGameGuarded(true, permit)
 		if err != nil {
 			return neuro.NewFailureResult(err.Error())
 		}
@@ -447,12 +531,6 @@ func (n *NDIntegration) startGameSession(profileID string, launch bool, modeOver
 				"No game profile matches the current desktop. Use game_list_profiles, or pass profile_id explicitly.")
 		}
 		profile = detected.Profile
-	}
-
-	if launch {
-		if err := n.launchGame(profile); err != nil {
-			return neuro.NewFailureResult(err.Error())
-		}
 	}
 
 	mode := profile.Control.Mode
@@ -473,6 +551,17 @@ func (n *NDIntegration) startGameSession(profileID string, launch bool, modeOver
 		}
 	}
 
+	if launch {
+		if err := n.launchGame(profile); err != nil {
+			return neuro.NewFailureResult(err.Error())
+		}
+	}
+
+	if permit != nil {
+		if err := permit.check(); err != nil {
+			return neuro.NewFailureResult(err.Error())
+		}
+	}
 	started := n.games.start(*profile, mode)
 
 	// Tell Neuro how to play, and keep the message in context so later actions
@@ -480,8 +569,10 @@ func (n *NDIntegration) startGameSession(profileID string, launch bool, modeOver
 	context := profile.GameControlSummary()
 	context += fmt.Sprintf("\n\n_Session started %s. Neuro Desktop will report input failures as context._",
 		started.StartedAt.Format("15:04:05Z"))
-	if err := n.client.SendContext(context, true); err != nil {
-		log.Printf("Failed to send game control map context: %v", err)
+	if n.client != nil {
+		if err := n.client.SendContext(boundedContextMessage(context), true); err != nil {
+			log.Printf("Failed to send game control map context: %v", err)
+		}
 	}
 
 	log.Printf("Game session started: %s (control=%s)", profile.ID, started.ControlMode)
@@ -510,9 +601,11 @@ func (n *NDIntegration) endGameSession(reason string) neuro.ExecutionResult {
 		log.Printf("Warning: could not release held input on session end: %v", err)
 	}
 
-	_ = n.client.SendContext(fmt.Sprintf(
-		"## Game session ended\n\n- Game: %s\n- Reason: %s\n- Actions issued: %d",
-		previous.ProfileName, nonEmptyOr(reason, "unspecified"), previous.ActionsIssued), true)
+	if n.client != nil {
+		_ = n.client.SendContext(boundedContextMessage(fmt.Sprintf(
+			"## Game session ended\n\n- Game: %s\n- Reason: %s\n- Actions issued: %d",
+			previous.ProfileName, nonEmptyOr(reason, "unspecified"), previous.ActionsIssued)), true)
+	}
 
 	log.Printf("Game session ended: %s (%s)", previous.ProfileID, reason)
 	return neuro.NewSuccessResult(fmt.Sprintf("Stopped playing %s.", previous.ProfileName))
@@ -637,7 +730,6 @@ func (n *NDIntegration) buildGameMove(a *IPCProxyAction, params map[string]inter
 		})
 	}
 
-	n.games.recordAction("move:" + direction)
 	return pendingWork{gameCommands: commands, gameActionName: string(a.spec.Name)}, neuro.NewSuccessResult("accepted")
 }
 
@@ -681,7 +773,6 @@ func (n *NDIntegration) buildGameLook(a *IPCProxyAction, params map[string]inter
 		duration = 2
 	}
 
-	n.games.recordAction("look")
 	return pendingWork{
 		gameCommands: []IPCCommand{{
 			Type: CmdMoveMouseRelative,
@@ -725,7 +816,6 @@ func (n *NDIntegration) buildGameAction(a *IPCProxyAction, params map[string]int
 		return nil, neuro.NewFailureResult(err.Error())
 	}
 
-	n.games.recordAction("action:" + actionName)
 	return pendingWork{
 		gameCommands:   []IPCCommand{command},
 		gameActionName: string(a.spec.Name),
@@ -773,7 +863,6 @@ func (n *NDIntegration) buildGamePress(a *IPCProxyAction, params map[string]inte
 		}
 	}
 
-	n.games.recordAction("press:" + strings.Join(keys, "+"))
 	return pendingWork{
 		gameCommands:   []IPCCommand{command},
 		gameActionName: string(a.spec.Name),
@@ -874,6 +963,18 @@ func (n *NDIntegration) buildGameLaunch(a *IPCProxyAction, params map[string]int
 	return nil, neuro.NewSuccessResult(fmt.Sprintf("Launching %s.", profile.Name))
 }
 
+func (n *NDIntegration) validateGameLaunch(profile *GameProfile) error {
+	command := strings.TrimSpace(profile.Launch.Commands[launchPlatformKey()])
+	if command == "" {
+		return fmt.Errorf("%s has no launch command for %s", profile.Name, launchPlatformKey())
+	}
+	requirements, err := validateScript("LAUNCH " + command)
+	if err == nil {
+		err = requirements.check(n.policy())
+	}
+	return err
+}
+
 func (n *NDIntegration) launchGame(profile *GameProfile) error {
 	if len(profile.Launch.Commands) == 0 {
 		return fmt.Errorf("%s has no launch command configured in its profile", profile.Name)
@@ -924,42 +1025,6 @@ func clampInt(value, min, max int) int {
 		return max
 	}
 	return value
-}
-
-// gameObserveRequest is the slow part of game_observe: screenshot + vision.
-type gameObserveRequest struct {
-	vision            bool
-	prompt            string
-	recordActionAs    string
-	recordActionNamed string
-}
-
-// runGameObserve captures the screen, optionally asks the vision server, and
-// delivers the result to Neuro through context (the action already returned).
-func (n *NDIntegration) runGameObserve(request *gameObserveRequest) {
-	if request == nil {
-		return
-	}
-
-	permit, err := n.observationPermit(CmdGameObserve)
-	if err != nil {
-		n.reportGameFailure(request.recordActionAs, err.Error())
-		return
-	}
-	message, err := n.buildGameObservationGuarded(request.vision, request.prompt, permit)
-	if err != nil {
-		n.reportGameFailure(request.recordActionAs, err.Error())
-		return
-	}
-
-	if err := permit.check(); err != nil {
-		n.reportGameFailure(request.recordActionAs, err.Error())
-		return
-	}
-	if err := n.client.SendContext(message, true); err != nil {
-		log.Printf("Failed to send game observation context: %v", err)
-	}
-	n.games.recordAction("observe")
 }
 
 // buildGameObservation produces the text Neuro receives from game_observe. It is
@@ -1041,10 +1106,12 @@ func (n *NDIntegration) buildGameObservationGuarded(vision bool, prompt string, 
 	if err := permit.check(); err != nil {
 		return "", err
 	}
-	return strings.Join(lines, "\n"), nil
+	return boundedContextMessage(strings.Join(lines, "\n")), nil
 }
 
 func (n *NDIntegration) reportGameFailure(action, message string) {
-	_ = n.client.SendContext(fmt.Sprintf(
-		"## Game action failed\n\n- action: `%s`\n- error: %s", action, message), true)
+	if n.client != nil {
+		_ = n.client.SendContext(boundedContextMessage(fmt.Sprintf(
+			"## Game action failed\n\n- action: `%s`\n- error: %s", action, message)), true)
+	}
 }

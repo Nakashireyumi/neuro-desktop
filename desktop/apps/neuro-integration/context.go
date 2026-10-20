@@ -104,67 +104,60 @@ func (n *NDIntegration) fetchDesktopStatusGuarded(captureScreenshot bool, guards
 
 func buildDesktopContextMessage(status map[string]interface{}, visionSummary string) string {
 	activeWindow, _ := status["active_window"].(string)
-	openWindows := truncateList(toStringSlice(status["open_windows"]), 6)
-	runningProcesses := truncateList(toStringSlice(status["running_processes"]), 8)
-
-	screenInfo := "unknown"
-	if screen := toMap(status["screen"]); screen != nil {
-		width, _ := screen["width"]
-		height, _ := screen["height"]
-		if width != nil && height != nil {
-			screenInfo = fmt.Sprintf("%vx%v", width, height)
-		}
+	lines := []string{"## Desktop context snapshot"}
+	if platform, _ := status["platform"].(string); platform != "" {
+		lines = append(lines, "- Platform: "+contextField(platform, 24))
 	}
-
-	mouseInfo := "unknown"
-	if mouse := toMap(status["mouse_position"]); mouse != nil {
-		x, hasX := mouse["x"]
-		y, hasY := mouse["y"]
-		if hasX && hasY {
-			mouseInfo = fmt.Sprintf("(%v, %v)", x, y)
-		}
-	}
-
-	recentActionCount := 0
-	if recentActions, ok := status["recent_actions"].([]interface{}); ok {
-		recentActionCount = len(recentActions)
-	}
-
-	var lines []string
-	lines = append(lines, "## Desktop context snapshot")
 	if available, ok := status["input_available"].(bool); ok && !available {
 		reason, _ := status["input_error"].(string)
-		lines = append(lines, "- Desktop input: unavailable ("+reason+"). Use shell_command for command-line work.")
+		lines = append(lines, "- Desktop input: unavailable ("+contextField(reason, 144)+"). Use shell_command for approved command-line work.")
 	}
-	if strings.TrimSpace(activeWindow) == "" {
-		lines = append(lines, "- Active window: unavailable")
+	if title := contextField(activeWindow, 160); title != "" {
+		lines = append(lines, "- Active window: "+title)
 	} else {
-		lines = append(lines, fmt.Sprintf("- Active window: %s", activeWindow))
+		lines = append(lines, "- Active window: unavailable")
 	}
-	lines = append(lines, fmt.Sprintf("- Screen: %s", screenInfo))
-	lines = append(lines, fmt.Sprintf("- Mouse: %s", mouseInfo))
-	lines = append(lines, fmt.Sprintf("- Recent action events tracked: %d", recentActionCount))
-
-	if len(openWindows) > 0 {
-		lines = append(lines, fmt.Sprintf("- Open windows sample: %s", strings.Join(openWindows, " | ")))
+	if screen := toMap(status["screen"]); screen != nil {
+		lines = append(lines, "- Screen: "+contextField(fmt.Sprintf("%vx%v", screen["width"], screen["height"]), 32))
+	} else {
+		lines = append(lines, "- Screen: unknown")
 	}
-	if len(runningProcesses) > 0 {
-		lines = append(lines, fmt.Sprintf("- Running processes sample: %s", strings.Join(runningProcesses, ", ")))
+	// Preserve the useful visual description before lower-priority samples when
+	// the overall budget is reached. The model receives text, not image bytes.
+	if summary := contextField(visionSummary, 768); summary != "" {
+		lines = append(lines, "- Vision summary: "+summary)
 	}
-
+	if mouse := toMap(status["mouse_position"]); mouse != nil {
+		lines = append(lines, "- Mouse: "+contextField(fmt.Sprintf("(%v, %v)", mouse["x"], mouse["y"]), 40))
+	} else {
+		lines = append(lines, "- Mouse: unknown")
+	}
+	for _, sample := range []struct {
+		key, label        string
+		count, fieldBytes int
+	}{
+		{"open_windows", "Open windows sample", 4, 64},
+		{"running_processes", "Running processes sample", 6, 40},
+	} {
+		values := truncateList(toStringSlice(status[sample.key]), sample.count)
+		parts := make([]string, 0, len(values))
+		for _, value := range values {
+			if field := contextField(value, sample.fieldBytes); field != "" {
+				parts = append(parts, field)
+			}
+		}
+		if len(parts) > 0 {
+			lines = append(lines, "- "+sample.label+": "+strings.Join(parts, " | "))
+		}
+	}
 	if shot, ok, shotErr := screenshotPNG(status); shotErr != nil {
-		lines = append(lines, fmt.Sprintf("- Screenshot: unusable (%v)", shotErr))
+		lines = append(lines, "- Screenshot: unusable ("+contextField(shotErr.Error(), 120)+")")
 	} else if ok {
 		lines = append(lines, fmt.Sprintf("- Screenshot: captured (PNG, %d KB)", len(shot)/1024))
 	} else if reason, _ := status["screenshot_error"].(string); reason != "" {
-		lines = append(lines, "- Screenshot: unavailable ("+reason+")")
+		lines = append(lines, "- Screenshot: unavailable ("+contextField(reason, 120)+")")
 	}
-
-	if strings.TrimSpace(visionSummary) != "" {
-		lines = append(lines, fmt.Sprintf("- Vision summary: %s", visionSummary))
-	}
-
-	return strings.Join(lines, "\n")
+	return boundedContextMessage(strings.Join(lines, "\n"))
 }
 
 func (n *NDIntegration) getDesktopContext(captureScreenshot bool) (string, error) {
@@ -217,6 +210,14 @@ func (n *NDIntegration) getDesktopContextGuarded(captureScreenshot bool, permit 
 }
 
 func (n *NDIntegration) sendDesktopContext(captureScreenshot bool, silent bool) neuro.ExecutionResult {
+	return n.deliverDesktopContext(captureScreenshot, silent, false)
+}
+
+func (n *NDIntegration) sendAutomaticDesktopContext(captureScreenshot bool) neuro.ExecutionResult {
+	return n.deliverDesktopContext(captureScreenshot, true, true)
+}
+
+func (n *NDIntegration) deliverDesktopContext(captureScreenshot bool, silent bool, automatic bool) neuro.ExecutionResult {
 	permit, err := n.observationPermit(CmdSendDesktopContext)
 	if err != nil {
 		return neuro.NewFailureResult(err.Error())
@@ -229,10 +230,19 @@ func (n *NDIntegration) sendDesktopContext(captureScreenshot bool, silent bool) 
 	if err := permit.check(); err != nil {
 		return neuro.NewFailureResult(err.Error())
 	}
-	if err := n.client.SendContext(message, silent); err != nil {
+	if automatic {
+		sent, err := n.contextDelivery.sendAutomatic(message, permit.check, func(message string) error {
+			return n.client.SendContext(message, true)
+		})
+		if err != nil {
+			return neuro.NewFailureResult(fmt.Sprintf("Failed to send context: %v", err))
+		}
+		if !sent {
+			return neuro.NewSuccessResult("Desktop context unchanged")
+		}
+	} else if err := n.client.SendContext(boundedContextMessage(message), silent); err != nil {
 		return neuro.NewFailureResult(fmt.Sprintf("Failed to send context: %v", err))
 	}
-
 	return neuro.NewSuccessResult("Desktop context sent")
 }
 
@@ -251,7 +261,7 @@ func (n *NDIntegration) startContextLoop() {
 		for {
 			select {
 			case <-ticker.C:
-				result := n.sendDesktopContext(captureScreenshot, true)
+				result := n.sendAutomaticDesktopContext(captureScreenshot)
 				if !result.Successful {
 					log.Printf("Desktop context loop send failed: %s", result.Message)
 				}

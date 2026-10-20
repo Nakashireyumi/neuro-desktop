@@ -182,34 +182,11 @@ func (n *NDIntegration) handleGracefulShutdown(data json.RawMessage) {
 		return
 	}
 
-	log.Println("Graceful shutdown requested")
-
-	resp, err := n.sendToExecutor(IPCCommand{
-		Type: CmdShutdownGracefully,
-	})
-	if err != nil || !resp.Success {
-		log.Printf("Warning: executor graceful shutdown failed: %v", err)
-	}
-
-	if err := n.client.SendShutdownReady(); err != nil {
-		log.Printf("Failed to send shutdown/ready: %v", err)
-	}
-
-	n.markDone()
+	n.shutdownFromBackend(CmdShutdownGracefully)
 }
 
 func (n *NDIntegration) handleImmediateShutdown(_ json.RawMessage) {
-	log.Println("Immediate shutdown requested")
-
-	_, _ = n.sendToExecutor(IPCCommand{
-		Type: CmdShutdownImmediately,
-	})
-
-	if err := n.client.SendShutdownReady(); err != nil {
-		log.Printf("Failed to send shutdown/ready: %v", err)
-	}
-
-	n.markDone()
+	n.shutdownFromBackend(CmdShutdownImmediately)
 }
 
 type CatalogIndex struct {
@@ -288,12 +265,16 @@ func (n *NDIntegration) listCatalogItems() neuro.ExecutionResult {
 		return neuro.NewSuccessResult("Catalog is empty")
 	}
 
-	lines := make([]string, 0, len(index.Items))
+	state, stateErr := loadExtensionState(extensionStatePath())
+	lines := []string{"Catalog items:"}
 	for _, item := range index.Items {
-		lines = append(lines, fmt.Sprintf("%s: %s", item.Name, item.Description))
+		lines = append(lines, n.catalogSummaryLine(item, state, stateErr))
+		if len(lines)-1 >= modelCatalogResultLimit {
+			break
+		}
 	}
-
-	return neuro.NewSuccessResult("Catalog items -> " + strings.Join(lines, " | "))
+	lines = append(lines, fmt.Sprintf("Showing %d of %d. Use find_catalog_items to narrow the list or get_catalog_item with an item_id for details.", len(lines)-1, len(index.Items)))
+	return neuro.NewSuccessResult(boundedContextMessage(strings.Join(lines, "\n")))
 }
 
 func (n *NDIntegration) findCatalogItems(query string, limit int) neuro.ExecutionResult {
@@ -305,8 +286,8 @@ func (n *NDIntegration) findCatalogItems(query string, limit int) neuro.Executio
 	if limit <= 0 {
 		limit = 5
 	}
-	if limit > 20 {
-		limit = 20
+	if limit > modelCatalogResultLimit {
+		limit = modelCatalogResultLimit
 	}
 
 	needle := strings.ToLower(strings.TrimSpace(query))
@@ -325,16 +306,16 @@ func (n *NDIntegration) findCatalogItems(query string, limit int) neuro.Executio
 	}
 
 	if len(matches) == 0 {
-		return neuro.NewSuccessResult(fmt.Sprintf("No catalog items found for query: %s", query))
+		return neuro.NewSuccessResult("No catalog items match. Try a shorter name or ID.")
 	}
 
-	lines := make([]string, 0, len(matches))
+	state, stateErr := loadExtensionState(extensionStatePath())
+	lines := []string{"Catalog search:"}
 	for _, item := range matches {
-		item = catalogPresentationItem(item, false)
-		lines = append(lines, fmt.Sprintf("%s (%s): %s", item.ID, item.Name, item.Description))
+		lines = append(lines, n.catalogSummaryLine(item, state, stateErr))
 	}
-
-	return neuro.NewSuccessResult("Catalog search -> " + strings.Join(lines, " | "))
+	lines = append(lines, "Use get_catalog_item with an item_id for details; new capabilities need approval.")
+	return neuro.NewSuccessResult(boundedContextMessage(strings.Join(lines, "\n")))
 }
 
 func (n *NDIntegration) getCatalogItem(itemID string) neuro.ExecutionResult {
@@ -355,30 +336,30 @@ func (n *NDIntegration) getCatalogItem(itemID string) neuro.ExecutionResult {
 		item = catalogPresentationItem(item, false)
 
 		parts := []string{
-			fmt.Sprintf("id=%s", item.ID),
-			fmt.Sprintf("name=%s", item.Name),
-			fmt.Sprintf("description=%s", item.Description),
+			fmt.Sprintf("id=%s", contextField(item.ID, 64)),
+			fmt.Sprintf("name=%s", contextField(item.Name, 96)),
+			fmt.Sprintf("description=%s", contextField(item.Description, 600)),
 		}
 		if item.Type != "" {
-			parts = append(parts, fmt.Sprintf("type=%s", item.Type))
+			parts = append(parts, fmt.Sprintf("type=%s", contextField(item.Type, 48)))
 		}
 		if item.Repository != "" {
-			parts = append(parts, fmt.Sprintf("repository=%s", item.Repository))
+			parts = append(parts, fmt.Sprintf("repository=%s", contextField(item.Repository, 300)))
 		}
 		if item.Homepage != "" {
-			parts = append(parts, fmt.Sprintf("homepage=%s", item.Homepage))
+			parts = append(parts, fmt.Sprintf("homepage=%s", contextField(item.Homepage, 300)))
 		}
 		if len(item.Tags) > 0 {
-			parts = append(parts, fmt.Sprintf("tags=%s", strings.Join(item.Tags, ",")))
+			parts = append(parts, fmt.Sprintf("tags=%s", contextField(strings.Join(item.Tags, ","), 200)))
 		}
 		if len(item.LaunchHints) > 0 {
-			parts = append(parts, fmt.Sprintf("launch_hints=%s", strings.Join(item.LaunchHints, ",")))
+			parts = append(parts, fmt.Sprintf("launch_hints=%s", contextField(strings.Join(item.LaunchHints, ","), 300)))
 		}
 
-		return neuro.NewSuccessResult("Catalog item -> " + strings.Join(parts, " ; "))
+		return neuro.NewSuccessResult(boundedContextMessage("Catalog item -> " + strings.Join(parts, " ; ")))
 	}
 
-	return neuro.NewFailureResult(fmt.Sprintf("Catalog item not found: %s", itemID))
+	return neuro.NewFailureResult("Catalog item not found. Use find_catalog_items for an available item_id.")
 }
 
 func catalogItemMatches(item CatalogItem, needle string) bool {

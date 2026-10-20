@@ -9,165 +9,181 @@ import (
 	neuro "github.com/cassitly/neuro-integration-sdk"
 )
 
-// The guide exists for small models. A 2B-parameter model that is handed 50
-// action names and nothing else will pick the wrong one, invent parameters, or
-// forget that it must start a session before it can move. Two things fix most of
-// that, and both live here:
-//
-//   - one plain-text cheat sheet (this file), available as the `desktop_guide`
-//     action and pushed once as context after startup,
-//   - error messages that name the scope, the fix, and the next action to call
-//     (see policyDenialMessage and rateLimitDenial).
-//
-// The rule of thumb for the wording: two sentences or fewer per action, the
-// exact parameter names, one example, and an explicit order of operations.
-
-// CmdDesktopGuide is the "tell me how to use you" action.
-const guideActionHelp = "Returns a short instruction sheet for using Neuro Desktop: which actions exist, in what order to call them, and what each permission scope allows"
-
-// guideActionSpecs is always registered: it is the cheapest way to make a weak
-// model behave, and it costs one action slot.
+// Detailed instructions are requested by topic instead of consuming startup
+// context. Names in this guide refer to the public action surface, not IPC.
 func guideActionSpecs() []actionSpec {
-	return []actionSpec{
-		{
-			Name:        CmdDesktopGuide,
-			Description: guideActionHelp + ". Call this first if you are unsure which action to use, or after a refusal.",
-			Schema: neuro.WrapSchema(map[string]interface{}{
-				"topic": map[string]interface{}{
-					"type":        "string",
-					"enum":        []interface{}{"all", "desktop", "games", "shell", "safety"},
-					"description": "Which part of the guide to return (default all)",
-				},
-			}, nil),
-		},
+	return []actionSpec{{
+		Name:        CmdDesktopGuide,
+		Description: "Get a short overview or help with desktop controls, scripts, games, shell commands, or permissions. Call this first when unsure which action or parameter to use.",
+		Schema: neuro.WrapSchema(map[string]interface{}{
+			"topic": map[string]interface{}{
+				"type":        "string",
+				"enum":        []interface{}{"overview", "desktop", "script", "games", "shell", "safety", "all"},
+				"description": "Help topic (default overview); all returns every section",
+			},
+		}, nil),
+	}}
+}
+
+// Use the actual registration when connected. Before registration, derive the
+// same mode selection for local previews without claiming every action exists.
+func (n *NDIntegration) guideActions() map[CommandType]bool {
+	available := map[CommandType]bool{}
+	if n != nil {
+		if names := n.registeredActionNames(); len(names) > 0 {
+			for _, name := range names {
+				available[CommandType(name)] = true
+			}
+			return available
+		}
 	}
+	actionModeMu.Lock()
+	high, low, games := RegisterHLActionsOnStartup, RegisterLLActionsOnStartup, RegisterGameActionsOnStartup
+	actionModeMu.Unlock()
+	specs := alwaysRegisteredSpecs()
+	if high {
+		specs = append(specs, HLActionSpecs...)
+	}
+	if low {
+		specs = append(specs, LLActionSpecs...)
+	}
+	if games {
+		specs = append(specs, gameActionSpecs()...)
+	}
+	for _, spec := range specs {
+		available[spec.Name] = true
+	}
+	return available
 }
 
 func (n *NDIntegration) desktopGuide(topic string) neuro.ExecutionResult {
 	topic = strings.ToLower(strings.TrimSpace(topic))
 	if topic == "" {
-		topic = "all"
+		topic = "overview"
 	}
-
+	available := n.guideActions()
 	sections := map[string]string{
-		"desktop": desktopGuideSection(),
-		"games":   gameGuideSection(n),
-		"shell":   shellGuideSection(),
-		"safety":  safetyGuideSection(n),
+		"overview": n.startupGuide(),
+		"desktop":  desktopGuideSection(available),
+		"script":   desktopScriptSection(available[CmdRunScript]),
+		"games":    gameGuideSection(n, available),
+		"shell":    shellGuideSection(),
+		"safety":   safetyGuideSection(n),
 	}
-
 	if topic == "all" {
-		order := []string{"desktop", "games", "shell", "safety"}
-		parts := make([]string, 0, len(order))
-		for _, key := range order {
-			parts = append(parts, sections[key])
-		}
-		return neuro.NewSuccessResult(strings.Join(parts, "\n\n"))
+		return neuro.NewSuccessResult(boundedContextMessage(allGuideSections(available)))
 	}
-
-	section, ok := sections[topic]
-	if !ok {
-		keys := make([]string, 0, len(sections))
-		for key := range sections {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		return neuro.NewFailureResult(fmt.Sprintf(
-			"Unknown guide topic %q. Use one of: all, %s.", topic, strings.Join(keys, ", ")))
+	if section, ok := sections[topic]; ok {
+		return neuro.NewSuccessResult(boundedText(section, contextMessageMaxBytes))
 	}
-	return neuro.NewSuccessResult(section)
+	return neuro.NewFailureResult(fmt.Sprintf("Unknown guide topic %q. Use overview, desktop, script, games, shell, safety, or all.", contextField(topic, 80)))
 }
 
-func desktopGuideSection() string {
-	return strings.TrimSpace(`
-## Neuro Desktop — how to use it
-
-Rules that matter more than any single action:
-
-1. Call ONE action at a time and wait for its result before the next one.
-2. If an action is refused, the message says which permission scope is off. Do
-   not retry it; either ask Vedal to enable that scope, or use another action.
-3. Coordinates are screen pixels: x grows to the right, y grows DOWN.
-   (0,0) is the top-left corner. Read the screen size from get_status first if
-   you are unsure.
-4. Type text with type_text, press keys with key_press, combine keys with
-   key_combo (e.g. ctrl+c). Use run_script only when you need a sequence.
-
-Everyday actions:
-
-- get_status -> mouse position, screen size, active window, running processes.
-- move_mouse_to {x, y} -> moves the pointer (no click).
-- mouse_click {button: "left"|"right"|"middle"} -> clicks where the pointer is.
-- type_text {text} -> types into whatever has focus. Click the target first.
-- key_press {key} -> one key, e.g. "enter", "esc", "f1".
-- key_combo {keys: ["ctrl","c"]} -> keys pressed together.
-- run_script {script} -> several lines at once; see the script section below.
-- desktop_guide -> this text.
-- reset_controls -> the escape hatch: clears queued inputs and releases every held key and button. Use it when something is stuck. It takes no parameters.
-- list_catalog_items / find_catalog_items -> extensions and plugins.
-- desktop_context -> what the desktop looks like right now (may include a screenshot).
-`)
+// "all" is an index with useful syntax, not a concatenated manual that silently
+// loses its later sections to truncation. Each named topic supplies the detail.
+func allGuideSections(available map[CommandType]bool) string {
+	sections := []string{
+		"## Desktop controls\nRequest get_desktop_context {} for fresh platform, screen, input availability, and application state. Use only registered controls. Coordinates start at top-left; y grows downward. Accepted work is queued; its outcome follows as a message.",
+	}
+	if available[CmdRunScript] {
+		sections = append(sections, "## Script syntax\nrun_script {script:\"MOVE 640 360\\nCLICK left\\nCOMBO ctrl c\"}. One command per line; quote text; only whole-line # comments. WAIT runs once in source order. Limits: 64 KiB, 512 pending instructions, 20-second estimated delay plus a cooperative deadline. Request topic script for all commands and queue options.")
+	} else {
+		sections = append(sections, "## Script syntax\nScript input is not registered in this mode. Request topic desktop for the available controls.")
+	}
+	if available[CmdGameStartSession] {
+		sections = append(sections, "## Games\nUse game_list_profiles, then game_start_session {profile_id}. Follow its control map with game_move, game_look, and game_action. game_observe requests state; game_end_session ends control. Dedicated integrations retain their input ownership.")
+	} else {
+		sections = append(sections, "## Games\nGame actions are not registered in this configuration.")
+	}
+	sections = append(sections,
+		"## Shell commands\nshell_command {command:\"echo hello\"} needs the shell scope and program allowlist. No chaining, pipes, or redirection. Its output follows as a message. A timeout cannot undo side effects.",
+		"## Permissions and recovery\nVedal approves permissions. request_permission {scope,reason,minutes} asks only for requestable scopes. Wait for approval; do not repeat denials. reset_controls {} clears queued input and releases held controls, including while paused. It cannot undo completed input.",
+	)
+	return strings.Join(sections, "\n\n")
 }
 
-// desktopScriptSection documents the script language next to the guide so a weak
-// model that only reads one action's output still learns the syntax.
-func desktopScriptSection() string {
-	return strings.TrimSpace(`
-Script lines (run_script, one per line):
-
-TYPE "hello world"       type text
-PRESS enter              tap a key
-HOLD shift               hold a key down
-RELEASE shift            let it go
-HOLD_FOR w 1.5           hold for N seconds (max 30) — game movement
-COMBO ctrl shift s       keys together
-SHORTCUT ctrl c          same as COMBO
-RELEASE_ALL              release everything (use when unsure)
-MOVE 640 360             move the pointer
-MOVE_REL 40 -10          move relative to now (mouse-look)
-CLICK left               click a button
-WAIT 0.5                 pause
-SHELL "ls -la"           run a command line (needs the shell scope)
-LAUNCH notepad           start a program (needs the system scope)
-`)
-}
-
-func gameGuideSection(n *NDIntegration) string {
+func desktopGuideSection(available map[CommandType]bool) string {
 	lines := []string{
-		"## Playing a game",
-		"",
-		"Order of operations: game_detect -> game_start_session -> game_move / game_look /",
-		"game_action / game_press -> game_status when unsure -> game_end_session.",
-		"",
-		"- game_list_profiles -> the games configured here, with their keybinds.",
-		"- game_detect -> which game is running right now (uses the window title and processes).",
-		"- game_start_session {profile_id, mode?} -> begin playing; you then receive the",
-		"  control map (which key is forward, jump, ...). mode may be auto, nd, external",
-		"  or hybrid.",
-		"- game_move {direction: \"forward\"|\"back\"|\"left\"|\"right\"|\"jump\"|\"sneak\"|\"sprint\",",
-		"  seconds?} -> holds that direction like a player would (never leaves a key down).",
-		"- game_look {dx, dy} -> turns the camera; positive dx turns right, positive dy looks down.",
-		"- game_action {action: \"attack\"|\"use\"|\"inventory\"|...} -> one named action from",
-		"  the profile.",
-		"- game_press {keys: [\"e\"]} -> raw keys; only allowed when the profile sets allow_raw_keys.",
-		"- game_observe -> a screenshot plus a vision summary, delivered as context. Use it",
-		"  when you need to know what is on screen.",
-		"- game_release_all -> drop every key/button immediately. Use it when something",
-		"  seems stuck.",
-		"- game_end_session -> stop playing.",
-		"",
-		"If the game has its own dedicated integration connected through the relay, game_move",
-		"answers that input is delegated: do not try to move, use that integration's actions.",
+		"## Desktop controls",
+		"Use only registered actions. Coordinates are screen pixels: (0,0) is top-left; x grows right, y grows down.",
+		"An accepted result means queued, not completed. Wait for a requested observation before deciding from screen state. Use a short script when input order matters.",
+	}
+	for _, item := range []struct {
+		name CommandType
+		help string
+	}{
+		{CmdGetDesktopContext, "get_desktop_context {}: request current platform, input availability, screen geometry, and application context. The text snapshot follows as a message."},
+		{CmdMouseMove, "move_mouse_to {x,y}: move the pointer; mouse_click {button:\"left\"} clicks its current location."},
+		{CmdTypeText, "type_text {text}: type into the focused control. Focus the target first."},
+		{CmdKeyPress, "key_press {key:\"enter\"}: tap one key."},
+		{CmdRunScript, "run_script {script:\"COMBO ctrl c\"}: combine keys or run a short sequence. Request desktop_guide {topic:\"script\"} for syntax."},
+		{EnableLLControls, "enable_low_level_controls {}: switch to direct mouse, keyboard, and script controls."},
+		{DisableLLControls, "disable_low_level_controls {}: switch to the high-level desktop actions already described in their schemas."},
+	} {
+		if available[item.name] {
+			lines = append(lines, "- "+item.help)
+		}
+	}
+	lines = append(lines, "- reset_controls {}: clear queued input and release held keys/buttons; its outcome follows as a message.")
+	return strings.Join(lines, "\n")
+}
+
+func desktopScriptSection(available bool) string {
+	if !available {
+		return "## Script syntax\nScript input is not registered in this mode. Use the available desktop controls; request the desktop help topic to see the current mode."
+	}
+	return strings.TrimSpace(`
+## Script syntax
+
+Call run_script with a script string. One command per line; blank lines and whole-line # comments are ignored. Inline comments are not supported. Quote literal text and paths, escaping backslashes when needed.
+
+`) + "\n```text\n" + strings.TrimSpace(`
+TYPE "hello world"
+PRESS enter
+HOLD shift
+RELEASE shift
+HOLD_FOR w 0.5
+COMBO ctrl c
+RELEASE_ALL
+MOVE 640 360
+CLICK left
+MOVE_REL 40 -10
+WAIT 0.2
+`) + "\n```\n" + strings.TrimSpace(`
+SHORTCUT is an alias for COMBO. MOVE_N and CLICK_N use 0..1 coordinates. CLICK takes only an optional button; move first for absolute coordinates.
+
+The entire script is checked before any input runs. Limits: 64 KiB UTF-8, 512 pending instructions, 20 seconds total estimated delay and a cooperative execution deadline. WAIT pauses once in source order. Runtime failures clear pending work and release held input; earlier OS side effects remain.
+
+SHELL "echo hello" needs the shell scope and allowlist. LAUNCH opens a path/URL through the OS opener and needs the system scope. Neither runs while parsing. No loops, variables, conditions, or inline comments. Use execute_now:false with clear_after:false only when deliberately retaining a queue; execute_queue drains it and clear_action_queue discards it.
+`)
+}
+
+func gameGuideSection(n *NDIntegration, available map[CommandType]bool) string {
+	if !available[CmdGameStartSession] {
+		return "## Games\nGame actions are not registered in this configuration. General desktop controls remain available according to their current mode and permissions."
+	}
+	lines := []string{
+		"## Games",
+		"Use game_list_profiles for configured IDs. game_detect inspects the current window/processes; game_start_session {profile_id,mode?} selects a game and sends its control map.",
+		"- game_move {direction,seconds?}: forward, back, left, right, up, or down, using the profile's bindings.",
+		"- game_look {dx,dy}: relative mouse-look; positive dx goes right and positive dy goes down.",
+		"- game_action {action}: a named action such as jump or attack from the control map. game_press {keys:[\"e\"]} requires allow_raw_keys in the profile.",
+		"- game_status: current session and owner. game_observe: window/game state and an approved vision description when configured; the text follows as a message.",
+		"- game_end_session stops the session. game_release_all releases held input. Accepted work reports failures as messages.",
+		"When input belongs to a dedicated integration, use its registered actions. Neuro Desktop must not compete with it. A session does not grant permissions.",
 	}
 	if n != nil && n.games != nil {
 		profiles := n.games.Profiles()
-		if len(profiles) > 0 {
-			ids := make([]string, 0, len(profiles))
-			for _, profile := range profiles {
-				ids = append(ids, profile.ID)
-			}
-			sort.Strings(ids)
-			lines = append(lines, "", "Configured profiles: "+strings.Join(ids, ", ")+".")
+		ids := make([]string, 0, len(profiles))
+		for _, profile := range profiles {
+			ids = append(ids, contextField(profile.ID, 48))
+		}
+		sort.Strings(ids)
+		if len(ids) > 12 {
+			ids = append(ids[:12], "… (use game_list_profiles for more)")
+		}
+		if len(ids) > 0 {
+			lines = append(lines, "Configured profiles: "+strings.Join(ids, ", "))
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -175,75 +191,58 @@ func gameGuideSection(n *NDIntegration) string {
 
 func shellGuideSection() string {
 	return strings.TrimSpace(`
-## Command line (shell_command)
+## Shell commands
 
-- shell_command {command} -> runs one command line and returns its exit code and output.
-- On a headless machine (no desktop), this is the main thing you can do; mouse and
-  keyboard actions will answer that there is no display.
-- Only programs on the operator's allowlist may run (NEURO_SHELL_ALLOWLIST). If the
-  answer says a program is not allowlisted, do not retry: ask Vedal, or use another
-  action.
-- Commands are killed after the timeout (default 20s, max 120s), and destructive
-  patterns (rm -rf /, mkfs, shutdown, curl | sh, sudo, ...) are always blocked.
-- Output is truncated, so prefer commands that print a summary, e.g. ls -1 | head.
+shell_command {command:"echo hello"} runs one approved command line on the controlled PC. Its output follows as a message after acceptance. Use this for command-line work, including on headless machines.
+
+The shell scope and effective program allowlist must allow it. Chaining, pipes, and shell redirections are refused. Prefer a program's own summary/limit options. timeout defaults to 20 seconds and is capped at 120; the executor transport may time out sooner. A timeout does not prove a command had no side effects; inspect before retrying.
+
+If refused, correct a malformed argument once or request a requestable permission. Do not repeat a permission denial. Vedal controls the allowlist; this action cannot widen it.
 `)
 }
 
 func safetyGuideSection(n *NDIntegration) string {
 	lines := []string{
-		"## Safety and permissions",
-		"",
-		"Every action passes a gate before it runs:",
-		"",
-		"1. Pause / kill switch — the operator can stop everything instantly.",
-		"2. Hard deny list — some actions are disabled outside the dashboard.",
-		"3. Permission scopes — input, game, shell, filesystem, process, network, system, vision.",
-		"4. Rate limit — a scope may be budgeted to N actions per minute.",
-		"5. Shell firewall — programs must be allowlisted and match no blocked pattern.",
-		"",
-		"Scopes that are commonly off: system (shutdown, lock, launching programs),",
-		"shell (command lines), filesystem (extension install). If an action is refused with a",
-		"scope name, tell Vedal which scope to enable instead of retrying.",
+		"## Permissions and recovery",
+		"Pause/kill switches, denied actions, permission scopes, rate limits, and per-extension grants apply before work runs. Acceptance does not grant permission; queued work is checked again.",
+		"Scope examples: input for mouse/keyboard; vision for desktop metadata; game for game controls; extensions plus per-item delegation for extension management; shell for commands; system for launching or locking.",
+		"A refused action explains the reason. Use another allowed action, or request_permission {scope,reason,minutes} if requests for that scope are enabled. Vedal makes the approval decision. Wait for it; never retry a pending request.",
+		"reset_controls clears queued input and releases held keys/buttons, even while paused. It reports partial failure honestly; it cannot undo input or shell side effects that already happened.",
 	}
-	if n != nil {
+	if n != nil && n.stop != nil {
 		if reason := n.stop.blockReason(string(CmdMouseMove)); reason != "" {
-			lines = append(lines, "", "RIGHT NOW: "+reason)
-		}
-		if n.stop.fileKillActive() {
-			lines = append(lines, "", "The kill switch file is present, so only safety actions run.")
+			lines = append(lines, "Current stop state: "+contextField(reason, 160))
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-// startupGuide is the short version pushed as context after registering actions.
-// It is deliberately small: a weak model reads the first few lines and little
-// else, so the first few lines are the important ones.
 func (n *NDIntegration) startupGuide() string {
 	return strings.TrimSpace(`
-## Neuro Desktop is connected
+## Neuro Desktop connected
 
-You can control this desktop. The essentials:
+Use only the registered actions and their exact parameters. Request get_desktop_context {} for current platform, screen, input availability, and application state; its text snapshot follows as a message. This connection does not prove an executor or desktop input is ready.
 
-- Work one action at a time; wait for each result.
-- Mouse: move_mouse_to {x,y} then mouse_click. y grows downward.
-- Keyboard: type_text, key_press, key_combo {keys:[...]}.
-- Games: game_detect, then game_start_session, then game_move / game_look / game_action.
-- Command line: shell_command {command} (only if the shell scope and allowlist allow it).
-- Unsure? Call desktop_guide for the full instruction sheet, or get_status for the
-  current screen, window and processes.
-- A refusal names the permission scope that is off. Do not retry it.
-`) + "\n\n" + desktopScriptSection()
+An accepted result means work was queued, not completed. Use short ordered sequences; wait for requested observations before relying on screen state. Coordinates start at top-left, with y downward. A refusal explains the fix; do not repeat permission denials. Vedal approves permissions.
+
+If input is stuck, use reset_controls {}. For details, request desktop_guide with topic desktop, script, games, shell, or safety. Help is available on demand; no full manual is sent automatically.
+`)
 }
 
-// sendStartupGuide pushes the guide once per connection, silently.
 func (n *NDIntegration) sendStartupGuide() {
 	if !getEnvBool("NEURO_PROMPT_ASSIST", true) {
 		return
 	}
+	n.contextDelivery.mu.Lock()
+	defer n.contextDelivery.mu.Unlock()
+	if n.contextDelivery.briefSent {
+		return
+	}
 	if err := n.client.SendContext(n.startupGuide(), true); err != nil {
 		log.Printf("Failed to send the startup guide: %v", err)
+		return
 	}
+	n.contextDelivery.briefSent = true
 }
 
 // escapeHatchSpecs is the one action a model can always reach for when it is
@@ -252,7 +251,7 @@ func escapeHatchSpecs() []actionSpec {
 	return []actionSpec{
 		{
 			Name:        CmdResetControls,
-			Description: "Escape hatch: use this when something is stuck, a queued input keeps running, or you are unsure what to do. It clears queued inputs that have not run yet, releases every held key and mouse button, and reports the result. It takes no parameters and starts nothing. Example: {}",
+			Description: "Clear queued input and release held keys and mouse buttons, including while paused. Reports partial failure; completed effects cannot be undone. Example: {}",
 			Schema:      nil,
 		},
 	}

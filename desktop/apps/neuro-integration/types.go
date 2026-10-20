@@ -29,6 +29,7 @@ type NDIntegration struct {
 	// executorQueue tracks permissions of retained executor instructions. Only
 	// ipcMu reads/writes it, alongside serialized transport dispatch.
 	executorQueue   scriptPermissions
+	contextDelivery contextDeliveryState
 	contextStopChan chan struct{}
 	contextStopOnce sync.Once
 

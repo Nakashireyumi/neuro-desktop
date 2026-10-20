@@ -34,8 +34,8 @@ func TestListCatalogItemsSuccess(t *testing.T) {
 		t.Fatalf("expected success, got failure: %s", result.Message)
 	}
 
-	if !strings.Contains(result.Message, "Alpha: First") {
-		t.Fatalf("expected catalog summary in result, got: %s", result.Message)
+	if !strings.Contains(result.Message, "- a (Alpha): First") {
+		t.Fatalf("expected catalog summary with usable id first, got: %s", result.Message)
 	}
 }
 

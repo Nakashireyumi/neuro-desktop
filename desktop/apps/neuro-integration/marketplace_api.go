@@ -225,8 +225,14 @@ func (n *NDIntegration) marketplaceSearch(query string) neuro.ExecutionResult {
 	lines := []string{}
 	for _, item := range index.Items {
 		if needle == "" || strings.Contains(strings.ToLower(item.ID+" "+item.Name+" "+item.Description+" "+strings.Join(item.GameIDs, " ")), needle) {
-			lines = append(lines, fmt.Sprintf("%s (%s): %s. Setup required; source %s at %s.", item.ID, item.Name, item.Description, item.Repository, item.SourceCommit))
-			if len(lines) >= 12 {
+			setup := "manual setup required"
+			if item.License.Status != "standard" {
+				setup += "; link-only, license review needed"
+			} else {
+				setup += "; source staging needs management approval"
+			}
+			lines = append(lines, fmt.Sprintf("- %s (%s): %s [%s]", contextField(item.ID, 64), contextField(item.Name, 64), contextField(item.Description, 120), setup))
+			if len(lines) >= modelCatalogResultLimit {
 				break
 			}
 		}
@@ -234,5 +240,6 @@ func (n *NDIntegration) marketplaceSearch(query string) neuro.ExecutionResult {
 	if len(lines) == 0 {
 		return neuro.NewSuccessResult("No marketplace listings match. General desktop controls remain available.")
 	}
-	return neuro.NewSuccessResult(strings.Join(lines, "\n"))
+	lines = append(lines, "Use the Marketplace setup view for source pins and prerequisites. Staging never starts an integration.")
+	return neuro.NewSuccessResult(boundedContextMessage(strings.Join(lines, "\n")))
 }

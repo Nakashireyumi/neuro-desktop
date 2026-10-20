@@ -216,9 +216,13 @@ var HLActionSpecs = []actionSpec{
 		Description: "Open the screenshot / snipping overlay",
 		Schema:      nil,
 	},
+}
+
+// Desktop context is available in every input mode.
+var DesktopContextActionSpecs = []actionSpec{
 	{
 		Name:        CmdGetDesktopContext,
-		Description: "Collect current desktop context snapshot (window/process/action history + optional screenshot path)",
+		Description: "Request a desktop context snapshot (platform, input availability, screen, active window, samples, optional vision summary). The snapshot follows as a message.",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"capture_screenshot": map[string]interface{}{
 				"type":        "boolean",
@@ -229,7 +233,7 @@ var HLActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdSendDesktopContext,
-		Description: "Collect desktop context and send it to Neuro as a context message",
+		Description: "Request desktop context and send it to Neuro as a context message, where it remains available for later decisions.",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"capture_screenshot": map[string]interface{}{
 				"type":        "boolean",
@@ -375,7 +379,8 @@ var ManagementActionSpecs = []actionSpec{
 // cheapest way to make a small model behave, and request_permission is how
 // Neuro asks the operator for a permission it does not have.
 func alwaysRegisteredSpecs() []actionSpec {
-	specs := append([]actionSpec{}, ShellActionSpecs...)
+	specs := append([]actionSpec{}, DesktopContextActionSpecs...)
+	specs = append(specs, ShellActionSpecs...)
 	specs = append(specs, ManagementActionSpecs...)
 	specs = append(specs, guideActionSpecs()...)
 	specs = append(specs, escapeHatchSpecs()...)
@@ -481,6 +486,7 @@ var LLActionSpecs = []actionSpec{
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"script": map[string]interface{}{
 				"type":        "string",
+				"maxLength":   65536,
 				"description": "Action script body",
 			},
 			"execute_now": map[string]interface{}{
@@ -568,6 +574,9 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 	if reason := a.missingParamsReason(params); reason != "" {
 		return nil, neuro.NewFailureResult(reason)
 	}
+	if reason := validateActionParameters(a.spec, params); reason != "" {
+		return nil, neuro.NewFailureResult(reason)
+	}
 
 	executeNow := getBoolParam(params, "execute_now", true)
 	clearAfter := getBoolParam(params, "clear_after", true)
@@ -628,17 +637,18 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 			return nil, neuro.NewFailureResult("item_id is required")
 		}
 		return nil, a.integration.getCatalogItem(itemID)
-	case CmdGetDesktopContext:
+	case CmdGetDesktopContext, CmdSendDesktopContext:
 		capture := getBoolParam(params, "capture_screenshot", false)
-		contextMessage, err := a.integration.getDesktopContext(capture)
+		permit, err := a.integration.observationPermit(a.spec.Name)
+		if err == nil && capture {
+			err = permit.requireVisionService()
+		}
 		if err != nil {
 			return nil, neuro.NewFailureResult(err.Error())
 		}
-		return nil, neuro.NewSuccessResult(contextMessage)
-	case CmdSendDesktopContext:
-		capture := getBoolParam(params, "capture_screenshot", false)
-		silent := getBoolParam(params, "silent", true)
-		return nil, a.integration.sendDesktopContext(capture, silent)
+		return pendingWork{desktopContext: &desktopContextRequest{
+			capture: capture, silent: getBoolParam(params, "silent", true), permit: permit,
+		}}, neuro.NewSuccessResult("accepted; the desktop context follows when ready")
 	case CmdListInstalledExts:
 		return nil, a.integration.listInstalledExtensions()
 	case CmdMarketplaceSearch:
@@ -761,16 +771,22 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 	return pendingWork{cmd: &cmd}, neuro.NewSuccessResult("accepted")
 }
 
+type desktopContextRequest struct {
+	capture bool
+	silent  bool
+	permit  *observationPermit
+}
+
 type pendingWork struct {
-	cmd          *IPCCommand
-	scriptIntent string
+	desktopContext *desktopContextRequest
+	game           *gameActionRequest
+	cmd            *IPCCommand
+	scriptIntent   string
 	// extension is a slow extension operation (an install) run after the ack.
 	extension *extensionJob
 	// gameCommands is a batch of input primitives produced by one game action
 	// (e.g. game_move with steps=3 holds a key three times, in order).
 	gameCommands []IPCCommand
-	// gameObserve is the slow screenshot + vision path for game_observe.
-	gameObserve *gameObserveRequest
 	// gameActionName is the Neuro action that produced this work.
 	gameActionName string
 	// reset is the escape hatch (reset_controls): clear queued inputs, then
@@ -829,32 +845,39 @@ func (a *IPCProxyAction) Execute(state interface{}) {
 		return
 	}
 
+	if err := a.executionAllowed(); err != nil {
+		a.reportOutcome(neuro.NewFailureResult(err.Error()))
+		return
+	}
 	var result neuro.ExecutionResult
 	switch {
+	case work.desktopContext != nil:
+		request := work.desktopContext
+		message, err := a.integration.getDesktopContextGuarded(request.capture, request.permit)
+		if err == nil {
+			err = request.permit.check()
+		}
+		if err != nil {
+			a.reportOutcome(neuro.NewFailureResult(err.Error()))
+			return
+		}
+		if a.integration.client != nil {
+			_ = a.integration.client.SendContext(boundedContextMessage(message), request.silent)
+		}
+		return
+	case work.game != nil:
+		result = a.executeGameAction(work.game)
+		a.reportOutcome(result)
+		return
 	case work.extension != nil:
 		a.integration.runExtensionJob(work.extension)
-		return
-	case work.gameObserve != nil:
-		// Slow path: the action was already acknowledged, the observation is
-		// delivered to Neuro as context when it is ready.
-		a.integration.runGameObserve(work.gameObserve)
 		return
 	case len(work.gameCommands) > 0:
 		result = a.executeGameCommands(work)
 	case work.scriptIntent != "":
 		result = a.integration.executeScriptIntent(work.scriptIntent)
 	case work.reset:
-		// The model cannot see the outcome of an accepted action, so the escape
-		// hatch always reports what happened, success or not.
 		result = a.integration.resetControls()
-		if !result.Successful {
-			a.integration.stats.noteFailure(a.GetName())
-		}
-		_ = a.integration.client.SendContext(
-			fmt.Sprintf("## %s\n\n%s", a.GetName(), result.Message),
-			true,
-		)
-		return
 	case work.cmd != nil:
 		resp, err := a.integration.sendToExecutorForAction(*work.cmd, a.GetName())
 		if err != nil {
@@ -866,39 +889,71 @@ func (a *IPCProxyAction) Execute(state interface{}) {
 			}
 			result = neuro.NewFailureResult(message)
 		} else if output, ok := resp.Data["output"].(string); ok && strings.TrimSpace(output) != "" {
-			// Long-running commands (shell_command, taskkill via run_script, ...)
-			// finish after the action result was acknowledged. The transcript is
-			// the whole point of those actions, so send it back as context
-			// instead of dropping it.
-			_ = a.integration.client.SendContext(
-				fmt.Sprintf("## %s output\n\n```text\n%s\n```",
-					a.GetName(), strings.TrimSpace(output)),
-				true,
-			)
-			return
+			if err := a.executionAllowed(); err != nil {
+				result = neuro.NewFailureResult(err.Error())
+			} else {
+				result = neuro.NewSuccessResult("Output:\n```text\n" + boundedText(strings.TrimSpace(output), 1600) + "\n```")
+			}
 		} else {
-			return
+			result = neuro.NewSuccessResult("Command completed")
 		}
+
 	default:
 		return
 	}
 
-	// Execution finished after action/result was already sent. Tell Neuro via context.
+	// The action result acknowledged admission, so deliver the actual outcome.
+	a.reportOutcome(result)
+}
+
+// Recheck current authority after waiting in the serial execution queue.
+func (a *IPCProxyAction) executionAllowed() error {
+	select {
+	case <-a.integration.done:
+		return fmt.Errorf("Neuro Desktop is shutting down")
+	default:
+	}
+	if reason := a.integration.stop.blockReason(a.GetName()); reason != "" {
+		return fmt.Errorf("%s", reason)
+	}
+	if policy := a.integration.policy(); policy != nil && !policy.IsAllowed(a.GetName()) {
+		return fmt.Errorf("%s", policyDenialMessage(a.GetName(), policy))
+	}
+	return nil
+}
+
+func (a *IPCProxyAction) reportOutcome(result neuro.ExecutionResult) {
 	if !result.Successful {
 		a.integration.stats.noteFailure(a.GetName())
-		_ = a.integration.client.SendContext(
-			fmt.Sprintf("## Action execution failed\n\n- action: `%s`\n- error: %s", a.GetName(), result.Message),
-			true,
-		)
 	}
+	if a.integration.client == nil {
+		return
+	}
+	status := "completed"
+	if !result.Successful {
+		status = "failed"
+	}
+	_ = a.integration.client.SendContext(boundedContextMessage(fmt.Sprintf(
+		"## %s %s\n\n%s", a.GetName(), status, result.Message)), true)
 }
 
 // executeGameCommands runs the input primitives of one game action in order and
 // releases everything if any of them fails, so a half-applied input cannot
 // leave a key stuck down.
 func (a *IPCProxyAction) executeGameCommands(work pendingWork) neuro.ExecutionResult {
+	session := a.integration.games.Session()
+	guard := func() error {
+		if err := a.executionAllowed(); err != nil {
+			return err
+		}
+		current := a.integration.games.Session()
+		if session == nil || current == nil || session.ProfileID != current.ProfileID || !session.StartedAt.Equal(current.StartedAt) {
+			return fmt.Errorf("game session changed; request a new game action")
+		}
+		return inputAllowed(a.integration.currentProfile(), current, work.gameActionName, a.integration.relay)
+	}
 	for _, cmd := range work.gameCommands {
-		resp, err := a.integration.sendToExecutorForAction(cmd, work.gameActionName)
+		resp, err := a.integration.sendToExecutorForAction(cmd, work.gameActionName, guard)
 		if err != nil {
 			a.integration.releaseAllInput()
 			return neuro.NewFailureResult(fmt.Sprintf("executor error: %v", err))

@@ -138,35 +138,17 @@ func (n *NDIntegration) Start() error {
 		}
 	}()
 
-	if err := n.client.SendContext(
-		"## Neuro Desktop ready\n\nYou can control the mouse, keyboard, and run scripts on the connected executor, and play games that have no integration of their own (see the `game_*` actions).",
-		true,
-	); err != nil {
-		log.Printf("Warning: failed to send initial context: %v", err)
-	}
-
-	content, contentPath, err := loadActionScriptDocumentation()
-	if err != nil {
-		log.Printf("Warning: failed to load action script documentation: %v", err)
-	} else {
-		log.Printf("Loaded action script documentation from %s", contentPath)
-		if err := n.client.SendContext(content, true); err != nil {
-			log.Printf("Warning: failed to send action script documentation: %v", err)
-		}
-	}
-
-	n.startContextLoop()
-
 	if err := n.registerActions(); err != nil {
 		return err
 	}
+	// Register before describing the surface. Detailed help is requested through
+	// desktop_guide; a working-directory manual is never injected automatically.
+	n.sendStartupGuide()
+	n.startContextLoop()
 	// Enabled MCP servers start in the background; their tools are added to
 	// Neuro as each one comes up.
 	go n.syncMCPServers()
 
-	// Last: a compact how-to-use-me sheet. Weak models rely on it, and it is
-	// silent so it does not disturb the conversation.
-	n.sendStartupGuide()
 	return nil
 }
 

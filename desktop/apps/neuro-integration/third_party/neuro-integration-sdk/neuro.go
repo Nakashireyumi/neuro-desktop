@@ -133,11 +133,33 @@ type Client struct {
 	errChan    chan error
 	closeChan  chan struct{}
 
+	// A fixed-size FIFO keeps validation/acknowledgement independent of slow
+	// execution. The shared slots include incoming, queued and running work.
+	admissionMu sync.Mutex
+	incoming    chan incomingWork
+	executions  chan executionWork
+	workSlots   chan struct{}
+	controls    chan func()
+	workersOnce sync.Once
+	workersDone chan struct{}
+
 	// State
 	connected bool
 	closed    bool
 
 	logger *log.Logger
+}
+
+const actionQueueCapacity = 32
+
+type incomingWork struct {
+	action *IncomingAction
+}
+
+type executionWork struct {
+	handler ActionHandler
+	state   interface{}
+	acked   chan bool
 }
 
 // NewClient creates a new Neuro SDK client
@@ -156,6 +178,11 @@ func NewClient(config ClientConfig) (*Client, error) {
 		actionChan:      make(chan IncomingAction, 16),
 		errChan:         make(chan error, 8),
 		closeChan:       make(chan struct{}),
+		incoming:        make(chan incomingWork, actionQueueCapacity),
+		executions:      make(chan executionWork, actionQueueCapacity),
+		workSlots:       make(chan struct{}, actionQueueCapacity),
+		controls:        make(chan func(), 8),
+		workersDone:     make(chan struct{}),
 		logger:          config.Logger,
 	}
 
@@ -206,9 +233,11 @@ func (c *Client) Connect() error {
 
 	c.conn = conn
 	c.connected = true
+	conn.SetReadLimit(1024 * 1024)
+	c.startActionWorkers()
 
 	// Start reader goroutine
-	go c.readLoop()
+	go c.readLoop(conn)
 
 	// CRITICAL: Unlock BEFORE calling Startup() to avoid deadlock
 	// Startup() calls send() which needs to acquire a read lock
@@ -228,7 +257,7 @@ func (c *Client) Connect() error {
 
 // Message Reading
 
-func (c *Client) readLoop() {
+func (c *Client) readLoop(conn *websocket.Conn) {
 	c.logger.Printf("Read loop started")
 	for {
 		select {
@@ -236,12 +265,13 @@ func (c *Client) readLoop() {
 			c.logger.Printf("Read loop stopping (close signal)")
 			return
 		default:
-			_, msgBytes, err := c.conn.ReadMessage()
+			_, msgBytes, err := conn.ReadMessage()
 			if err != nil {
 				if !c.isClosed() {
 					c.logger.Printf("Read error: %v", err)
-					c.errChan <- fmt.Errorf("read error: %w", err)
+					c.reportError(fmt.Errorf("read error: %w", err))
 				}
+				_ = c.Close()
 				return
 			}
 
@@ -276,13 +306,16 @@ func (c *Client) handleMessage(msgBytes []byte) error {
 			c.logger.Printf("Action channel full, dropping action: %s", action.Name)
 		}
 
-		// Handle action in goroutine to avoid blocking the read loop
-		go c.handleAction(action)
+		if !c.admit(incomingWork{action: &action}) {
+			if err := c.SendActionResult(action.ID, false, "Action queue is full or closing; retry after the pending actions finish."); err != nil {
+				c.reportError(err)
+			}
+		}
 
 	case "actions/reregister_all":
 		c.logger.Printf("Received reregister_all request")
 		// Resend all registered actions
-		go c.resendRegisteredActions()
+		c.admitControl(c.resendRegisteredActions)
 
 	default:
 		c.commandHandlersMu.RLock()
@@ -290,7 +323,8 @@ func (c *Client) handleMessage(msgBytes []byte) error {
 		c.commandHandlersMu.RUnlock()
 
 		if exists {
-			go handler(msg.Data)
+			data := append(json.RawMessage(nil), msg.Data...)
+			c.admitControl(func() { handler(data) })
 		} else {
 			c.logger.Printf("Unhandled command: %s", msg.Command)
 		}
@@ -299,7 +333,132 @@ func (c *Client) handleMessage(msgBytes []byte) error {
 	return nil
 }
 
+func (c *Client) reportError(err error) {
+	select {
+	case c.errChan <- err:
+	default:
+		c.logger.Printf("Error channel full: %v", err)
+	}
+}
+
+func (c *Client) admit(work incomingWork) bool {
+	c.admissionMu.Lock()
+	defer c.admissionMu.Unlock()
+	select {
+	case <-c.closeChan:
+		return false
+	default:
+	}
+	select {
+	case c.workSlots <- struct{}{}:
+	default:
+		return false
+	}
+	c.incoming <- work // Capacity is guaranteed by the shared slot reservation.
+	return true
+}
+
+func (c *Client) startActionWorkers() {
+	c.workersOnce.Do(func() {
+		go c.validationLoop()
+		go c.executionLoop()
+		go c.controlLoop()
+	})
+}
+
+// Control commands, including shutdown, bypass slow action execution. They use
+// one separate bounded worker so a flood cannot create arbitrary goroutines.
+func (c *Client) admitControl(command func()) {
+	c.admissionMu.Lock()
+	select {
+	case <-c.closeChan:
+		c.admissionMu.Unlock()
+		return
+	default:
+	}
+	select {
+	case c.controls <- command:
+		c.admissionMu.Unlock()
+	default:
+		c.admissionMu.Unlock()
+		c.reportError(errors.New("control queue is full; closing connection"))
+		_ = c.Close()
+	}
+}
+
+func (c *Client) controlLoop() {
+	for {
+		select {
+		case <-c.closeChan:
+			return
+		case command := <-c.controls:
+			select {
+			case <-c.closeChan:
+				return
+			default:
+				command()
+			}
+		}
+	}
+}
+
+func (c *Client) validationLoop() {
+	defer close(c.executions)
+	for {
+		select {
+		case <-c.closeChan:
+			// Close serializes with admission, so no later job can arrive.
+			for {
+				select {
+				case <-c.incoming:
+					<-c.workSlots
+				default:
+					return
+				}
+			}
+		case work := <-c.incoming:
+			select {
+			case <-c.closeChan:
+				<-c.workSlots
+				continue
+			default:
+			}
+			c.handleAction(*work.action)
+		}
+	}
+}
+
+func (c *Client) executionLoop() {
+	defer close(c.workersDone)
+	for work := range c.executions {
+		allowed := true
+		if work.acked != nil {
+			select {
+			case allowed = <-work.acked:
+			case <-c.closeChan:
+				allowed = false
+			}
+		}
+		select {
+		case <-c.closeChan:
+			allowed = false
+		default:
+		}
+		if allowed {
+			work.handler.Execute(work.state)
+		}
+		<-c.workSlots
+	}
+}
+
+// handleAction is called only by the validation worker, with one slot reserved.
 func (c *Client) handleAction(action IncomingAction) {
+	transferred := false
+	defer func() {
+		if !transferred {
+			<-c.workSlots
+		}
+	}()
 	c.actionsMu.RLock()
 	handler, exists := c.actions[action.Name]
 	c.actionsMu.RUnlock()
@@ -328,15 +487,19 @@ func (c *Client) handleAction(action IncomingAction) {
 
 	c.logger.Printf("Action validation result: success=%v, message=%s", result.Successful, result.Message)
 
-	// Always acknowledge the action with a result message.
-	if err := c.SendActionResult(action.ID, result.Successful, result.Message); err != nil {
-		c.logger.Printf("Failed to send action result: %v", err)
-	}
-
-	// Execute if successful
 	if result.Successful {
-		c.logger.Printf("Executing action: %s", action.Name)
-		handler.Execute(state)
+		// Reserve FIFO execution order before acknowledging. The worker cannot
+		// execute this job until its acknowledgement has actually been written.
+		gate := make(chan bool, 1)
+		c.executions <- executionWork{handler: handler, state: state, acked: gate}
+		transferred = true
+		err := c.SendActionResult(action.ID, true, result.Message)
+		gate <- err == nil
+		if err != nil {
+			c.reportError(err)
+		}
+	} else if err := c.SendActionResult(action.ID, false, result.Message); err != nil {
+		c.reportError(err)
 	}
 }
 
@@ -383,6 +546,9 @@ func (c *Client) send(msg Message) error {
 	}
 
 	c.logger.Printf("Sending: %s - %s", msg.Command, string(msgBytes))
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return fmt.Errorf("failed to set websocket write deadline: %w", err)
+	}
 
 	if err := conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
@@ -600,10 +766,11 @@ func (c *Client) Errors() <-chan error {
 
 // Close closes the websocket connection
 func (c *Client) Close() error {
-	// Wait for an in-flight frame so the connection is not closed mid-write.
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-
+	// Stop admission immediately. Gorilla permits Close concurrently with reads
+	// and writes; waiting for writeMu here would keep queued actions alive behind
+	// an unresponsive peer's write deadline.
+	c.admissionMu.Lock()
+	defer c.admissionMu.Unlock()
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 
