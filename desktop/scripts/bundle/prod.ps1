@@ -48,7 +48,7 @@ try {
     # 1. Server (Go)
     # ----------------------------------------------------------
     Write-Host '[1/4] Building the server and the dashboard program...'
-    Push-Location 'apps/neuro-integration'
+    Push-Location '../headless/apps/neuro-integration'
     try {
         New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
         # No -tags neurodev: a release build has no unsigned-extension escape hatch.
@@ -58,9 +58,9 @@ try {
     finally {
         Pop-Location
     }
-    Copy-Item "apps/neuro-integration/dist/$Server" "$Dist/$Server" -Force
+    Copy-Item "../headless/apps/neuro-integration/dist/$Server" "$Dist/$Server" -Force
 
-    Push-Location 'apps/neuro-dashboard'
+    Push-Location '../headless/apps/neuro-dashboard'
     try {
         New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
         & go build -trimpath -o 'dist/neuro-dashboard.exe' .
@@ -69,7 +69,7 @@ try {
     finally {
         Pop-Location
     }
-    Copy-Item 'apps/neuro-dashboard/dist/neuro-dashboard.exe' "$Dist/neuro-dashboard.exe" -Force
+    Copy-Item '../headless/apps/neuro-dashboard/dist/neuro-dashboard.exe' "$Dist/neuro-dashboard.exe" -Force
 
     # ----------------------------------------------------------
     # 2. Dashboard client
@@ -99,12 +99,12 @@ try {
     Write-Host '[3/4] Bundling the agent, config and catalog...'
     if (Test-Path $AgentDist) { Remove-Item -Recurse -Force $AgentDist }
     New-Item -ItemType Directory -Force -Path $AgentDist | Out-Null
-    Copy-Item 'backend/python/controller' $AgentDist -Recurse -Force
+    Copy-Item 'python/controller' $AgentDist -Recurse -Force
     Get-ChildItem -Path $AgentDist -Recurse -Directory -Filter '__pycache__' |
         Remove-Item -Recurse -Force
-    Copy-Item 'backend/python/requirements.txt' "$AgentDist/requirements.txt" -Force
-    if (Test-Path 'backend/python/requirements-windows.txt') {
-        Copy-Item 'backend/python/requirements-windows.txt' "$AgentDist/requirements-windows.txt" -Force
+    Copy-Item 'python/requirements.txt' "$AgentDist/requirements.txt" -Force
+    if (Test-Path 'python/requirements-windows.txt') {
+        Copy-Item 'python/requirements-windows.txt' "$AgentDist/requirements-windows.txt" -Force
     }
 
     # A vendored runtime is a convenience, not a requirement: a build machine
@@ -113,13 +113,13 @@ try {
         Write-Host '      ! agent runtime not vendored (-SkipVenv)'
     } else {
         try {
-            $Venv = 'backend/python/.venv'
+            $Venv = 'python/.venv'
             if (!(Test-Path $Venv)) {
                 & python -m venv $Venv | Out-Null
                 if ($LASTEXITCODE -ne 0) { throw 'agent venv creation failed' }
             }
             & "$Venv/Scripts/pip.exe" install --quiet --upgrade pip
-            & "$Venv/Scripts/pip.exe" install --quiet -r 'backend/python/requirements-windows.txt'
+            & "$Venv/Scripts/pip.exe" install --quiet -r 'python/requirements-windows.txt'
             if ($LASTEXITCODE -ne 0) { throw 'pip install failed' }
             Copy-Item "$Venv/Lib" "$AgentDist/Lib" -Recurse -Force
             Write-Host '      agent runtime vendored'
@@ -163,11 +163,11 @@ try {
         }
     }
     if (!(Test-Path "$Dist/permissions.json")) {
-        Copy-Item 'apps/neuro-integration/permissions.example.json' "$Dist/permissions.json"
+        Copy-Item '../headless/apps/neuro-integration/permissions.example.json' "$Dist/permissions.json"
     }
     if (Test-Path "$Dist/integration-docs") { Remove-Item -Recurse -Force "$Dist/integration-docs" }
     New-Item -ItemType Directory -Force -Path "$Dist/integration-docs" | Out-Null
-    Copy-Item 'apps/neuro-integration/integration-docs/*' "$Dist/integration-docs" -Recurse -Force
+    Copy-Item '../headless/apps/neuro-integration/integration-docs/*' "$Dist/integration-docs" -Recurse -Force
     Copy-Item 'docs/*.md' "$Dist/integration-docs" -Force -ErrorAction SilentlyContinue
 
     Write-Host '[4/4] Building the native GTK manager...'

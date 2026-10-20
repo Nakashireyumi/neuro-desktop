@@ -36,7 +36,7 @@ try {
     New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 
     Write-Host 'Building the server...'
-    Push-Location 'apps/neuro-integration'
+    Push-Location '../headless/apps/neuro-integration'
     try {
         New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
         # -tags neurodev: only development bundles accept NEURO_EXTENSIONS_ALLOW_UNSIGNED.
@@ -46,10 +46,10 @@ try {
     finally {
         Pop-Location
     }
-    Copy-Item "apps/neuro-integration/dist/$Server" "$Dist/$Server" -Force
+    Copy-Item "../headless/apps/neuro-integration/dist/$Server" "$Dist/$Server" -Force
 
-    Write-Host 'Building the dashboard program (apps/neuro-dashboard)...'
-    Push-Location 'apps/neuro-dashboard'
+    Write-Host 'Building the dashboard program (../headless/apps/neuro-dashboard)...'
+    Push-Location '../headless/apps/neuro-dashboard'
     try {
         New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
         & go build -o 'dist/neuro-dashboard.exe' .
@@ -58,7 +58,7 @@ try {
     finally {
         Pop-Location
     }
-    Copy-Item 'apps/neuro-dashboard/dist/neuro-dashboard.exe' "$Dist/neuro-dashboard.exe" -Force
+    Copy-Item '../headless/apps/neuro-dashboard/dist/neuro-dashboard.exe' "$Dist/neuro-dashboard.exe" -Force
 
     Write-Host 'Building the dashboard client...'
     Push-Location 'frontend'
@@ -82,11 +82,11 @@ try {
     Write-Host 'Staging the agent, config and catalog...'
     if (Test-Path "$Dist/agent") { Remove-Item -Recurse -Force "$Dist/agent" }
     New-Item -ItemType Directory -Force -Path "$Dist/agent" | Out-Null
-    Copy-Item 'backend/python/controller' "$Dist/agent/controller" -Recurse -Force
+    Copy-Item 'python/controller' "$Dist/agent/controller" -Recurse -Force
     Get-ChildItem -Path "$Dist/agent" -Recurse -Directory -Filter '__pycache__' |
         Remove-Item -Recurse -Force
-    Copy-Item 'backend/python/requirements.txt' "$Dist/agent/requirements.txt" -Force
-    Copy-Item 'backend/python/requirements-windows.txt' "$Dist/agent/requirements-windows.txt" -Force
+    Copy-Item 'python/requirements.txt' "$Dist/agent/requirements.txt" -Force
+    Copy-Item 'python/requirements-windows.txt' "$Dist/agent/requirements-windows.txt" -Force
     Copy-SeedDirectory 'config' "$Dist/config"
     New-Item -ItemType Directory -Force -Path "$Dist/catalog" | Out-Null
     foreach ($Item in Get-ChildItem -LiteralPath 'catalog' -Force) {
@@ -98,7 +98,7 @@ try {
         }
     }
     if (!(Test-Path "$Dist/permissions.json")) {
-        Copy-Item 'apps/neuro-integration/permissions.example.json' "$Dist/permissions.json"
+        Copy-Item '../headless/apps/neuro-integration/permissions.example.json' "$Dist/permissions.json"
     }
     $Launcher = Get-Content 'scripts/bundle/templates/start.bat' -Raw
     Set-Content -Path "$Dist/start.bat" -Value ($Launcher -replace '@SERVER@', $Server) -NoNewline

@@ -74,24 +74,24 @@ fi
 # --------------------------------------------------
 echo "[1/3] Building the server and the dashboard program (Go)..."
 
-mkdir -p apps/neuro-integration/dist
-pushd apps/neuro-integration > /dev/null
+mkdir -p ../headless/apps/neuro-integration/dist
+pushd ../headless/apps/neuro-integration > /dev/null
 # No -tags neurodev: a release build has no unsigned-extension escape hatch.
 go build -o "dist/$SERVER" .
 popd > /dev/null
 
-cp "apps/neuro-integration/dist/$SERVER" "$DIST/"
+cp "../headless/apps/neuro-integration/dist/$SERVER" "$DIST/"
 
 DASHBOARD="neuro-dashboard$BIN_EXT"
-mkdir -p apps/neuro-dashboard/dist
-pushd apps/neuro-dashboard > /dev/null
+mkdir -p ../headless/apps/neuro-dashboard/dist
+pushd ../headless/apps/neuro-dashboard > /dev/null
 go build -o "dist/$DASHBOARD" .
 popd > /dev/null
-cp "apps/neuro-dashboard/dist/$DASHBOARD" "$DIST/"
+cp "../headless/apps/neuro-dashboard/dist/$DASHBOARD" "$DIST/"
 
 mkdir -p "$DIST/integration-docs"
 cp \
-  "apps/neuro-integration/integration-docs/Action Script Documentation.md" \
+  "../headless/apps/neuro-integration/integration-docs/Action Script Documentation.md" \
   "$DIST/integration-docs/Action Script Documentation.md"
 
 echo "      ✓ server built"
@@ -129,9 +129,9 @@ done
 MARKETPLACE_INDEX="${NEURO_MARKETPLACE_SOURCE:-$ROOT/catalog/marketplace.json}"
 if [[ -f "$MARKETPLACE_INDEX" ]]; then cp "$MARKETPLACE_INDEX" "$DIST/catalog/marketplace.json"; fi
 if [[ ! -f "$DIST/permissions.json" ]]; then
-  cp apps/neuro-integration/permissions.example.json "$DIST/permissions.json"
+  cp ../headless/apps/neuro-integration/permissions.example.json "$DIST/permissions.json"
 fi
-cp apps/neuro-integration/integration-docs/action-schema.run_script.json "$DIST/integration-docs/" 2>/dev/null || true
+cp ../headless/apps/neuro-integration/integration-docs/action-schema.run_script.json "$DIST/integration-docs/" 2>/dev/null || true
 cp docs/*.md "$DIST/integration-docs/" 2>/dev/null || true
 echo "  ✓ config, catalog and docs copied"
 
@@ -147,8 +147,8 @@ mkdir -p "$PY_DIST"
 # usable bundle, so a failure here degrades to "install the requirements on the
 # target machine" instead of aborting the release.
 bundle_python_runtime() {
-  local venv_base="backend/python/.venv"
-  local req_file="backend/python/requirements.txt"
+  local venv_base="python/.venv"
+  local req_file="python/requirements.txt"
 
   python3 -m venv "$venv_base" || return 1
   # shellcheck disable=SC1091
@@ -190,11 +190,11 @@ if [[ "$VENDORED_RUNTIME" == "1" ]]; then
   cp -r "$PY_LIB_SRC" "$PY_DIST/Lib"
 fi
 
-cp -r backend/python/controller "$PY_DIST/controller"
+cp -r python/controller "$PY_DIST/controller"
 # Byte-compiled caches are not reproducible and only bloat the archive.
 find "$PY_DIST/controller" -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
-cp backend/python/requirements.txt "$PY_DIST/requirements.txt"
-cp backend/python/requirements-windows.txt "$PY_DIST/requirements-windows.txt" 2>/dev/null || true
+cp python/requirements.txt "$PY_DIST/requirements.txt"
+cp python/requirements-windows.txt "$PY_DIST/requirements-windows.txt" 2>/dev/null || true
 
 echo "      ✓ agent bundled"
 

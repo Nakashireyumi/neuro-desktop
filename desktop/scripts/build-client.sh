@@ -28,7 +28,7 @@ if [[ ! -x "$VENV/bin/python" ]]; then
   python3 -m venv "$VENV"
 fi
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
-if ! "$VENV/bin/python" -m pip install --quiet -r backend/python/requirements.txt "pyinstaller==$PYINSTALLER_VERSION"; then
+if ! "$VENV/bin/python" -m pip install --quiet -r python/requirements.txt "pyinstaller==$PYINSTALLER_VERSION"; then
   echo "ERROR: installing the build dependencies failed." >&2
   echo "On Linux, pynput depends on evdev, which has no prebuilt wheel and needs the" >&2
   echo "Python development headers (Python.h). Install them, then re-run this script:" >&2
@@ -43,13 +43,13 @@ mkdir -p "$WORK/pyi" "$OUT"
 # hundreds of megabytes of video, Qt and VTK libraries from a build machine.
 "$VENV/bin/pyinstaller" --noconfirm --onefile --clean \
   --name neuro-client \
-  --paths backend/python \
+  --paths python \
   --collect-submodules pynput \
   --exclude-module cv2 --exclude-module numpy \
   --distpath "$OUT" \
   --workpath "$WORK/pyi/build" \
   --specpath "$WORK/pyi" \
-  apps/neuro-client/neuro_client.py
+  ../headless/apps/neuro-client/neuro_client.py
 
 echo "built: $OUT/neuro-client"
 "$OUT/neuro-client" --help >/dev/null && echo "smoke: --help runs"

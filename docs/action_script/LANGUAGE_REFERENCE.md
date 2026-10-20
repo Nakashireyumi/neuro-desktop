@@ -200,9 +200,9 @@ caller observes and decides the next chunk.
 ## Verification and implementation
 
 The executor grammar is in
-[`actions.py`](../../desktop/backend/python/controller/actions.py). The bridge's
+[`actions.py`](../../desktop/python/controller/actions.py). The bridge's
 matching grammar enforces nested permissions in
-[`script_permissions.go`](../../desktop/apps/neuro-integration/script_permissions.go).
+[`script_permissions.go`](../../headless/apps/neuro-integration/script_permissions.go).
 Python tests cover ordered mixed input, whole-script preflight, deferred shell and
 launch, single waits, limits, failure cleanup, and session isolation. Go tests
 check bridge/executor grammar compatibility and nested permission refusal.

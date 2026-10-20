@@ -41,7 +41,7 @@ python3 desktop/tools/ci/repo_checks.py
 For a backend change:
 
 ```sh
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go vet ./...
 go test -count=1 ./...
 go test -race -count=1 ./...       # a platform with cgo support

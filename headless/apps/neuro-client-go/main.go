@@ -1,5 +1,5 @@
 // neuro-client-go is the Go client for the PC Neuro controls. It is the first slice
-// of a port of desktop/backend/python/controller. This slice has the executor link
+// of a port of desktop/python/controller. This slice has the executor link
 // (hello, ping, commands, shutdown, reconnects), the headless rules, get_status, the
 // shell command with the same firewall and limits, and the lifecycle commands.
 //

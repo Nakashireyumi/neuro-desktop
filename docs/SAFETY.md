@@ -7,18 +7,18 @@ Read it before you give Neuro a new capability, and before you open a port.
 
 | Layer | Where | What it does |
 |-------|-------|--------------|
-| Operator brake | `desktop/apps/neuro-integration/safety.go` | pause, and the kill-switch file; a small set of actions still runs while stopped |
+| Operator brake | `headless/apps/neuro-integration/safety.go` | pause, and the kill-switch file; a small set of actions still runs while stopped |
 | Policy | `permissions.go`, `permission_requests.go`, `admin_permissions.go` | scopes (on, requestable), allow and deny lists, approvals, and the requests Neuro files |
 | Rate limits | `ratelimit.go` | a sliding window per scope, shared by Neuro and by watchers |
 | Shell firewall | `shellfirewall.go` (server) and `controller/shell.py` (agent) | allowlist, dangerous patterns, timeouts |
 | Executor hub | `executor_hub.go` | a token for every agent, and no listening beyond loopback without one. Frame size limits (section 6). The link is plain TCP for now (section 6) |
 | Screenshots | `vision.go` (`screenshotPNG`), `controller/desktop.py` | the screenshot arrives as PNG bytes in the reply. The server checks the signature, the base64 and the size, and never opens a path that the client names |
-| Dashboard program | `desktop/apps/neuro-dashboard` | forwards only `/api/` and `/health`, adds no token, holds no secret. Its tests are in `dashboard_test.go` |
+| Dashboard program | `headless/apps/neuro-dashboard` | forwards only `/api/` and `/health`, adds no token, holds no secret. Its tests are in `dashboard_test.go` |
 | Dashboard | `admin_server.go`, `dashboard_token.go`, `setup.go` | every `/api` route needs the dashboard token that `setup` makes, with no exception for loopback |
 | Setup | `setup.go`, `dashboard_token.go`, `relay_host.go` | one relay token file for both sides; the dashboard token kept only as a SHA-256 hash, mode 0600 |
 | Relay | `relay_host.go` (host), `relay.go` (client, and the gates on watcher commands) | a token, browsers refused, frame limits |
 | Extensions and catalog | `catalog_trust.go`, `extensions.go`, `mcp.go` | signatures, publishers, install mode, a clean environment for MCP servers |
-| Vision | `vision.go`, `desktop/apps/nd-vision-server` | a token off loopback, reads only inside one directory |
+| Vision | `vision.go`, `headless/apps/nd-vision-server` | a token off loopback, reads only inside one directory |
 | Audit | `NEURO_AUDIT_LOG` (JSON lines) | every refusal and every accepted action |
 
 ## 2. Layers, in the order an action passes through them
@@ -182,7 +182,7 @@ written to the audit log. The server counts it in memory only. This is an open i
 ## 9. Verify it yourself
 
 ```bash
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go test -race -count=1 ./...                                  # everything
 go test -count=1 -run 'Relay|Watcher' -v ./                   # the relay and watcher gates
 go test -count=1 -run 'ExecutorHub' -v ./                     # the hub's token and loopback rules

@@ -12,8 +12,8 @@ import (
 // hand-edit that breaks a signature, an unlisted publisher, or a stale hint
 // fails the build instead of reaching a user.
 func TestShippedCatalogVerifies(t *testing.T) {
-	const indexPath = "../../catalog/index.json"
-	const publishersPath = "../../catalog/publishers.json"
+	const indexPath = "../../../desktop/catalog/index.json"
+	const publishersPath = "../../../desktop/catalog/publishers.json"
 
 	index, err := loadCatalogIndex(indexPath)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestShippedCatalogVerifies(t *testing.T) {
 
 // The index file must be valid JSON with the documented top-level shape.
 func TestShippedCatalogIsWellFormedJSON(t *testing.T) {
-	data, err := os.ReadFile("../../catalog/index.json")
+	data, err := os.ReadFile("../../../desktop/catalog/index.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -116,7 +116,12 @@ func findUIDir(explicit string) (string, error) {
 		return "", fmt.Errorf("--ui-dir %q has no index.html; point it at the built frontend folder", explicit)
 	}
 
-	candidates := []string{"frontend", filepath.Join("frontend", "dist"), filepath.Join("..", "frontend", "dist")}
+	candidates := []string{
+		"frontend",
+		filepath.Join("frontend", "dist"),
+		filepath.Join("desktop", "frontend", "dist"),
+		filepath.Join("..", "..", "..", "desktop", "frontend", "dist"),
+	}
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
 		candidates = append(candidates, filepath.Join(dir, "frontend"), filepath.Join(dir, "frontend", "dist"))

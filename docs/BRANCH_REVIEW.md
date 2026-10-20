@@ -51,7 +51,7 @@ The upstream repository is [`Nakashireyumi/neuro-desktop`](https://github.com/Na
 
 The local working branch was `arena/456c497d-neuro-desktop` at `25f0a8557dfaa389ddb0095b12c6128d4193ad7e`. Its remote branch was one commit ahead at `13327aadc7ed83a3fe2853b2a824efbc02954b85`. The uncommitted work in this checkout was excluded from commit comparisons.
 
-`13327aa` adds the first Go executor client in `desktop/apps/neuro-client-go`, with executor authentication, reconnects, status, shell policy, shutdown, tests, and cross-platform build checks. The commit explicitly keeps the Python client as the shipping desktop executor: mouse, keyboard, screenshots, window inspection, scripts, and queueing are not implemented in this Go slice. Preserve this commit when updating the working branch. Review and resolve overlapping changes to build scripts, CI, and documentation before pushing.
+`13327aa` adds the first Go executor client in `headless/apps/neuro-client-go`, with executor authentication, reconnects, status, shell policy, shutdown, tests, and cross-platform build checks. The commit explicitly keeps the Python client as the shipping desktop executor: mouse, keyboard, screenshots, window inspection, scripts, and queueing are not implemented in this Go slice. Preserve this commit when updating the working branch. Review and resolve overlapping changes to build scripts, CI, and documentation before pushing.
 
 ## Existing pull requests
 

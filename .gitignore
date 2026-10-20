@@ -15,10 +15,10 @@ Randy/
 _external/
 
 # Repository-specific build files during development
-desktop/apps/neuro-integration/*.exe
-desktop/apps/neuro-integration/integration-code
-desktop/apps/neuro-integration/integration-code.exe
-desktop/apps/neuro-integration/dist/*.exe
+headless/apps/neuro-integration/*.exe
+headless/apps/neuro-integration/integration-code
+headless/apps/neuro-integration/integration-code.exe
+headless/apps/neuro-integration/dist/*.exe
 desktop/dist/**/*.exe
 
 *.zip

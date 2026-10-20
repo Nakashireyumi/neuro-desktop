@@ -111,7 +111,7 @@ formatting. `testdata/weak_model_cases.json` checks corrective validation withou
 requiring a model or touching the desktop.
 
 ```bash
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go test ./... -run 'StartupContext|PromptAssist|DesktopGuide|AutomaticContext|ContextBounds|WeakModel'
 ```
 

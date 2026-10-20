@@ -12,14 +12,14 @@ Last updated: 2026-10-20
 |-------|---------------|------|
 | **Native manager** | `desktop/apps/neuro-manager` / `neuro-manager` | GTK 4 application with native splash, extension marketplace, permissions, Games, Activity and Status; no embedded browser |
 | **Bridge (server)** | `neuro-integration` | Neuro WebSocket client, permissions, TCP executor hub `:9876`, admin HTTP `:8300` |
-| **Dashboard program** | `neuro-dashboard` (`desktop/apps/neuro-dashboard`) | Optional. Serves the dashboard page and forwards only `/api` and `/health` to the server. No secret of its own |
-| **Client** (`neuro-client`) | `desktop/backend/python/controller/agent.py`, packaged by `desktop/scripts/build-client.sh` | Mouse/keyboard/scripts/shell on the controlled machine (the only part that touches it). Runs from source too |
+| **Dashboard program** | `neuro-dashboard` (`headless/apps/neuro-dashboard`) | Optional. Serves the dashboard page and forwards only `/api` and `/health` to the server. No secret of its own |
+| **Client** (`neuro-client`) | `desktop/python/controller/agent.py`, packaged by `desktop/scripts/build-client.sh` | Mouse/keyboard/scripts/shell on the controlled machine (the only part that touches it). Runs from source too |
 | **Local Neuro mock** | `desktop/tools/ollama-neuro` | Randy-like tester using Ollama + `heredos/rwkv7:2.9b` |
 | **Operator dashboard** | `desktop/frontend`, served by the bridge at `/ui/` | Live permissions, extensions, games and status |
 | **Fake executor** | `desktop/tools/fake-executor` | Protocol simulator for the dashboard (never injects input) |
 | **Relay host** | `neuro-integration relay` | Neuro Relay socket for other integrations and watchers (see `docs/RELAY.md`) |
 | **MCP bridge** | inside the bridge | Runs the MCP servers Vedal enabled from the signed catalog, as child processes |
-| **Vision server** | `desktop/apps/nd-vision-server` | Optional screen description, reached through `NEURO_VISION_URL` |
+| **Vision server** | `headless/apps/nd-vision-server` | Optional screen description, reached through `NEURO_VISION_URL` |
 
 **Split machines:** the server runs where Neuro runs and does the heavy work. The client runs on the
 PC Neuro should control (`neuro-client --bridge <server-ip>:9876`, or `python3 -m controller.agent --bridge
@@ -209,7 +209,7 @@ Not done:
 
 - A public plugin marketplace. The catalog has one item, the `memory` MCP server, and one publisher key that the maintainer must replace before relying on the signatures.
 - A native tray. This was decided against, not postponed: the dashboard is served by the server and works headless, and a tray could not be built or verified in this environment. See `docs/PRODUCTION_TODO.md`.
-- A complete Go client. The shipped client is still the Python agent, packaged with PyInstaller. The Go client (`desktop/apps/neuro-client-go`) is slice 1 only: the executor link, status, shell and lifecycle commands. Input, screen, windows and `run_script` still run only in the Python client. See `docs/PRODUCTION_TODO.md`.
+- A complete Go client. The shipped client is still the Python agent, packaged with PyInstaller. The Go client (`headless/apps/neuro-client-go`) is slice 1 only: the executor link, status, shell and lifecycle commands. Input, screen, windows and `run_script` still run only in the Python client. See `docs/PRODUCTION_TODO.md`.
 - A client build verified on Windows or macOS. The Linux client build is in CI; the Windows and macOS builds have not been run.
 - Process supervision by the server. The server does not start other programs (no relay process, no agent). Operators start each process.
 - An encrypted executor link. The executor token and the commands travel as plain TCP. Tunnel the port over SSH on an untrusted network. Pinned TLS is open in `docs/PRODUCTION_TODO.md`.
@@ -221,16 +221,16 @@ Not done:
 cd desktop
 
 # Fix leftover root-owned build dirs if a past sudo broke things:
-sudo chown -R "$USER:$USER" frontend/dist dist backend/python/.venv
+sudo chown -R "$USER:$USER" frontend/dist dist python/.venv
 
 # Bundle as your user (never sudo):
 ./scripts/bundle/dev.sh
 
 # Or split:
 # terminal A — bridge
-cd apps/neuro-integration && go run . -ws-url ws://127.0.0.1:8000
+cd ../headless/apps/neuro-integration && go run . -ws-url ws://127.0.0.1:8000
 # terminal B — agent (graphical session)
-python3 -m controller.agent --bridge 127.0.0.1:9876   # from desktop/backend/python
+python3 -m controller.agent --bridge 127.0.0.1:9876   # from desktop/python
 ```
 
 Dashboard without a display, a GPU or pyautogui:
@@ -240,9 +240,9 @@ Dashboard without a display, a GPU or pyautogui:
 python3 desktop/tools/fake-executor/fake_executor.py --addr 127.0.0.1:9876
 
 # terminal B — bridge + dashboard (setup once; it prints the token to sign in with)
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go run . setup
-NEURO_UI_DIR=../frontend/dist go run .
+NEURO_UI_DIR=../../desktop/frontend/dist go run .
 # then http://127.0.0.1:8300/ui/
 ```
 
@@ -250,14 +250,14 @@ Headless / CLI-only verification (no display, no GUI libraries):
 
 ```bash
 # Python controller: imports and runs with the standard library alone
-NEURO_HEADLESS=1 NEURO_SHELL_ALLOWLIST=ls PYTHONPATH=desktop/backend/python \
-  python3 -m unittest discover desktop/backend/python/tests -t desktop/backend/python -v
+NEURO_HEADLESS=1 NEURO_SHELL_ALLOWLIST=ls PYTHONPATH=desktop/python \
+  python3 -m unittest discover desktop/python/tests -t desktop/python -v
 
 # Repository-level checks (JSON, catalog, example policies, docs)
 python3 desktop/tools/ci/repo_checks.py
 
 # Relay host and client (the built-in relay, against the bridge's own client)
-cd desktop/apps/neuro-integration && go test -run Relay -v ./...
+cd headless/apps/neuro-integration && go test -run Relay -v ./...
 
 # Relay, live: set up once (the relay token file is shared), start the host, then the bridge
 go run . setup

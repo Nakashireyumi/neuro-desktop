@@ -30,9 +30,15 @@ class BundleRebuildTests(unittest.TestCase):
     def test_rebuilding_preserves_operator_state_and_stages_a_launcher(self):
         desktop = pathlib.Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            for relative in ["scripts/bundle/templates", "apps/neuro-integration/integration-docs", "apps/neuro-dashboard", "frontend/dist", "backend/python/controller", "config", "catalog/games", "tools"]:
+            # The bundle scripts run from desktop/ but reach the headless
+            # programs through ../headless/apps, so mirror the repo shape.
+            repo = pathlib.Path(directory) / "repo"
+            root = repo / "desktop"
+            apps = repo / "headless" / "apps"
+            for relative in ["scripts/bundle/templates", "frontend/dist", "python/controller", "config", "catalog/games", "tools"]:
                 (root / relative).mkdir(parents=True)
+            for relative in ["neuro-integration/integration-docs", "neuro-dashboard"]:
+                (apps / relative).mkdir(parents=True)
             shutil.copyfile(desktop / "scripts/bundle/dev.sh", root / "scripts/bundle/dev.sh")
             shutil.copyfile(desktop / "scripts/bundle/prod.sh", root / "scripts/bundle/prod.sh")
             shutil.copyfile(desktop / "scripts/build-manager.py", root / "scripts/build-manager.py")
@@ -40,21 +46,21 @@ class BundleRebuildTests(unittest.TestCase):
             for name in ["start.sh", "start.bat", "README.txt"]:
                 shutil.copyfile(desktop / "scripts/bundle/templates" / name, root / "scripts/bundle/templates" / name)
             for relative, contents in {
-                "apps/neuro-integration/permissions.example.json": "example policy",
-                "apps/neuro-integration/integration-docs/Action Script Documentation.md": "action reference",
-                "backend/python/requirements.txt": "",
-                "backend/python/controller/agent.py": "# staged agent",
-                "frontend/dist/index.html": "dashboard",
-                "catalog/index.json": "catalog",
-                "marketplace-index.json": "marketplace snapshot",
-                "catalog/extensions-state.json": "must not replace operator state",
-                "catalog/extension-permissions.json": "must not copy source approvals",
-                "catalog/integrations.json": "must not copy source credential hashes",
-                "catalog/builtin-services.json": "must not copy source service choices",
-                "catalog/games/stock.json": "stock profile",
-                "config/permissions.example.json": "example",
+                "headless/apps/neuro-integration/permissions.example.json": "example policy",
+                "headless/apps/neuro-integration/integration-docs/Action Script Documentation.md": "action reference",
+                "desktop/python/requirements.txt": "",
+                "desktop/python/controller/agent.py": "# staged agent",
+                "desktop/frontend/dist/index.html": "dashboard",
+                "desktop/catalog/index.json": "catalog",
+                "desktop/marketplace-index.json": "marketplace snapshot",
+                "desktop/catalog/extensions-state.json": "must not replace operator state",
+                "desktop/catalog/extension-permissions.json": "must not copy source approvals",
+                "desktop/catalog/integrations.json": "must not copy source credential hashes",
+                "desktop/catalog/builtin-services.json": "must not copy source service choices",
+                "desktop/catalog/games/stock.json": "stock profile",
+                "desktop/config/permissions.example.json": "example",
             }.items():
-                (root / relative).write_text(contents)
+                (repo / relative).write_text(contents)
             go = root / "tools/go"
             go.write_text('#!/usr/bin/env bash\nwhile [[ $# -gt 0 ]]; do\n if [[ "$1" == "-o" ]]; then shift; printf "#!/bin/sh\\nexit 0\\n" > "$1"; chmod +x "$1"; break; fi\n shift\ndone\n')
             go.chmod(0o755)
@@ -82,7 +88,7 @@ class BundleRebuildTests(unittest.TestCase):
             env = dict(os.environ, PATH=str(root / "tools") + os.pathsep + os.environ["PATH"], NEURO_BUNDLE_NO_LAUNCH="1", NEURO_BUNDLE_SKIP_VENV="1", NEURO_BUNDLE_SKIP_CLIENT="1", NEURO_MANAGER_SOURCE_ONLY="1")
             env["NEURO_MARKETPLACE_SOURCE"] = str(root / "marketplace-index.json")
             for script, bundle in [("dev.sh", "dev"), ("prod.sh", "neuro-desktop")] * 2:
-                result = subprocess.run(["bash", str(root / "scripts/bundle" / script)], cwd=root.parent, env=env, capture_output=True, text=True, timeout=20)
+                result = subprocess.run(["bash", str(root / "scripts/bundle" / script)], cwd=root, env=env, capture_output=True, text=True, timeout=20)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 for preserved in ["dev", "neuro-desktop"]:
                     for relative, contents in state.items():

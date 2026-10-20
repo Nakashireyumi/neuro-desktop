@@ -47,9 +47,9 @@ From the repository root:
 ```bash
 cd desktop
 # the server
-(cd apps/neuro-integration && go build -o neuro-integration .)
+(cd ../headless/apps/neuro-integration && go build -o neuro-integration .)
 # the dashboard program (optional)
-(cd apps/neuro-dashboard && go build -o neuro-dashboard .)
+(cd ../headless/apps/neuro-dashboard && go build -o neuro-dashboard .)
 # the dashboard page
 (cd frontend && npm ci && npm run build)
 # the client, for the PC Neuro controls: one executable (see "The client" below)
@@ -172,7 +172,7 @@ cd desktop
 
 On Windows: `.\scripts\build-client.ps1` -> `dist\neuro-client\neuro-client.exe`.
 
-A Go client is in progress in `desktop/apps/neuro-client-go`. It is not in the bundle yet:
+A Go client is in progress in `headless/apps/neuro-client-go`. It is not in the bundle yet:
 slice 1 runs the executor link, status, shell and lifecycle commands, and it refuses input and
 screen commands, which still run only in this Python client. Build it with
 `go build -o neuro-client-go .` in that folder, if you want to test it.
@@ -235,7 +235,7 @@ reach the machine from outside.
   `NEURO_RELAY_ENABLED` and `NEURO_RELAY_URL`. The host and the server both read one
   token file (`relay-token`, written by `setup`), so no token is copied by hand. Details
   are in `docs/RELAY.md`.
-- **Vision:** run `python3 -m nd_vision` from `desktop/apps/nd-vision-server` and set
+- **Vision:** run `python3 -m nd_vision` from `headless/apps/nd-vision-server` and set
   `NEURO_VISION_URL` and `NEURO_VISION_TOKEN` on the server. Details are in that
   folder's README. The server sends each screenshot to it as image bytes, so the vision
   service can run on a different machine from the client.

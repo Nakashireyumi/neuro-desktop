@@ -19,10 +19,10 @@ This project aims to follow semantic versioning once stable releases begin.
 - Linux GUI loading tolerates missing Tk for the optional MouseInfo inspector. Other GUI failures report their cause and keep shell/telemetry running; status no longer reports stub geometry as a real screen.
 - Native Wayland screenshots through `grim` on supported compositors, with capture errors included in desktop context. Verified locally on Hyprland; Windows/macOS capture still uses MSS.
 
-- **Go client, slice 1** (`desktop/apps/neuro-client-go`, not shipped yet): the start of the port of the Python client, which the maintainer asked for. It has the executor link (protocol 2, pings, commands, shutdown, reconnects, the same frame limits), the headless rules, `get_status` with the keys the server reads, and `shell_command` with the same firewall, allowlist, deny patterns, timeout and output limit as `shell.py`. Input, screen, window and `run_script` commands are refused with a message that says where they still run. A test fails if the Python agent runs a command the Go client neither handles nor refuses. It cross-compiles for Windows, macOS and Linux, and CI runs its tests on all three.
+- **Go client, slice 1** (`headless/apps/neuro-client-go`, not shipped yet): the start of the port of the Python client, which the maintainer asked for. It has the executor link (protocol 2, pings, commands, shutdown, reconnects, the same frame limits), the headless rules, `get_status` with the keys the server reads, and `shell_command` with the same firewall, allowlist, deny patterns, timeout and output limit as `shell.py`. Input, screen, window and `run_script` commands are refused with a message that says where they still run. A test fails if the Python agent runs a command the Go client neither handles nor refuses. It cross-compiles for Windows, macOS and Linux, and CI runs its tests on all three.
 - **Three programs** (decision recorded in `docs/ARCHITECTURE.md`): the server, the dashboard program, and the client for the PC Neuro controls. The split is at the process boundary, and the client is not rewritten in Go yet.
-- **Dashboard program** `desktop/apps/neuro-dashboard` (Go, stdlib only): serves the built dashboard page and forwards only `/api/` and `/health` to the server. It adds no token and keeps the caller's. It answers `502` when the server is down. Flags `--listen`, `--server`, and `--ui-dir`, with `NEURO_DASHBOARD_LISTEN`, `NEURO_DASHBOARD_SERVER`, and `NEURO_UI_DIR`. Tests: `dashboard_test.go`.
-- **Client build** `desktop/scripts/build-client.sh` (and `build-client.ps1`): packages the Python agent with PyInstaller (pinned, 6.22.3) as `neuro-client`, with its own Python inside. Entry point `desktop/apps/neuro-client/neuro_client.py`. The release bundle builds it when it can, and the launcher uses the Python agent when it cannot.
+- **Dashboard program** `headless/apps/neuro-dashboard` (Go, stdlib only): serves the built dashboard page and forwards only `/api/` and `/health` to the server. It adds no token and keeps the caller's. It answers `502` when the server is down. Flags `--listen`, `--server`, and `--ui-dir`, with `NEURO_DASHBOARD_LISTEN`, `NEURO_DASHBOARD_SERVER`, and `NEURO_UI_DIR`. Tests: `dashboard_test.go`.
+- **Client build** `desktop/scripts/build-client.sh` (and `build-client.ps1`): packages the Python agent with PyInstaller (pinned, 6.22.3) as `neuro-client`, with its own Python inside. Entry point `headless/apps/neuro-client/neuro_client.py`. The release bundle builds it when it can, and the launcher uses the Python agent when it cannot.
 - **CI**: a `client-build` job (builds `neuro-client` on Linux and checks that it reports a missing server), and a dashboard vet and test step in `build-and-test`.
 - **Setup** (`neuro-integration setup`, with `--check` and `--rotate-dashboard`): the first-run step. It creates the relay token that the relay host and the server share (`relay-token`, mode 0600), then the dashboard token. The dashboard token is printed once, and only its SHA-256 hash is stored (`dashboard-token`, mode 0600). Running it again keeps what exists. Exit codes: 0 complete, 1 something to fix, 2 bad usage. `setup_test.go` covers the first run, a second run, rotation, and the mismatch checks.
 - **Dashboard sign-in**: the dashboard shows a sign-in page until the server accepts the dashboard token. `GET /api/session` checks a token. The browser keeps the token in `sessionStorage`, for that browser session only.
@@ -30,7 +30,7 @@ This project aims to follow semantic versioning once stable releases begin.
 - **CI**: a `Go tests, dev build (-tags neurodev)` step and a `Setup smoke test` step, both on Linux. The smoke test runs `setup` twice and checks the file modes.
 - `.gitignore` covers `dashboard-token`, so the hash is not committed by accident.
 - CI `bundle` job: builds the release bundle, checks that it contains what the launcher needs, verifies the shipped catalog from inside it, and serves the dashboard from the bundle folder. The release gate requires it.
-- `desktop/apps/nd-vision-server/README.md` and `requirements.txt`: the vision HTTP contract, its backends, and the optional Pillow and tesseract.
+- `headless/apps/nd-vision-server/README.md` and `requirements.txt`: the vision HTTP contract, its backends, and the optional Pillow and tesseract.
 
 - **Neuro Relay host** (`neuro-integration relay`, Go). It replaces the Python relay shim and the bridge no longer starts any relay process. It checks the token on registration, refuses browsers (any `Origin` header) and binary frames, limits frame rates, and reports `/health`. The bridge is a relay client. Covered by `relay_host_test.go`, an end-to-end test of the real client against the host, and a CI smoke test.
 - **Signed extension catalog**: `desktop/catalog/index.json` and `desktop/catalog/publishers.json`. The bridge verifies every signature and refuses unsigned items unless `NEURO_EXTENSIONS_ALLOW_UNSIGNED` is set. `neuro-integration catalog verify` checks the shipped index.
@@ -40,10 +40,10 @@ This project aims to follow semantic versioning once stable releases begin.
 - **Vision**: `NEURO_VISION_URL` (`NEURO_VISION_SERVER_URL` is still read as an alias), with a live reachability probe, and the `nd-vision-server` Python service.
 - **Escape hatch** `reset_controls`: no parameters. It clears queued inputs, then releases every held key and button. It is always allowed, runs while the bridge is paused or killed, and works under a deny-all policy. The reply says what worked and what may still be held.
 - `desktop_guide` is always allowed. Refusals name the action and give a valid example, so a small model can correct itself on its next turn.
-- **Small-model eval**: `desktop/apps/neuro-integration/testdata/weak_model_cases.json` holds recorded weak-model calls with the expected verdict and reply. It runs in `go test` and in the `weak-model-eval` CI job.
+- **Small-model eval**: `headless/apps/neuro-integration/testdata/weak_model_cases.json` holds recorded weak-model calls with the expected verdict and reply. It runs in `go test` and in the `weak-model-eval` CI job.
 - **CI**: `relay-host`, `mcp`, `vision`, `catalog-verify`, and `weak-model-eval` jobs, and a `release-gate` job that fails unless every required job succeeded.
 
-- **Python agent** (`desktop/backend/python/controller/agent.py`): the process
+- **Python agent** (`desktop/python/controller/agent.py`): the process
   that executes commands on the machine Neuro controls, replacing the Rust
   executor. Speaks the executor protocol over TCP (connecting out or listening)
   and over the bridge's file-IPC fallback, honours `execute_now`/`clear_after`,
@@ -264,5 +264,5 @@ and an optional Nakurity vision backend. Original development was credited to
 Nakashireyumi, with OCR and backend work credited to the earlier contributors.
 That Python/Flask launcher and its root installation path are retired; use the current
 [architecture](docs/ARCHITECTURE.md), [setup](desktop/README.md), and
-[vision service](desktop/apps/nd-vision-server/README.md) documentation. The historical
+[vision service](headless/apps/nd-vision-server/README.md) documentation. The historical
 implementation and its original change log remain available in Git history.

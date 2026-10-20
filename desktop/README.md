@@ -13,7 +13,7 @@ watch it, grant permissions, and pause or kill anything at any time.
 └──────────┬──────────────────┘
            │ neuro-sdk (Go)
 ┌──────────▼───────────────────────────────────────────────────────────┐
-│  SERVER — desktop/apps/neuro-integration (Go)                        │
+│  SERVER — headless/apps/neuro-integration (Go)                        │
 │  • talks to Neuro (actions, context, results)                        │
 │  • serves the dashboard API and the dashboard page at /ui/           │
 │  • owns the permission policy, audit log, kill switch, game catalog  │
@@ -21,7 +21,7 @@ watch it, grant permissions, and pause or kill anything at any time.
 └──────────┬───────────────────────────────────────────────────────────┘
            │ executor protocol (JSON lines) or file IPC
 ┌──────────▼───────────────────────────────────────────────────────────┐
-│  CLIENT (neuro-client) — desktop/backend/python/controller (Python)  │
+│  CLIENT (neuro-client) — desktop/python/controller (Python)  │
 │  • runs on the PC Neuro controls (usually the same machine)          │
 │  • mouse/keyboard via pyautogui, screen capture, windows, shell      │
 │  • built as one program with PyInstaller: no Python needed there     │
@@ -39,22 +39,24 @@ into these programs (and why the client is not rewritten in Go yet), and
 
 ## Quick start
 
+Commands below run from the repository root.
+
 ```bash
 # 1. Server (on the PC that runs Neuro). Set up once: this prints the dashboard token.
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go build -o neuro-integration .
 ./neuro-integration setup
 NEURO_SDK_WS_URL=ws://127.0.0.1:8000 ./neuro-integration
 
-# 2. Client (on the PC Neuro should control — same machine in dev)
-cd desktop/backend/python
+# 2. Client (on the PC Neuro should control — same machine in dev; new terminal)
+cd desktop/python
 python3 -m controller.agent --bridge 127.0.0.1:9876
-#    or the built program: ./scripts/build-client.sh, then dist/neuro-client/neuro-client --bridge 127.0.0.1:9876
+#    or the built program: desktop/scripts/build-client.sh, then desktop/dist/neuro-client/neuro-client --bridge 127.0.0.1:9876
 
 # 3. Dashboard: sign in with the token from step 1
 xdg-open http://127.0.0.1:8300/ui/      # macOS: open, Windows: start
 #    or on your own PC (the server's admin port reached over SSH):
-#    cd apps/neuro-dashboard && go build -o neuro-dashboard .
+#    cd headless/apps/neuro-dashboard && go build -o neuro-dashboard .
 #    ./neuro-dashboard --server http://127.0.0.1:8300 --listen 127.0.0.1:8310
 ```
 
@@ -66,10 +68,10 @@ and `start.bat` run it on every start.
 Everything can also be built and staged in one step:
 
 ```bash
-./scripts/build-all.sh            # server + dashboard program + dashboard page + client syntax check
-./scripts/bundle/dev.sh           # stages dist/dev and launches the server
-NEURO_BUNDLE_SKIP_VENV=1 ./scripts/bundle/prod.sh   # release bundle in dist/neuro-desktop
-./scripts/build-client.sh         # neuro-client: the client as one program (PyInstaller)
+desktop/scripts/build-all.sh      # server + dashboard program + dashboard page + client syntax check
+desktop/scripts/bundle/dev.sh     # stages desktop/dist/dev and launches the server
+NEURO_BUNDLE_SKIP_VENV=1 desktop/scripts/bundle/prod.sh   # release bundle in desktop/dist/neuro-desktop
+desktop/scripts/build-client.sh   # neuro-client: the client as one program (PyInstaller)
 ```
 
 The bundle's `start.sh` / `start.bat` launch the server and the local client
@@ -79,14 +81,14 @@ together (`neuro-client/` when the bundle has it, else the Python agent);
 On Linux/macOS, the development bundle also provides `dist/dev/start.sh` and
 starts the local client automatically. Rebuilding either shell bundle preserves
 tokens, `permissions.json`, installed extensions, and custom game profiles.
-The development script uses `backend/python/.venv/bin/python` when it exists;
+The development script uses `desktop/python/.venv/bin/python` when it exists;
 `NEURO_AGENT_PYTHON=/path/to/python` selects another client interpreter.
 For a desktop client from source, install its drivers once:
 
 ```bash
-python3 -m venv backend/python/.venv
-backend/python/.venv/bin/python -m pip install -r backend/python/requirements.txt
-./scripts/bundle/dev.sh
+python3 -m venv desktop/python/.venv
+desktop/python/.venv/bin/python -m pip install -r desktop/python/requirements.txt
+desktop/scripts/bundle/dev.sh
 ```
 
 With `NEURO_HEADLESS=1`, the client needs only Python's standard library.
@@ -100,26 +102,28 @@ card, so an available dashboard does not imply Neuro is connected.
 ## Layout
 
 ```
-desktop/
-├── apps/
+neuro-desktop/
+├── headless/apps/
 │   ├── neuro-integration/    SERVER (Go): Neuro client, dashboard API, executor hub, policy,
 │   │                         relay host (`relay` subcommand), MCP bridge, signed catalog
 │   ├── neuro-dashboard/      DASHBOARD PROGRAM (Go, stdlib only): serves the page, forwards /api and /health
 │   ├── neuro-client/         entry point for the PyInstaller build of the CLIENT
 │   ├── neuro-client-go/      the Go port of the CLIENT, slice 1 (not shipped; see its README)
 │   └── nd-vision-server/     optional vision service (Python, stdlib HTTP; Pillow optional)
-├── backend/python/
-│   ├── controller/           CLIENT / AGENT + drivers (agent.py, actions.py, controls/, shell.py)
-│   └── tests/                unittest suite for the agent and the safety rules
-├── frontend/                 DASHBOARD PAGE (React + TypeScript + Vite)
-├── catalog/                  game profiles, catalog index, live extension state
-├── config/                   example policy (no config file: settings are env vars)
-├── scripts/                  build-all.*, build-go.ps1, build-client.*, bundle/{dev,prod}.*, templates/
-├── tools/
-│   ├── ci/repo_checks.py     dependency-free repository checks (what CI runs first)
-│   ├── fake-executor/        protocol simulator for the server (no input is ever generated)
-│   └── ollama-neuro/         local small-model brain for testing the action surface
-└── docs/ (repo root docs/)   ARCHITECTURE, EXECUTOR_PROTOCOL, LLM_GUIDE, SAFETY, CAPABILITIES
+├── desktop/
+│   ├── apps/neuro-manager/   native GTK 4 manager
+│   ├── python/
+│   │   ├── controller/       CLIENT / AGENT + drivers (agent.py, actions.py, controls/, shell.py)
+│   │   └── tests/            unittest suite for the agent and the safety rules
+│   ├── frontend/             DASHBOARD PAGE (React + TypeScript + Vite)
+│   ├── catalog/              game profiles, catalog index, live extension state
+│   ├── config/               example policy (no config file: settings are env vars)
+│   ├── scripts/              build-all.*, build-go.ps1, build-client.*, bundle/{dev,prod}.*, templates/
+│   └── tools/
+│       ├── ci/repo_checks.py dependency-free repository checks (what CI runs first)
+│       ├── fake-executor/    protocol simulator for the server (no input is ever generated)
+│       └── ollama-neuro/     local small-model brain for testing the action surface
+└── docs/                     ARCHITECTURE, EXECUTOR_PROTOCOL, LLM_GUIDE, SAFETY, CAPABILITIES
 ```
 
 ## Configuration
@@ -187,17 +191,17 @@ timeout.
 
 ```bash
 # server (Go)
-cd desktop/apps/neuro-integration && go test -race ./...    # -race needs cgo (CI runs it on Linux)
-cd desktop/apps/neuro-integration && go test -race -tags neurodev ./...   # the dev-only switch's tests
+cd headless/apps/neuro-integration && go test -race ./...    # -race needs cgo (CI runs it on Linux)
+cd headless/apps/neuro-integration && go test -race -tags neurodev ./...   # the dev-only switch's tests
 
 # dashboard program (Go, stdlib only): the proxy rules, the sign-in pass-through, 502 when the server is down
-cd desktop/apps/neuro-dashboard && go vet ./... && go test -count=1 ./...
+cd headless/apps/neuro-dashboard && go vet ./... && go test -count=1 ./...
 
 # agent + safety rules (Python, no third-party deps needed)
-cd desktop/backend/python && python3 -m unittest discover -s tests -t .
+cd desktop/python && python3 -m unittest discover -s tests -t .
 
-# the client as one program (Linux/macOS; Windows: scripts/build-client.ps1). Needs Python headers on Linux
-./scripts/build-client.sh && ./dist/neuro-client/neuro-client --help
+# the client as one program (Linux/macOS; Windows: desktop/scripts/build-client.ps1). Needs Python headers on Linux
+desktop/scripts/build-client.sh && desktop/dist/neuro-client/neuro-client --help
 
 # everything CI runs first: JSON/JSONC, policy parity, catalog, docs, file sizes,
 # stale references, the ollama brain tests
@@ -226,13 +230,13 @@ explored) on a machine with no display and without touching anything.
 | Dashboard answers `503` with "does not match the dashboard token" | `NEURO_ADMIN_TOKEN` disagrees with the stored token. Unset it, or set it to the printed token. |
 | Dashboard answers `401` | The token is wrong or missing. Send it in the `X-ND-Token` header or as a Bearer token. A `?token=` query parameter is not read. |
 | Dashboard program answers `502` | It is running, but the server at `--server` did not answer. Start the server, or fix the address (see `docs/TROUBLESHOOTING.md`) |
-| `scripts/build-client.sh` fails on Linux with `Python.h` or `evdev` | `pynput` needs `evdev`, which builds from source. Install the Python development headers (`sudo apt install python3-dev`) and run it again |
+| `desktop/scripts/build-client.sh` fails on Linux with `Python.h` or `evdev` | `pynput` needs `evdev`, which builds from source. Install the Python development headers (`sudo apt install python3-dev`) and run it again |
 
 ## Removed
 
 Several components were deleted when the server and the agent were consolidated into Go and Python: the Rust executor, the C++ process handler, the Python relay shim, the `native/` placeholders, and the root integration scripts that could not run. Nothing in the shipped path uses them, and `tools/ci/repo_checks.py` fails if a reference to one of them returns. The list and the reasons are in `CHANGELOG.md`.
 
 The manager is a separate native GTK 4 application with its own startup splash.
-Build it with `python3 scripts/build-manager.py --standalone`, or use the development
+Build it with `python3 desktop/scripts/build-manager.py --standalone`, or use the development
 bundle with GTK and PyGObject installed. The server also provides an optional browser
 dashboard. See [manager setup and resource use](apps/neuro-manager/README.md).

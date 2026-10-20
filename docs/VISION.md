@@ -53,7 +53,7 @@ connection provides no transport encryption.
 The service can report image dimensions/statistics, perform OCR, or call a
 vision-enabled Ollama or OpenAI-compatible endpoint. These backends have different
 dependencies and capabilities. A statistics response does not recognize what an
-application is doing. Follow the [vision server setup and backend guide](../desktop/apps/nd-vision-server/README.md)
+application is doing. Follow the [vision server setup and backend guide](../headless/apps/nd-vision-server/README.md)
 for exact settings. Model-backed semantic analysis and real Windows/macOS capture
 still require platform/backend acceptance testing.
 

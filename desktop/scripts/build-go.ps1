@@ -7,11 +7,12 @@ $ErrorActionPreference = 'Stop'
 
 Write-Host 'Building the Neuro Desktop server for every platform...'
 
-$OUTPUT_DIR = 'apps/neuro-integration/dist'
+$Desktop = Split-Path -Parent $PSScriptRoot
+$OUTPUT_DIR = Join-Path $Desktop '..\headless\apps\neuro-integration\dist'
 if (Test-Path $OUTPUT_DIR) { Remove-Item -Recurse -Force $OUTPUT_DIR }
 New-Item -ItemType Directory -Force -Path $OUTPUT_DIR | Out-Null
 
-Push-Location 'apps/neuro-integration'
+Push-Location (Join-Path $Desktop '..\headless\apps\neuro-integration')
 try {
     $targets = @(
         @{ GOOS = 'windows'; GOARCH = 'amd64'; Name = 'windows-amd64.exe' },

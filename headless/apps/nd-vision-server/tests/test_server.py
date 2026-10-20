@@ -1,6 +1,6 @@
 """Tests for nd-vision-server. They run the real HTTP server on an ephemeral port.
 
-Run from desktop/apps/nd-vision-server:  python3 -m unittest discover -s tests -t .
+Run from headless/apps/nd-vision-server:  python3 -m unittest discover -s tests -t .
 """
 
 from __future__ import annotations

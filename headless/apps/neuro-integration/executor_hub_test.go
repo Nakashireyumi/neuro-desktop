@@ -11,7 +11,7 @@ import (
 )
 
 // fakeExecutor is a stand-in for the executor (the Python agent in
-// desktop/backend/python/controller/agent.py): it performs the hello
+// desktop/python/controller/agent.py): it performs the hello
 // handshake and answers commands and pings the way the real client does.
 type fakeExecutor struct {
 	t       *testing.T

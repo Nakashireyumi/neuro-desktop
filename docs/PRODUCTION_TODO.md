@@ -51,7 +51,7 @@ Check these directly; this file does not keep a copy of their issue lists.
   controls, and executor transport. Real Windows/macOS desktop input remains unverified.
 
 - [~] **Client rewrite in Go, in progress.** The maintainer chose to start it now. Slice 1
-  is in `desktop/apps/neuro-client-go` (Go, standard library only; cross-compiles for
+  is in `headless/apps/neuro-client-go` (Go, standard library only; cross-compiles for
   Windows, macOS and Linux). It covers the executor link (hello, ping, commands, shutdown,
   reconnects, the same frame limits), the headless rules, `get_status` (the same keys the
   server reads), `shell_command` (the same firewall, allowlist, deny patterns, timeout and
@@ -106,7 +106,7 @@ Check these directly; this file does not keep a copy of their issue lists.
   before relying on it for external distribution.
 
 - [~] **Vision pipeline confidence loop and formalized server contract.** Done: the HTTP
-  contract is in `desktop/apps/nd-vision-server/README.md`, and the bridge's client is
+  contract is in `headless/apps/nd-vision-server/README.md`, and the bridge's client is
   tested against it. Missing: a confidence loop (re-capture, or a score the bridge can
   act on).
 

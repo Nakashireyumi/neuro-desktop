@@ -59,8 +59,8 @@ MAX_LINE_BYTES = 8 * 1024 * 1024
 
 # Commands this agent executes. Anything else in the bridge's command list is
 # handled inside the bridge (desktop shell intents, catalog, extensions, games).
-# `desktop/backend/python/tests/test_agent.py` checks this against the Go list in
-# `desktop/apps/neuro-integration/executor_commands.go`, so a new command cannot
+# `desktop/python/tests/test_agent.py` checks this against the Go list in
+# `headless/apps/neuro-integration/executor_commands.go`, so a new command cannot
 # be added on one side only. The agent additionally answers `heartbeat`, which
 # the Rust executor used to receive but the Go bridge never sends (kept so an
 # older bridge still works).

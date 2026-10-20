@@ -36,8 +36,8 @@ from controller.agent import (  # noqa: E402
     serve_session,
 )
 
-REPO = pathlib.Path(__file__).resolve().parents[4]
-GO_DIR = REPO / "desktop" / "apps" / "neuro-integration"
+REPO = pathlib.Path(__file__).resolve().parents[3]
+GO_DIR = REPO / "headless" / "apps" / "neuro-integration"
 
 
 def go_command_constants():

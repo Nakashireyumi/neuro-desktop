@@ -14,7 +14,7 @@ things the upstream relay gets wrong (see [Differences](#differences-from-the-up
 ## Running it
 
 ```bash
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go run . setup        # once: writes the relay token file (./relay-token, mode 0600)
 go run . relay --listen 127.0.0.1:8765 --health 127.0.0.1:8766
 ```
@@ -180,7 +180,7 @@ server's own relay client against the host to keep it that way.
 ## Testing
 
 ```bash
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go test -race -count=1 -run Relay -v ./
 ```
 

@@ -51,22 +51,22 @@ fi
 echo "Updating $DIST (keeping tokens, permissions and installed extensions)..."
 mkdir -p "$DIST"
 
-echo "Building the server (apps/neuro-integration)..."
+echo "Building the server (../headless/apps/neuro-integration)..."
 (
-  cd apps/neuro-integration
+  cd ../headless/apps/neuro-integration
   mkdir -p dist
   # -tags neurodev: only development bundles accept NEURO_EXTENSIONS_ALLOW_UNSIGNED.
   go build -tags neurodev -o "dist/$SERVER" .
 )
-cp "apps/neuro-integration/dist/$SERVER" "$DIST/$SERVER"
+cp "../headless/apps/neuro-integration/dist/$SERVER" "$DIST/$SERVER"
 
-echo "Building the dashboard program (apps/neuro-dashboard)..."
+echo "Building the dashboard program (../headless/apps/neuro-dashboard)..."
 (
-  cd apps/neuro-dashboard
+  cd ../headless/apps/neuro-dashboard
   mkdir -p dist
   go build -o "dist/neuro-dashboard$BIN_EXT" .
 )
-cp "apps/neuro-dashboard/dist/neuro-dashboard$BIN_EXT" "$DIST/"
+cp "../headless/apps/neuro-dashboard/dist/neuro-dashboard$BIN_EXT" "$DIST/"
 
 echo "Building the dashboard client (frontend)..."
 (
@@ -78,14 +78,14 @@ rm -rf "$DIST/frontend"
 mkdir -p "$DIST/frontend"
 cp -r frontend/dist/. "$DIST/frontend/"
 
-echo "Staging the agent (backend/python/controller)..."
+echo "Staging the agent (python/controller)..."
 python3 scripts/build-manager.py --out "$DIST/manager"
 rm -rf "$DIST/agent"
 mkdir -p "$DIST/agent"
-cp -r backend/python/controller "$DIST/agent/controller"
+cp -r python/controller "$DIST/agent/controller"
 rm -rf "$DIST/agent/controller/__pycache__"
-cp backend/python/requirements.txt "$DIST/agent/requirements.txt"
-cp backend/python/requirements-windows.txt "$DIST/agent/requirements-windows.txt" 2>/dev/null || true
+cp python/requirements.txt "$DIST/agent/requirements.txt"
+cp python/requirements-windows.txt "$DIST/agent/requirements-windows.txt" 2>/dev/null || true
 
 echo "Staging config, catalog and docs..."
 mkdir -p "$DIST/integration-docs"
@@ -105,9 +105,9 @@ done
 MARKETPLACE_INDEX="${NEURO_MARKETPLACE_SOURCE:-$ROOT/catalog/marketplace.json}"
 if [[ -f "$MARKETPLACE_INDEX" ]]; then cp "$MARKETPLACE_INDEX" "$DIST/catalog/marketplace.json"; fi
 if [[ ! -f "$DIST/permissions.json" ]]; then
-  cp apps/neuro-integration/permissions.example.json "$DIST/permissions.json"
+  cp ../headless/apps/neuro-integration/permissions.example.json "$DIST/permissions.json"
 fi
-cp "apps/neuro-integration/integration-docs/Action Script Documentation.md" \
+cp "../headless/apps/neuro-integration/integration-docs/Action Script Documentation.md" \
    "$DIST/integration-docs/" 2>/dev/null || true
 
 sed "s|@SERVER@|$SERVER|g" scripts/bundle/templates/start.sh > "$DIST/start.sh"
@@ -131,7 +131,7 @@ echo "   The relay host and the server on this machine share ./relay-token, so n
 echo "   A relay on another machine needs the same token value: copy the file's value there."
 echo
 echo "3. The native manager opens automatically (GTK 4 + PyGObject required for source builds)."
-echo "   Standalone manager: python3 scripts/build-manager.py --standalone"
+echo "   Standalone manager: from the repository root, python3 desktop/scripts/build-manager.py --standalone"
 echo "   Optional browser dashboard: http://127.0.0.1:8300/ui/"
 echo "   Split: ./neuro-dashboard --server http://<server>:8300 --listen 127.0.0.1:8310"
 echo "   serves the same UI from another program and forwards only the API."
@@ -143,8 +143,8 @@ if [[ "${NEURO_BUNDLE_NO_LAUNCH:-0}" == "1" ]]; then
 fi
 
 echo "Launching the server and local client (Ctrl-C to stop)..."
-if [[ -z "${NEURO_AGENT_PYTHON:-}" && -x "$ROOT/backend/python/.venv/bin/python" ]]; then
-  export NEURO_AGENT_PYTHON="$ROOT/backend/python/.venv/bin/python"
+if [[ -z "${NEURO_AGENT_PYTHON:-}" && -x "$ROOT/python/.venv/bin/python" ]]; then
+  export NEURO_AGENT_PYTHON="$ROOT/python/.venv/bin/python"
 fi
 cd "$DIST"
 chmod +x "$SERVER"

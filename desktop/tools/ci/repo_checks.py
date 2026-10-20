@@ -114,7 +114,7 @@ def check_json() -> None:
 
 def check_example_policies_match() -> None:
     """The two copies of the example policy must not drift apart."""
-    first = os.path.join(REPO_ROOT, "desktop", "apps", "neuro-integration", "permissions.example.json")
+    first = os.path.join(REPO_ROOT, "headless", "apps", "neuro-integration", "permissions.example.json")
     second = os.path.join(REPO_ROOT, "desktop", "config", "permissions.example.json")
     if not (os.path.exists(first) and os.path.exists(second)):
         fail("one of the permissions.example.json files is missing")
@@ -124,7 +124,7 @@ def check_example_policies_match() -> None:
     with open(second, "r", encoding="utf-8") as handle:
         b = json.load(handle)
     if a != b:
-        fail("desktop/apps/neuro-integration/permissions.example.json and "
+        fail("headless/apps/neuro-integration/permissions.example.json and "
              "desktop/config/permissions.example.json have drifted apart")
         return
     ok("both example permission policies are identical")

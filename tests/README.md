@@ -11,10 +11,10 @@ pause/resume enforcement, and input release. The client runs headless and never
 generates desktop input. If Python is unavailable, this cross-language test skips;
 the CI runners provide it.
 
-Additional checks:
+Additional checks, from the repository root:
 
 ```bash
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go test -race -count=1 ./...
 go test -count=1 -tags neurodev ./...
 ```

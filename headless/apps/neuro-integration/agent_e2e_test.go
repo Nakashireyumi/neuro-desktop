@@ -56,7 +56,7 @@ func TestRealHeadlessAgentActionFlow(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = logFile.Close() })
 	command := exec.Command(python, "-m", "controller.agent", "--bridge", hub.Addr())
-	command.Dir = filepath.Join("..", "..", "backend", "python")
+	command.Dir = filepath.Join("..", "..", "..", "desktop", "python")
 	command.Stdout, command.Stderr = logFile, logFile
 	if err := command.Start(); err != nil {
 		t.Fatal(err)

@@ -2,7 +2,7 @@ package main
 
 // The executor protocol lives in `docs/EXECUTOR_PROTOCOL.md`. This file holds
 // the one authoritative list of commands the bridge forwards to the executor
-// process (the Python agent in `desktop/backend/python/controller/agent.py`).
+// process (the Python agent in `desktop/python/controller/agent.py`).
 //
 // Everything that is *not* in this list is handled inside the bridge itself:
 // the desktop shell intents (`open_windows_menu`, …), the catalog, the

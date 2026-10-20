@@ -146,7 +146,7 @@ the `X-ND-Token` header only. A `?token=` in the URL is ignored.
 ## Install and build
 
 - **`go build` fails.** Use Go 1.22 or newer (`go.mod` says 1.22). Build from
-  `desktop/apps/neuro-integration`.
+  `headless/apps/neuro-integration`.
 - **`pip` fails for the agent.** Use Python 3.12, which is what CI runs. The agent's
   stdlib-only parts run without any packages. Install `requirements.txt` only for the GUI
   parts, and skip them on a headless machine.

@@ -65,17 +65,15 @@ git checkout -b feature/my-awesome-feature
 ### Build and Test
 
 ```bash
-cd desktop
-
 # Build all components
-.\scripts\build-all.ps1  # Windows
-./scripts/build-all.sh   # Linux/macOS
+.\desktop\scripts\build-all.ps1  # Windows
+desktop/scripts/build-all.sh      # Linux/macOS
 
 # Run tests
-(cd apps/neuro-integration && go test -race ./...)   # the server: Go
-python3 -m unittest discover backend/python/tests -t backend/python   # the agent: Python
-python3 tools/ci/repo_checks.py                      # repository checks
-(cd frontend && npm run build)                       # the dashboard: type-checks and bundles
+(cd headless/apps/neuro-integration && go test -race ./...)   # the server: Go
+python3 -m unittest discover desktop/python/tests -t desktop/python   # the agent: Python
+python3 desktop/tools/ci/repo_checks.py               # repository checks
+(cd desktop/frontend && npm run build)                # the dashboard: type-checks and bundles
 ```
 
 ## How to Contribute
@@ -124,7 +122,7 @@ Application crashes with "coordinate out of bounds".
 ### Requesting Features
 
 **Before requesting**, check:
-1. Is it already planned? (see [Roadmap](README.md#roadmap))
+1. Is it already planned? (see [Roadmap](../README.md#roadmap))
 2. Has someone else requested it?
 3. Is it aligned with project goals?
 
@@ -180,18 +178,22 @@ See [Pull Request Process](#pull-request-process) below.
 ### Project Structure
 
 ```
-desktop/
-├── apps/
+neuro-desktop/
+├── headless/apps/
 │   ├── neuro-integration/    # Go server: Neuro client, permissions, dashboard API, relay host
+│   ├── neuro-dashboard/      # Go dashboard program
+│   ├── neuro-client/         # PyInstaller entry point for the client
+│   ├── neuro-client-go/      # Go port of the client, slice 1
 │   └── nd-vision-server/     # optional Python vision service
-├── backend/python/
-│   └── controller/           # Python agent and its drivers
-├── catalog/                  # signed extension index, publisher keys, game profiles
-├── config/                   # example policy and integration config
-├── frontend/                 # dashboard (TypeScript, React, Vite)
-├── scripts/                  # build and bundle scripts
-└── tools/                    # CI checks, fake executor, Ollama test client
-docs/                         # documentation (repository root)
+├── desktop/
+│   ├── apps/neuro-manager/   # native GTK 4 manager
+│   ├── python/controller/    # Python agent and its drivers
+│   ├── catalog/              # signed extension index, publisher keys, game profiles
+│   ├── config/               # example policy and integration config
+│   ├── frontend/             # dashboard (TypeScript, React, Vite)
+│   ├── scripts/              # build and bundle scripts
+│   └── tools/                # CI checks, fake executor, Ollama test client
+└── docs/                     # documentation
 ```
 
 ### Coding Standards
@@ -244,8 +246,8 @@ def move_mouse(x: int, y: int) -> None:
 
 **Run formatters**:
 ```bash
-black backend/python/controller
-pylint backend/python/controller
+black desktop/python/controller
+pylint desktop/python/controller
 ```
 
 #### TypeScript
@@ -272,13 +274,13 @@ function moveMouse(action)                     // ✗
 Every change comes with a test where one is possible. The bar is higher for
 anything that touches permissions, the relay, the catalog, or the input path.
 
-- **Go (the server):** `cd desktop/apps/neuro-integration && go test -race ./...`.
+- **Go (the server):** `cd headless/apps/neuro-integration && go test -race ./...`.
   Tests use real handlers, not mocks of them. Keep tests off the executor: a test
   must never call a function that reaches the agent or file IPC.
 - **Weak-model cases:** a new error message or action rule gets a case in
-  `desktop/apps/neuro-integration/testdata/weak_model_cases.json`, with the call a
+  `headless/apps/neuro-integration/testdata/weak_model_cases.json`, with the call a
   small model would make and the reply it must get.
-- **Python (the agent):** `python3 -m unittest discover backend/python/tests -t backend/python`.
+- **Python (the agent):** `python3 -m unittest discover desktop/python/tests -t desktop/python`.
   It runs with no display, as CI does.
 - **Dashboard:** there are no unit tests yet. `npm run build` type-checks it, and the
   Settings and Permissions pages should be checked in a browser before a release.

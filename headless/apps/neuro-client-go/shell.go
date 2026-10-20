@@ -1,6 +1,6 @@
 package main
 
-// A port of desktop/backend/python/controller/shell.py. The rules, the messages and
+// A port of desktop/python/controller/shell.py. The rules, the messages and
 // the output format are the same, so Neuro gets the same answers from either client.
 // Two deliberate differences: the timeout is capped at maxTimeout even when the
 // server asks for more, and a command that is still running after its timeout is

@@ -101,11 +101,11 @@ export NEURO_EXECUTOR_TOKEN="$(openssl rand -hex 24)"
 ./neuro-integration --ws-url ws://localhost:8000 --executor-listen 0.0.0.0:9876
 
 # PC Neuro should control (client) — graphical session, NO sudo.
-# Give it the same NEURO_EXECUTOR_TOKEN value. Built with scripts/build-client.sh, it is
+# Give it the same NEURO_EXECUTOR_TOKEN value. Built with desktop/scripts/build-client.sh, it is
 # one program that needs no Python on this PC (copy the neuro-client folder over):
 ./neuro-client --bridge <server-lan-ip>:9876 --token "$NEURO_EXECUTOR_TOKEN"
 # From source instead (Python and the requirements needed):
-# cd desktop/backend/python && python3 -m controller.agent --bridge <server-lan-ip>:9876 --token "$NEURO_EXECUTOR_TOKEN"
+# cd desktop/python && python3 -m controller.agent --bridge <server-lan-ip>:9876 --token "$NEURO_EXECUTOR_TOKEN"
 ```
 
 The executor token and the agent's commands cross the network in plain TCP for now.
@@ -167,9 +167,9 @@ simulator that never touches your real mouse or keyboard:
 python3 desktop/tools/fake-executor/fake_executor.py --addr 127.0.0.1:9876
 
 # Terminal 2: the bridge + dashboard (set up once; sign in with the printed token)
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go run . setup
-NEURO_UI_DIR=../frontend/dist go run .
+NEURO_UI_DIR=../../desktop/frontend/dist go run .
 ```
 
 ### Playing games
@@ -219,7 +219,7 @@ export NEURO_SHELL_ALLOWLIST="ls,cat,python3,git"   # programs Neuro may run (em
 export NEURO_SHELL_TIMEOUT=20              # seconds per command (max 120)
 export NEURO_SHELL_CWD=/srv/work
 
-cd desktop/apps/neuro-integration && go run . setup && go run .   # setup prints the dashboard token once
+cd headless/apps/neuro-integration && go run . setup && go run .   # setup prints the dashboard token once
 ```
 
 What changes on a headless machine:
@@ -268,9 +268,9 @@ export NEURO_DENY_ACTIONS="type_text,key_press"     # a hard deny list the dashb
 | Component | Language | Role |
 |-----------|----------|------|
 | **neuro-integration** | Go | **Server**: Neuro API, permissions, audit, game interface, dashboard API, executor hub, vision client |
-| **neuro-dashboard** (`apps/neuro-dashboard`) | Go | **Dashboard program** (optional): serves the dashboard page and forwards `/api` and `/health` to the server. Stdlib only |
-| **neuro-client** (`apps/neuro-client`, built by `scripts/build-client.sh`) | Python, PyInstaller | **Client** for the PC Neuro controls: the agent as one program. Input, script parsing, shell, telemetry; the only part that touches that machine |
-| **neuro-client-go** (`apps/neuro-client-go`, not shipped yet) | Go | The Go port of the client, in progress: the executor link, status, shell and lifecycle commands. Input and screen still run only in the Python client |
+| **neuro-dashboard** (`headless/apps/neuro-dashboard`) | Go | **Dashboard program** (optional): serves the dashboard page and forwards `/api` and `/health` to the server. Stdlib only |
+| **neuro-client** (`headless/apps/neuro-client`, built by `desktop/scripts/build-client.sh`) | Python, PyInstaller | **Client** for the PC Neuro controls: the agent as one program. Input, script parsing, shell, telemetry; the only part that touches that machine |
+| **neuro-client-go** (`headless/apps/neuro-client-go`, not shipped yet) | Go | The Go port of the client, in progress: the executor link, status, shell and lifecycle commands. Input and screen still run only in the Python client |
 | **controller/agent.py** | Python | The agent that `neuro-client` runs (also runnable from source as `python3 -m controller.agent`) |
 | **controller/\*** | Python | Drivers the agent uses: `actions`, `desktop`, `shell`, `platform_intents`, `controls/` |
 | **frontend** | TypeScript | **Dashboard page**, served by the server at `/ui/` and by the dashboard program |
@@ -313,27 +313,27 @@ node --version
 ```bash
 # Clone repository
 git clone https://github.com/cassitly/neuro-desktop.git
-cd neuro-desktop/desktop
+cd neuro-desktop
 
 # Run automated build
-.\scripts\build-all.ps1  # Windows
-./scripts/build-all.sh   # Linux/macOS
+desktop/scripts/build-all.sh   # Linux/macOS
+.\desktop\scripts\build-all.ps1  # Windows
 ```
 
 ### First Run
 
 ```bash
 # 1. Server + dashboard (PC that runs Neuro). Set up once, then start.
-cd desktop/apps/neuro-integration && go build -o neuro-integration .
+cd headless/apps/neuro-integration && go build -o neuro-integration .
 ./neuro-integration setup          # creates the relay token and PRINTS the dashboard token once
 ./neuro-integration                # starts the server and the dashboard
 
-# 2. Client (PC Neuro should control; the same machine in a dev setup)
-cd desktop/backend/python && python3 -m controller.agent --bridge 127.0.0.1:9876
-#    or, once built with scripts/build-client.sh: dist/neuro-client/neuro-client --bridge 127.0.0.1:9876
+# 2. Client (PC Neuro should control; the same machine in a dev setup; new terminal at the repository root)
+cd desktop/python && python3 -m controller.agent --bridge 127.0.0.1:9876
+#    or, once built with desktop/scripts/build-client.sh: desktop/dist/neuro-client/neuro-client --bridge 127.0.0.1:9876
 
 # 3. Dashboard: http://127.0.0.1:8300/ui/ — sign in with the token from step 1
-#    or, on your own PC: go build -o neuro-dashboard . (in apps/neuro-dashboard), then
+#    or, on your own PC: go build -o neuro-dashboard . (in headless/apps/neuro-dashboard), then
 #    ./neuro-dashboard --server http://127.0.0.1:8300 --listen 127.0.0.1:8310 and open
 #    http://127.0.0.1:8310/ui/ (reach the server's admin port over SSH)
 ```
@@ -342,8 +342,8 @@ cd desktop/backend/python && python3 -m controller.agent --bridge 127.0.0.1:9876
 only checks them. Lost the dashboard token? `./neuro-integration setup --rotate-dashboard`
 makes a new one. A running server keeps the old token until it restarts.
 
-Or stage the whole thing at once: `./scripts/bundle/dev.sh` (Linux/macOS) /
-`.\scripts\bundle\dev.ps1` (Windows). The server prints every connection attempt,
+Or stage the whole thing at once: `desktop/scripts/bundle/dev.sh` (Linux/macOS) /
+`.\desktop\scripts\bundle\dev.ps1` (Windows). The server prints every connection attempt,
 so you can see immediately whether Neuro, the client and the dashboard are up.
 
 ## Usage
@@ -509,7 +509,7 @@ There are two ways to coexist, and they are complementary:
 Neuro Relay's intermediary (the socket integrations and Neuro-OS watchers connect to) is built into the server as a subcommand. It replaces the earlier Python shim, and the server no longer starts any relay process itself.
 
 ```bash
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go run . setup                       # once: writes ./relay-token (mode 0600), shared with the server
 go run . relay --listen 127.0.0.1:8765 --health 127.0.0.1:8766   # integrations and watchers connect here (ws)
 ```
@@ -526,52 +526,55 @@ The upstream Python relay speaks the same socket, so the bridge can connect to i
 ### Project Structure
 
 ```
-desktop/
-├── apps/
+neuro-desktop/
+├── headless/apps/
 │   ├── neuro-integration/     # Go server: Neuro API, permissions, audit, dashboard API,
 │   │                          #   relay host, MCP bridge, signed catalog, game interface
 │   │   └── third_party/neuro-integration-sdk/   # the Go SDK port (replaced in go.mod)
 │   ├── neuro-dashboard/       # Go dashboard program: serves the page, forwards /api and /health
 │   ├── neuro-client/          # entry point for the PyInstaller build of the client
+│   ├── neuro-client-go/       # Go port of the client, slice 1 (not shipped yet)
 │   └── nd-vision-server/      # optional Python vision service (NEURO_VISION_URL)
-├── backend/python/            # Python client/agent (controller/) and its tests
-├── catalog/                   # signed extension index, publisher keys, game profiles
-├── config/                    # example permission policy and integration config
-├── frontend/                  # TypeScript dashboard, served by the server at /ui/
-├── scripts/                   # build and bundle scripts (dev, prod), build-client (PyInstaller)
-└── tools/                     # CI checks, fake executor, Ollama test client
-docs/                          # architecture, safety, capabilities, relay, deployment
+├── desktop/
+│   ├── apps/neuro-manager/    # native GTK 4 manager
+│   ├── python/                # Python client/agent (controller/) and its tests
+│   ├── frontend/              # TypeScript dashboard, served by the server at /ui/
+│   ├── catalog/               # signed extension index, publisher keys, game profiles
+│   ├── config/                # example permission policy and integration config
+│   ├── scripts/               # build and bundle scripts (dev, prod), build-client (PyInstaller)
+│   └── tools/                 # CI checks, fake executor, Ollama test client
+└── docs/                      # architecture, safety, capabilities, relay, deployment
 ```
 
 ### Development Workflow
 
-Paths below are relative to `desktop/`.
+Paths below are relative to the repository root.
 
 ```bash
-# 1. Build the server, the dashboard program and the dashboard page (Windows: .\scripts\build-all.ps1)
-make all
+# 1. Build the server, the dashboard program and the dashboard page (Windows: .\desktop\scripts\build-all.ps1)
+make -C desktop all
 
 # 2. Run in development mode: a -tags neurodev build, set up, then started
-./scripts/bundle/dev.sh            # Windows: .\scripts\bundle\dev.ps1
+desktop/scripts/bundle/dev.sh            # Windows: .\desktop\scripts\bundle\dev.ps1
 
 # 3. Run tests. CI runs these too, plus the repository checks.
-(cd apps/neuro-integration && go test -race -count=1 ./... && go test -race -count=1 -tags neurodev ./...)   # the second run covers the dev-only unsigned-extension switch
-python3 -m unittest discover backend/python/tests -t backend/python   # client (agent) tests
-(cd apps/neuro-dashboard && go test -count=1 ./...)                     # dashboard program tests
-python3 tools/ci/repo_checks.py    # repository checks
+(cd headless/apps/neuro-integration && go test -race -count=1 ./... && go test -race -count=1 -tags neurodev ./...)   # the second run covers the dev-only unsigned-extension switch
+python3 -m unittest discover desktop/python/tests -t desktop/python   # client (agent) tests
+(cd headless/apps/neuro-dashboard && go test -count=1 ./...)                     # dashboard program tests
+python3 desktop/tools/ci/repo_checks.py    # repository checks
 
 # 4. Build the release bundle (no -tags neurodev). It also tries to build neuro-client
-./scripts/bundle/prod.sh           # Windows: .\scripts\bundle\prod.ps1
-./scripts/build-client.sh          # neuro-client alone (Windows: .\scripts\build-client.ps1)
+desktop/scripts/bundle/prod.sh           # Windows: .\desktop\scripts\bundle\prod.ps1
+desktop/scripts/build-client.sh          # neuro-client alone (Windows: .\desktop\scripts\build-client.ps1)
 ```
 
 ### Adding New Actions
 
-1. **Define it** in `desktop/apps/neuro-integration/action-registry.go`: a `CommandType` constant, then an `actionSpec` in `HLActionSpecs` or `LLActionSpecs` with the name, a description that ends with a one-line example, and the parameter schema.
+1. **Define it** in `headless/apps/neuro-integration/action-registry.go`: a `CommandType` constant, then an `actionSpec` in `HLActionSpecs` or `LLActionSpecs` with the name, a description that ends with a one-line example, and the parameter schema.
 2. **Build the command** in `buildIPCCommand` (same file). Reject bad input there with a message that names the parameter and shows a valid example. That text is what a small model reads on its next turn.
-3. **Give it a scope** in `desktop/apps/neuro-integration/permissions.go` (`actionScope`). Actions without a scope follow `default_allow`. Only actions that cannot start anything belong in `alwaysAllowed`.
-4. **Connect the executor** if the command runs on the machine: add it to the allowlist in `executor_commands.go`, and handle it in the Python agent (`desktop/backend/python/controller/agent.py`).
-5. **Test it**: add the call a small model would make to `desktop/apps/neuro-integration/testdata/weak_model_cases.json` with the expected verdict and reply text, then run `go test ./...`.
+3. **Give it a scope** in `headless/apps/neuro-integration/permissions.go` (`actionScope`). Actions without a scope follow `default_allow`. Only actions that cannot start anything belong in `alwaysAllowed`.
+4. **Connect the executor** if the command runs on the machine: add it to the allowlist in `executor_commands.go`, and handle it in the Python agent (`desktop/python/controller/agent.py`).
+5. **Test it**: add the call a small model would make to `headless/apps/neuro-integration/testdata/weak_model_cases.json` with the expected verdict and reply text, then run `go test ./...`.
 
 ### Testing with Randy
 
@@ -584,7 +587,7 @@ npm install
 npm start
 
 # Terminal 2: Run Neuro Desktop
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go run .
 ```
 
@@ -603,7 +606,7 @@ Randy will send random actions to test your integration.
 - 🛡️ [Safety systems and firewalls](docs/SAFETY.md) — every guard, where it lives, how to verify it
 - 📖 [Action Script Language Reference](docs/action_script/LANGUAGE_REFERENCE.md)
 - 🏗️ [Architecture Deep Dive](docs/ARCHITECTURE.md)
-- 🔧 [API Specification](desktop/apps/neuro-integration/integration-docs/Action Script Documentation.md)
+- 🔧 [API Specification](headless/apps/neuro-integration/integration-docs/Action Script Documentation.md)
 - 🚀 [Deployment Guide](docs/DEPLOYMENT.md)
 - 🧪 [Ollama Neuro Tester](desktop/tools/ollama-neuro/README.md)
 - 🤝 [Contributing Guidelines](CONTRIBUTING.md)
@@ -623,13 +626,13 @@ Leftover from a `sudo` bundle. Fix ownership, never rebuild as root:
 
 ```bash
 cd desktop
-sudo chown -R "$USER:$USER" frontend/dist dist backend/python/.venv
+sudo chown -R "$USER:$USER" frontend/dist dist python/.venv
 ./scripts/bundle/dev.sh
 ```
 
 **The dashboard says the server has no token (`503`), or the token is refused (`401`)**
 ```bash
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 ./neuro-integration setup --check   # says what is missing or does not match; changes nothing
 ./neuro-integration setup           # only if no token exists yet
 ```
@@ -639,14 +642,14 @@ makes a new one, and the server must be restarted to use it.
 **The server binary is missing or out of date**
 ```bash
 # Rebuild the server
-cd desktop/apps/neuro-integration
+cd headless/apps/neuro-integration
 go build -o neuro-integration .     # Windows: go build -o neuro-integration.exe .
 ```
 
 **"Failed to initialize Python controller"**
 ```bash
 # Reinstall Python dependencies
-cd backend/python
+cd desktop/python
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt

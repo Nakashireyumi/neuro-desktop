@@ -15,7 +15,7 @@ needs nothing installed to start. Pillow and tesseract add capabilities; see
 ## Run it
 
 ```bash
-cd desktop/apps/nd-vision-server
+cd headless/apps/nd-vision-server
 NEURO_VISION_BACKEND=stats NEURO_VISION_TOKEN="$(openssl rand -hex 24)" \
   python3 -m nd_vision --host 127.0.0.1 --port 8610
 ```
@@ -115,7 +115,7 @@ before a result was ready).
 ## Tests
 
 ```bash
-cd desktop/apps/nd-vision-server
+cd headless/apps/nd-vision-server
 python3 -m unittest discover -s tests -t .
 ```
 

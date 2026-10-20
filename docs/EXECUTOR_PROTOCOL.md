@@ -59,8 +59,8 @@ at 3 MiB, which is about 4 MiB as base64.
 ## Commands
 
 The authoritative list is `executorCommands` in
-`desktop/apps/neuro-integration/executor_commands.go`, mirrored by
-`EXECUTOR_COMMANDS` in `desktop/backend/python/controller/agent.py` and pinned by
+`headless/apps/neuro-integration/executor_commands.go`, mirrored by
+`EXECUTOR_COMMANDS` in `desktop/python/controller/agent.py` and pinned by
 a test on both sides.
 
 | Command | Params | Notes |
@@ -165,14 +165,14 @@ file queues require a session identifier. Update both programs together.
 
 The agent trusts the server for intent and permission decisions. Local bounds
 include the shell firewall, headless refusal, key validation, frame/queue limits,
-and the 4 000-character shell output cap in `desktop/backend/python/controller/`.
+and the 4 000-character shell output cap in `desktop/python/controller/`.
 These checks do not provide an OS sandbox. Protect the bridge, executor token,
 IPC directory, and operator account; run the client with the privileges needed
 for the intended applications.
 
 ## Testing
 
-* Server: `desktop/apps/neuro-integration/executor_hub_test.go`,
+* Server: `headless/apps/neuro-integration/executor_hub_test.go`,
   `executor_commands_test.go`, `executor_liveness_test.go` (round trip, token
   rejection, slow command, timeout, replacement, ping/drop), `executor_frame_test.go`
   (the frame limits, an oversized hello refused before auth, a screenshot-sized reply
@@ -180,7 +180,7 @@ for the intended applications.
   `executor_session_test.go` covers correlated results, occupied-path handling,
   and timeout cleanup; `game_detection_guard_test.go` covers observation cache
   revocation and replacement approvals.
-* Agent: `desktop/backend/python/tests/test_agent.py` (handshake, ping, malformed
+* Agent: `desktop/python/tests/test_agent.py` (handshake, ping, malformed
   frames, rejection, queue semantics, file IPC, and the cross-language command
   parity check), `test_script_execution.py` (ordered, bounded execution and
   session cleanup), and `test_screenshot_bytes.py` (the screenshot is scaled and

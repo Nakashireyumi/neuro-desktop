@@ -1,11 +1,11 @@
 services:
   go-integration-tests:
     build:
-      context: ./desktop/apps/neuro-integration
+      context: ./headless/apps/neuro-integration
       dockerfile: Dockerfile.test
     command: go test ./...
 
   python-parser-tests:
     build:
-      context: ./desktop/backend/python
+      context: ./desktop/python
       dockerfile: Dockerfile.test

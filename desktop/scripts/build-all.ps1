@@ -22,8 +22,8 @@ function Invoke-Checked([string]$What, [scriptblock]$Block) {
 
 Write-Host '=== neuro-desktop build (windows) ==='
 
-Write-Host '[1/5] Server (apps/neuro-integration)'
-Push-Location 'apps/neuro-integration'
+Write-Host '[1/5] Server (../headless/apps/neuro-integration)'
+Push-Location '../headless/apps/neuro-integration'
 try {
     if (-not $NoTest) {
         Invoke-Checked 'go vet' { go vet ./... }
@@ -34,10 +34,10 @@ try {
 } finally {
     Pop-Location
 }
-Write-Host '      -> apps/neuro-integration/dist/neuro-integration.exe'
+Write-Host '      -> ../headless/apps/neuro-integration/dist/neuro-integration.exe'
 
-Write-Host '[2/5] Dashboard program (apps/neuro-dashboard)'
-Push-Location 'apps/neuro-dashboard'
+Write-Host '[2/5] Dashboard program (../headless/apps/neuro-dashboard)'
+Push-Location '../headless/apps/neuro-dashboard'
 try {
     if (-not $NoTest) {
         Invoke-Checked 'go vet (dashboard)' { go vet ./... }
@@ -48,7 +48,7 @@ try {
 } finally {
     Pop-Location
 }
-Write-Host '      -> apps/neuro-dashboard/dist/neuro-dashboard.exe'
+Write-Host '      -> ../headless/apps/neuro-dashboard/dist/neuro-dashboard.exe'
 
 Write-Host '[3/5] Dashboard (frontend)'
 Push-Location 'frontend'
@@ -65,8 +65,8 @@ try {
 }
 Write-Host '      -> frontend/dist'
 
-Write-Host '[4/5] Agent (backend/python/controller)'
-Push-Location 'backend/python'
+Write-Host '[4/5] Agent (python/controller)'
+Push-Location 'python'
 try {
     Invoke-Checked 'python compileall' { python -m compileall -q controller | Out-Null }
     if (-not $NoTest) {
@@ -79,10 +79,10 @@ try {
 } finally {
     Pop-Location
 }
-Write-Host '      -> backend/python/controller'
+Write-Host '      -> python/controller'
 
 Write-Host '[+] Go client, slice 1 (not the shipping desktop client)'
-Push-Location 'apps/neuro-client-go'
+Push-Location '../headless/apps/neuro-client-go'
 try {
     if (-not $NoTest) {
         Invoke-Checked 'go vet (Go client)' { go vet ./... }

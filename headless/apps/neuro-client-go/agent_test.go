@@ -121,7 +121,7 @@ func TestUnknownCommandsSayTheBridgeHandlesThem(t *testing.T) {
 // this client neither handles nor refuses, so a gap cannot be silent. It reads the
 // list from agent.py, the same way the Python side reads the Go list.
 func TestCommandSetsMatchThePythonAgent(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "backend", "python", "controller", "agent.py"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "desktop", "python", "controller", "agent.py"))
 	if err != nil {
 		t.Fatalf("cannot read the Python agent: %v", err)
 	}

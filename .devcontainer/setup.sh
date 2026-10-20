@@ -11,14 +11,14 @@ if [ ! -x .venv/bin/python ]; then
 fi
 
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/pip install -r desktop/backend/python/requirements.txt
+.venv/bin/pip install -r desktop/python/requirements.txt
 
 npm ci --prefix desktop/frontend
 
 cat <<'EOF'
 Devcontainer ready.
-  Python controller: .venv/bin/python -m controller.agent --help
-  Go:                go test ./... (from desktop/apps/neuro-integration)
+  Python controller: PYTHONPATH=desktop/python .venv/bin/python -m controller.agent --help
+  Go:                go test ./... (from headless/apps/neuro-integration)
   Frontend:          npm --prefix desktop/frontend run build
   GUI tests:         xvfb-run -a env NEURO_MANAGER_GUI_TESTS=1 .venv/bin/python -m unittest discover -s desktop/apps/neuro-manager/tests
 EOF

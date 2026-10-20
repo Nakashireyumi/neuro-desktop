@@ -124,7 +124,7 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.22.x'
-          cache-dependency-path: desktop/apps/neuro-integration/go.sum
+          cache-dependency-path: headless/apps/neuro-integration/go.sum
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
@@ -138,7 +138,7 @@ jobs:
           import os, pathlib, platform, re
           if platform.machine().lower() != os.environ['RELEASE_ARCH'].lower():
               raise SystemExit(f"Runner architecture mismatch: {platform.machine()}")
-          for path in pathlib.Path('desktop/backend/python').glob('requirements*.txt'):
+          for path in pathlib.Path('desktop/python').glob('requirements*.txt'):
               for raw in path.read_text().splitlines():
                   line = raw.split('#', 1)[0].strip()
                   if line and not line.startswith('-r ') and not re.fullmatch(r'[A-Za-z0-9_.-]+==[A-Za-z0-9_.+!-]+', line):
@@ -146,7 +146,7 @@ jobs:
           assert pathlib.Path('desktop/frontend/package-lock.json').is_file()
           if os.environ['RELEASE_PUBLISHABLE'] == 'true':
               expected = os.environ['RELEASE_VERSION'][1:]
-              sources = [('desktop/apps/neuro-integration/main.go', r'const Version = "([^"]+)"'),
+              sources = [('headless/apps/neuro-integration/main.go', r'const Version = "([^"]+)"'),
                          ('desktop/apps/neuro-manager/neuro_manager/__init__.py', r'__version__ = "([^"]+)"')]
               for path, pattern in sources:
                   match = re.search(pattern, pathlib.Path(path).read_text())
@@ -199,10 +199,10 @@ jobs:
           set -euo pipefail
           python desktop/tools/ci/repo_checks.py
           python -m unittest discover -s desktop/tools/ci -p 'test_*.py'
-          python -m unittest discover desktop/backend/python/tests -t desktop/backend/python
+          python -m unittest discover desktop/python/tests -t desktop/python
           PYTHONPATH=desktop/apps/neuro-manager python -m unittest discover -s desktop/apps/neuro-manager/tests
           for module in neuro-integration neuro-dashboard; do
-            (cd "desktop/apps/$module" && go mod verify && go vet ./... && go test -count=1 ./...)
+            (cd "headless/apps/$module" && go mod verify && go vet ./... && go test -count=1 ./...)
           done
 
       - name: Test the actual native GTK controls (Linux)
@@ -347,7 +347,7 @@ jobs:
           out = pathlib.Path('release-out'); out.mkdir()
           shutil.copyfile('LICENSE', bundle/'LICENSE')
           (bundle/'licenses').mkdir(exist_ok=True)
-          shutil.copyfile('desktop/apps/neuro-integration/third_party/neuro-integration-sdk/LICENSE', bundle/'licenses'/'neuro-integration-sdk-LICENSE')
+          shutil.copyfile('headless/apps/neuro-integration/third_party/neuro-integration-sdk/LICENSE', bundle/'licenses'/'neuro-integration-sdk-LICENSE')
           target, version = os.environ['RELEASE_TARGET'], os.environ['RELEASE_VERSION']
           def command(*args): return subprocess.check_output(args, text=True).strip()
           def digest(path):
@@ -355,8 +355,8 @@ jobs:
               with open(path,'rb') as f:
                   for block in iter(lambda:f.read(1024*1024),b''): h.update(block)
               return h.hexdigest()
-          lock_paths = ['desktop/frontend/package-lock.json','desktop/apps/neuro-integration/go.mod','desktop/apps/neuro-integration/go.sum',
-                        'desktop/apps/neuro-dashboard/go.mod','desktop/backend/python/requirements.txt','desktop/backend/python/requirements-windows.txt',
+          lock_paths = ['desktop/frontend/package-lock.json','headless/apps/neuro-integration/go.mod','headless/apps/neuro-integration/go.sum',
+                        'headless/apps/neuro-dashboard/go.mod','desktop/python/requirements.txt','desktop/python/requirements-windows.txt',
                         'desktop/apps/neuro-manager/neuro-manager.spec','desktop/catalog/index.json','desktop/catalog/publishers.json','desktop/catalog/marketplace.json']
           agent_python = pathlib.Path('desktop/dist/.client-build/venv')/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
           metadata = {'schema_version':1, 'version':version, 'source_repository':os.environ['GITHUB_REPOSITORY'], 'source_sha':os.environ['RELEASE_SHA'],
@@ -385,7 +385,7 @@ jobs:
 
       - name: Ensure dependency inputs were not rewritten during the build
         shell: bash
-        run: git diff --exit-code -- desktop/frontend/package-lock.json desktop/apps/neuro-integration/go.mod desktop/apps/neuro-integration/go.sum desktop/apps/neuro-dashboard/go.mod desktop/backend/python/requirements.txt desktop/backend/python/requirements-windows.txt
+        run: git diff --exit-code -- desktop/frontend/package-lock.json headless/apps/neuro-integration/go.mod headless/apps/neuro-integration/go.sum headless/apps/neuro-dashboard/go.mod desktop/python/requirements.txt desktop/python/requirements-windows.txt
 
       - name: Save immutable tested artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -1,6 +1,6 @@
 # neuro-client-go (slice 1 of the Go client)
 
-The Go port of the Python client (`desktop/backend/python/controller`). It is **not
+The Go port of the Python client (`desktop/python/controller`). It is **not
 shipped yet**: the bundle still packages the Python client as `neuro-client`. Read
 `docs/PRODUCTION_TODO.md` ("Client rewrite in Go") for what is left.
 
@@ -32,7 +32,7 @@ action-script runner, and the input queue.
 ## Build and test
 
 ```bash
-cd desktop/apps/neuro-client-go
+cd headless/apps/neuro-client-go
 go vet ./... && go test -count=1 ./...
 go build -o neuro-client-go .          # Linux, macOS, Windows (CGO not needed)
 ./neuro-client-go --bridge 127.0.0.1:9876 --token "$NEURO_EXECUTOR_TOKEN"
