@@ -10,6 +10,15 @@ import urllib.request
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 SCOPES = ("input", "game", "vision", "shell", "filesystem", "process", "network", "system", "extensions")
+# The bridge's vision client stops at 45 s. The manager must wait for that
+# answer instead of timing out an observation the bridge is still completing.
+LONG_REQUEST_TIMEOUTS = {"/api/games/observe": 50}
+
+
+def request_timeout(path: str, method: str) -> int:
+    if method == "POST" and path.endswith(("/stage", "/install")):
+        return 125
+    return LONG_REQUEST_TIMEOUTS.get(path, 8)
 
 
 class ApiError(Exception):
@@ -69,8 +78,7 @@ class Client:
         request = urllib.request.Request(self.server + path, data=data, headers=headers, method=method)
         self.requests += 1
         try:
-            timeout = 125 if method == "POST" and path.endswith(("/stage", "/install")) else 8
-            with self._opener.open(request, timeout=timeout) as response:
+            with self._opener.open(request, timeout=request_timeout(path, method)) as response:
                 return self._decode(response)
         except urllib.error.HTTPError as error:
             try:

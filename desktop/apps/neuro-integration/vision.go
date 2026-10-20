@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,15 @@ type visionRequest struct {
 const maxVisionImageBytes = 8 << 20
 
 const maxVisionResponseBytes = 256 << 10
+
+// The budgets are ordered deliberately: the vision server stops at 40 s, this
+// request waits 45 s, and the native manager waits 50 s for /api/games/observe.
+// The server therefore gives up before its caller, and a slow model cannot keep
+// working after the operator's UI has stopped waiting.
+const (
+	visionServerDeadline = 40 * time.Second
+	visionRequestTimeout = 45 * time.Second
+)
 
 // visionServerURL returns the configured vision endpoint, if any. NEURO_VISION_URL
 // is the canonical name; NEURO_VISION_SERVER_URL is still read so older setups keep
@@ -178,6 +188,8 @@ func summarizeWithVisionServerContext(ctx context.Context, serverURL string, png
 	if len(png) > maxVisionImageBytes {
 		return "", fmt.Errorf("the screenshot is %d bytes; the vision server takes at most %d", len(png), maxVisionImageBytes)
 	}
+	ctx, cancel := context.WithTimeout(ctx, visionRequestTimeout)
+	defer cancel()
 	encodedImage := base64.StdEncoding.EncodeToString(png)
 
 	if strings.TrimSpace(prompt) == "" {
@@ -198,7 +210,7 @@ func summarizeWithVisionServerContext(ctx context.Context, serverURL string, png
 	}
 
 	httpClient := &http.Client{
-		Timeout: 20 * time.Second,
+		Timeout: visionRequestTimeout,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, bytes.NewReader(requestBody))
@@ -206,6 +218,17 @@ func summarizeWithVisionServerContext(ctx context.Context, serverURL string, png
 		return "", fmt.Errorf("vision request could not be built: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Let the server stop first, even if a caller supplied a shorter deadline.
+	budget := visionServerDeadline
+	if deadline, ok := ctx.Deadline(); ok {
+		if left := time.Until(deadline) - time.Second; left < budget {
+			budget = left
+		}
+	}
+	if budget < time.Second {
+		budget = time.Second
+	}
+	req.Header.Set("X-Neuro-Deadline-Ms", strconv.FormatInt(budget.Milliseconds(), 10))
 	if token := visionToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHealthURLForDerivesTheHealthEndpoint(t *testing.T) {
@@ -75,7 +77,9 @@ func TestProbeWithNothingConfigured(t *testing.T) {
 
 func TestSummarizeSendsImageAndExtractsSummary(t *testing.T) {
 	var body visionRequest
+	var deadlineHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		deadlineHeader = r.Header.Get("X-Neuro-Deadline-Ms")
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		_ = json.NewEncoder(w).Encode(map[string]string{"summary": "a red square"})
 	}))
@@ -91,5 +95,15 @@ func TestSummarizeSendsImageAndExtractsSummary(t *testing.T) {
 	}
 	if body.ImageBase64 == "" {
 		t.Fatal("a small screenshot must be sent inline as image_base64")
+	}
+	deadlineMS, err := strconv.Atoi(deadlineHeader)
+	if err != nil {
+		t.Fatalf("X-Neuro-Deadline-Ms = %q: %v", deadlineHeader, err)
+	}
+	if deadlineMS < 1000 || deadlineMS > int(visionServerDeadline/time.Millisecond) {
+		t.Fatalf("server deadline %d ms is outside the 1..%d ms budget", deadlineMS, visionServerDeadline/time.Millisecond)
+	}
+	if !(visionServerDeadline < visionRequestTimeout) {
+		t.Fatal("the server budget must expire before the HTTP client timeout")
 	}
 }

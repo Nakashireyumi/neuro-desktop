@@ -57,6 +57,14 @@ application is doing. Follow the [vision server setup and backend guide](../desk
 for exact settings. Model-backed semantic analysis and real Windows/macOS capture
 still require platform/backend acceptance testing.
 
+The default analysis deadline is 40 seconds. The bridge waits 45 seconds and the
+native manager waits 50 seconds for an observation, so the server stops first. If
+the configured model cannot answer in that budget, the request returns 504 instead
+of continuing invisibly; concurrent work beyond the configured slots returns 503.
+An operator may place fixed, trusted servers behind `--backend cluster`. The
+bridge never uses a URL supplied by a model, and the cluster backend sends one
+image to one worker with at most one sequential failover, never a broadcast.
+
 ## Storage and API
 
 Settings live in `builtin-services.json` beside the extension state file. Set

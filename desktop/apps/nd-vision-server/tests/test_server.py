@@ -12,6 +12,7 @@ import os
 import struct
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -20,7 +21,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from nd_vision import server as vision_server
-from nd_vision.analysis import AnalysisError, Analyzer, sniff_image
+from nd_vision.analysis import (
+    MAX_UPSTREAM_RESPONSE_BYTES,
+    Analysis,
+    AnalysisError,
+    AnalysisTimeout,
+    Analyzer,
+    ImageInfo,
+    sniff_image,
+)
+from nd_vision.cluster import ClusterAnalyzer, parse_workers
 
 try:
     import PIL  # noqa: F401
@@ -30,28 +40,35 @@ except ImportError:  # pragma: no cover - depends on the machine
     HAVE_PILLOW = False
 
 
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    body = kind + data
+    return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+
 def png_bytes(width: int, height: int, rgb=(255, 0, 0)) -> bytes:
     """A solid-colour RGB PNG built by hand, so the tests do not need Pillow."""
     raw = b"".join(b"\x00" + bytes(rgb) * width for _ in range(height))
-
-    def chunk(kind: bytes, data: bytes) -> bytes:
-        body = kind + data
-        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
-
     header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+    return b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", header) + _png_chunk(b"IDAT", zlib.compress(raw)) + _png_chunk(b"IEND", b"")
+
+
+def png_header_only(width: int, height: int) -> bytes:
+    """A valid PNG header with no pixels: enough to test the pixel limit."""
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", header) + _png_chunk(b"IEND", b"")
 
 
 class Running:
     """Starts a vision server on an ephemeral port for the duration of a test."""
 
-    def __init__(self, analyzer=None, token="", image_root=None):
+    def __init__(self, analyzer=None, token="", image_root=None, **limits):
         self.server = vision_server.make_server(
             "127.0.0.1",
             0,
             analyzer or Analyzer(backend="size"),
             token=token,
             image_root=image_root,
+            **limits,
         )
         self.base = "http://127.0.0.1:%d" % self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -80,9 +97,9 @@ class Running:
 
 
 class FakeUpstream:
-    """A stand-in for Ollama or an OpenAI-compatible server. It records requests."""
+    """A stand-in for Ollama, an OpenAI-compatible server, or a Vision worker."""
 
-    def __init__(self, reply: dict, status: int = 200):
+    def __init__(self, reply: dict, status: int = 200, delay: float = 0.0):
         self.requests = []
         upstream = self
 
@@ -93,12 +110,17 @@ class FakeUpstream:
             def do_POST(self):  # noqa: N802
                 length = int(self.headers.get("Content-Length") or 0)
                 upstream.requests.append((self.path, json.loads(self.rfile.read(length) or b"{}"), dict(self.headers)))
+                if delay:
+                    time.sleep(delay)
                 body = json.dumps(reply).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(body)
+                try:
+                    self.wfile.write(body)
+                except BrokenPipeError:
+                    pass
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = "http://127.0.0.1:%d" % self.server.server_address[1]
@@ -121,6 +143,102 @@ class HealthAndDescribeTests(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["backend"], "size")
         self.assertFalse(body["reads_paths"], "no NEURO_VISION_ROOT means the server reads no paths")
+        self.assertEqual(body["max_connections"], vision_server.DEFAULT_MAX_CONNECTIONS)
+        self.assertEqual(body["max_inference"], vision_server.DEFAULT_MAX_INFERENCE)
+        self.assertLessEqual(body["deadline_seconds"], 40)
+        self.assertEqual(body["max_image_pixels"], 40_000_000)
+
+    def test_health_lists_cluster_worker_names_without_urls(self):
+        class FakeCluster:
+            backend = "cluster"
+
+            @staticmethod
+            def worker_status():
+                return [{"name": "primary", "available": True, "cooldown_seconds": 0}]
+
+            @staticmethod
+            def describe(_data, _prompt="", deadline=None):
+                raise AssertionError("health must not run inference")
+
+        with Running(analyzer=FakeCluster()) as running:
+            status, body = running.call("GET", "/health")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["workers"], [{"name": "primary", "available": True, "cooldown_seconds": 0}])
+        self.assertNotIn("url", json.dumps(body))
+
+    def test_oversized_pixel_count_is_413_before_decode(self):
+        image = base64.b64encode(png_header_only(50_000, 50_000)).decode("ascii")
+        with Running() as running:
+            status, body = running.call("POST", "/describe", {"image_base64": image})
+        self.assertEqual(status, 413)
+        self.assertIn("pixel", body["error"])
+
+    def test_inference_limit_answers_503_instead_of_queueing(self):
+        class BlockingAnalyzer:
+            backend = "size"
+
+            def __init__(self):
+                self.entered = threading.Event()
+                self.release = threading.Event()
+
+            def describe(self, data, prompt="", deadline=None):
+                self.entered.set()
+                self.release.wait(5)
+                return Analysis("a blocked image", "size", ImageInfo("PNG", 1, 1))
+
+        analyzer = BlockingAnalyzer()
+        image = base64.b64encode(png_bytes(1, 1)).decode("ascii")
+        with Running(analyzer=analyzer, max_inference=1) as running:
+            first = {}
+            thread = threading.Thread(
+                target=lambda: first.update(result=running.call("POST", "/describe", {"image_base64": image})),
+                daemon=True,
+            )
+            thread.start()
+            self.assertTrue(analyzer.entered.wait(2), "the first request did not reach the analyzer")
+            status, body = running.call("POST", "/describe", {"image_base64": image})
+            analyzer.release.set()
+            thread.join(5)
+        self.assertEqual(status, 503)
+        self.assertIn("busy", body["error"])
+        self.assertEqual(first["result"][0], 200, "the admitted request must still finish")
+
+    def test_connection_limit_refuses_an_extra_socket(self):
+        with Running() as running:
+            for _ in range(running.server.max_connections):
+                running.server.connection_slots.acquire()
+            try:
+                status, body = running.call("GET", "/health")
+            finally:
+                for _ in range(running.server.max_connections):
+                    running.server.connection_slots.release()
+        self.assertEqual(status, 503)
+        self.assertIn("connection limit", body["error"])
+
+    def test_malformed_deadline_header_is_400(self):
+        image = base64.b64encode(png_bytes(2, 2)).decode("ascii")
+        with Running() as running:
+            status, body = running.call(
+                "POST", "/describe", {"image_base64": image}, headers={"X-Neuro-Deadline-Ms": "soon"}
+            )
+        self.assertEqual(status, 400)
+        self.assertIn("X-Neuro-Deadline-Ms", body["error"])
+
+    def test_expired_analysis_is_504_not_a_stale_answer(self):
+        class TimeoutAnalyzer:
+            backend = "size"
+
+            @staticmethod
+            def describe(_data, _prompt="", deadline=None):
+                raise AnalysisTimeout("the analysis deadline was reached")
+
+        image = base64.b64encode(png_bytes(2, 2)).decode("ascii")
+        with Running(analyzer=TimeoutAnalyzer()) as running:
+            status, body = running.call(
+                "POST", "/describe", {"image_base64": image}, headers={"X-Neuro-Deadline-Ms": "1000"}
+            )
+        self.assertEqual(status, 504)
+        self.assertIn("deadline", body["error"])
 
     def test_describe_base64_png_reports_size(self):
         image = base64.b64encode(png_bytes(16, 8)).decode("ascii")
@@ -286,6 +404,94 @@ class ModelBackendTests(unittest.TestCase):
     def test_unknown_backend_is_rejected(self):
         with self.assertRaises(ValueError):
             Analyzer(backend="magic")
+
+    def test_analyzer_deadline_interrupts_a_slow_upstream(self):
+        with FakeUpstream({"response": "too late"}, delay=1.5) as upstream:
+            analyzer = Analyzer(backend="ollama", ollama_url=upstream.url, ollama_model="llava")
+            started = time.monotonic()
+            with self.assertRaises(AnalysisTimeout):
+                analyzer.describe(png_bytes(2, 2), deadline=started + 0.3)
+            self.assertLess(time.monotonic() - started, 1.2)
+
+    def test_upstream_response_size_is_bounded(self):
+        reply = {"response": "x" * (MAX_UPSTREAM_RESPONSE_BYTES + 100)}
+        with FakeUpstream(reply) as upstream:
+            analyzer = Analyzer(backend="ollama", ollama_url=upstream.url, ollama_model="llava")
+            with self.assertRaisesRegex(RuntimeError, "exceeds"):
+                analyzer.describe(png_bytes(2, 2))
+
+
+class ClusterTests(unittest.TestCase):
+    def test_failover_is_sequential_and_never_fans_out(self):
+        with (
+            FakeUpstream({"error": "broken"}, status=500) as primary,
+            FakeUpstream({"summary": "the backup saw a terminal"}) as backup,
+            FakeUpstream({"summary": "third must not be called"}) as third,
+        ):
+            analyzer = ClusterAnalyzer(
+                parse_workers(f"primary={primary.url},backup={backup.url},third={third.url}")
+            )
+            analysis = analyzer.describe(png_bytes(4, 4), "what is this")
+        self.assertEqual(analysis.summary, "the backup saw a terminal")
+        self.assertEqual(analysis.backend, "cluster/backup")
+        self.assertEqual(len(primary.requests), 1)
+        self.assertEqual(len(backup.requests), 1)
+        self.assertEqual(third.requests, [], "a successful worker must stop the failover chain")
+
+    def test_two_worker_attempts_are_the_upper_bound(self):
+        with (
+            FakeUpstream({"error": "broken"}, status=500) as first,
+            FakeUpstream({"error": "broken too"}, status=500) as second,
+            FakeUpstream({"summary": "never"}) as third,
+        ):
+            analyzer = ClusterAnalyzer(parse_workers(f"first={first.url},second={second.url},third={third.url}"))
+            with self.assertRaisesRegex(RuntimeError, "no Vision worker answered"):
+                analyzer.describe(png_bytes(2, 2))
+        self.assertEqual(len(first.requests), 1)
+        self.assertEqual(len(second.requests), 1)
+        self.assertEqual(third.requests, [])
+
+    def test_failed_worker_cools_down_before_being_retried(self):
+        with (
+            FakeUpstream({"error": "broken"}, status=500) as primary,
+            FakeUpstream({"summary": "backup answer"}) as backup,
+        ):
+            analyzer = ClusterAnalyzer(parse_workers(f"primary={primary.url},backup={backup.url}"))
+            analyzer.describe(png_bytes(2, 2))
+            analyzer.describe(png_bytes(2, 2))
+            status = analyzer.worker_status()
+        self.assertEqual(len(primary.requests), 1, "the failed worker must not be retried during cooldown")
+        self.assertEqual(len(backup.requests), 2)
+        self.assertEqual(status[0]["name"], "primary")
+        self.assertFalse(status[0]["available"])
+        self.assertNotIn("url", status[0])
+
+    def test_worker_urls_must_be_operator_safe(self):
+        for spec in (
+            "http://192.0.2.10:8611",
+            "http://example.com/describe",
+            "ftp://127.0.0.1/describe",
+            "https://user:secret@example.com",
+            "https://example.com/admin",
+            "https://example.com/describe?token=secret",
+        ):
+            with self.subTest(spec=spec), self.assertRaises(ValueError):
+                parse_workers(spec)
+        self.assertEqual(parse_workers("http://127.0.0.1:8611")[0].url, "http://127.0.0.1:8611/describe")
+        self.assertEqual(parse_workers("primary=https://vision.example")[0].url, "https://vision.example/describe")
+        with self.assertRaises(ValueError):
+            parse_workers("primary=http://127.0.0.1:1,primary=http://127.0.0.1:2")
+
+    def test_server_reports_the_worker_that_answered(self):
+        with FakeUpstream({"summary": "a green terminal"}) as worker:
+            analyzer = ClusterAnalyzer(parse_workers(f"primary={worker.url}"))
+            with Running(analyzer=analyzer) as running:
+                status, body = running.call(
+                    "POST", "/describe", {"image_base64": base64.b64encode(png_bytes(3, 3)).decode("ascii")}
+                )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["backend"], "cluster/primary")
+        self.assertEqual(body["summary"], "a green terminal")
 
 
 class SniffTests(unittest.TestCase):

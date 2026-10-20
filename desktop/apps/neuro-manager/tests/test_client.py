@@ -5,7 +5,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
-from neuro_manager.client import ApiError, Client, external_url, normalise_policy, poll_delay, server_url
+from neuro_manager.client import ApiError, Client, external_url, normalise_policy, poll_delay, request_timeout, server_url
 
 
 class ClientTests(unittest.TestCase):
@@ -113,6 +113,13 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(poll_delay(False), 30)
         self.assertEqual(poll_delay(True, 1), 10)
         self.assertEqual(poll_delay(False, 20), 60)
+
+    def test_observation_waits_longer_than_the_bridge_and_vision_server(self):
+        self.assertEqual(request_timeout("/api/games/observe", "POST"), 50)
+        self.assertGreater(50, 45, "the bridge waits 45 s for the vision server")
+        self.assertEqual(request_timeout("/api/status", "GET"), 8)
+        self.assertEqual(request_timeout("/api/marketplace/item/stage", "POST"), 125)
+        self.assertEqual(request_timeout("/api/extensions/item/install", "POST"), 125)
 
     def test_policy_shorthand_does_not_turn_false_strings_on(self):
         policy = normalise_policy({"default_allow": "no", "scopes": {"input": {"allowed": "false", "requestable": "yes", "limits": None}, "shell": None}})

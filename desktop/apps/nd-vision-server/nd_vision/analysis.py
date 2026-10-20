@@ -25,19 +25,36 @@ import json
 import shutil
 import struct
 import subprocess
+import time
 import urllib.error
 import urllib.request
+import warnings
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
 BACKENDS = ("size", "stats", "ocr", "ollama", "openai")
 
-# A hard ceiling on how long any single analysis may run, in seconds.
+# A hard ceiling on how long any single analysis may run, in seconds. The HTTP
+# server applies a shorter deadline so its clients stop before this ceiling.
 ANALYSIS_TIMEOUT = 60
+
+# A decoded image is three bytes per pixel in Pillow. This limit admits an 8K
+# desktop (7680x4320) but refuses decompression bombs and multi-screen stitches
+# that would exhaust memory before any useful summary is possible.
+MAX_IMAGE_PIXELS = 40_000_000
+
+# Upstream model answers are prose, not images. Bound them so a broken or
+# hostile endpoint cannot make this process hold or return an arbitrary blob.
+MAX_UPSTREAM_RESPONSE_BYTES = 1 << 20
+MAX_SUMMARY_CHARS = 16_000
 
 
 class AnalysisError(Exception):
     """The image could not be read at all (not a supported format, or empty)."""
+
+
+class AnalysisTimeout(RuntimeError):
+    """The caller's analysis deadline expired before a result was ready."""
 
 
 @dataclass
@@ -99,15 +116,30 @@ def sniff_image(data: bytes) -> ImageInfo:
     raise AnalysisError("unsupported or corrupt image (expected PNG, JPEG, GIF or WEBP)")
 
 
+def check_image_limits(info: ImageInfo) -> None:
+    """Refuses an empty or memory-hungry image before any pixel decode."""
+    if info.width <= 0 or info.height <= 0:
+        raise AnalysisError("the image header reports an empty image")
+    pixels = info.width * info.height
+    if pixels > MAX_IMAGE_PIXELS:
+        raise AnalysisError(
+            f"the image is {info.width}x{info.height} ({pixels} pixels), "
+            f"over the {MAX_IMAGE_PIXELS} pixel limit"
+        )
+
+
 def _pillow_image(data: bytes):
     try:
         from PIL import Image  # type: ignore
     except ImportError:
         return None, "Pillow is not installed: colour statistics are unavailable (pip install pillow)"
+    Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
     try:
-        image = Image.open(io.BytesIO(data))
-        image.load()
-        return image.convert("RGB"), ""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            image = Image.open(io.BytesIO(data))
+            image.load()
+            return image.convert("RGB"), ""
     except Exception as exc:  # Pillow raises several types for corrupt files
         raise AnalysisError(f"the image could not be decoded: {exc}") from exc
 
@@ -142,7 +174,7 @@ def brightness_word(value: int) -> str:
     return "mostly bright"
 
 
-def run_tesseract(data: bytes, timeout: int = 20) -> str:
+def run_tesseract(data: bytes, timeout: float = 20) -> str:
     """OCR through the tesseract CLI. Arguments are a list, never a shell string."""
     binary = shutil.which("tesseract")
     if binary is None:
@@ -151,7 +183,7 @@ def run_tesseract(data: bytes, timeout: int = 20) -> str:
         [binary, "stdin", "stdout", "--psm", "11"],
         input=data,
         capture_output=True,
-        timeout=timeout,
+        timeout=max(0.1, min(float(timeout), 20.0)),
         check=False,
     )
     if completed.returncode != 0:
@@ -159,25 +191,43 @@ def run_tesseract(data: bytes, timeout: int = 20) -> str:
     return " ".join(completed.stdout.decode("utf-8", "replace").split())
 
 
-def _post_json(url: str, payload: dict, headers: Optional[Dict[str, str]] = None, timeout: int = ANALYSIS_TIMEOUT) -> dict:
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirected POST could forward a private image to another host."""
+
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        raise RuntimeError(f"upstream redirected the request ({code}); refusing to forward the image")
+
+
+def _post_json(url: str, payload: dict, headers: Optional[Dict[str, str]] = None, timeout: float = ANALYSIS_TIMEOUT) -> dict:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=body, method="POST")
     request.add_header("Content-Type", "application/json")
     for key, value in (headers or {}).items():
         request.add_header(key, value)
+    opener = urllib.request.build_opener(_NoRedirect())
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+        with opener.open(request, timeout=max(0.1, min(float(timeout), ANALYSIS_TIMEOUT))) as response:
+            raw = response.read(MAX_UPSTREAM_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"upstream returned {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise RuntimeError(f"upstream not reachable: {exc}") from exc
+    if len(raw) > MAX_UPSTREAM_RESPONSE_BYTES:
+        raise RuntimeError(f"upstream response exceeds {MAX_UPSTREAM_RESPONSE_BYTES} bytes")
+    try:
+        decoded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("upstream returned invalid JSON") from exc
+    if not isinstance(decoded, dict):
+        raise RuntimeError("upstream returned an unexpected response")
+    return decoded
 
 
-def ask_ollama(base_url: str, model: str, prompt: str, image_b64: str) -> str:
+def ask_ollama(base_url: str, model: str, prompt: str, image_b64: str, timeout: float = ANALYSIS_TIMEOUT) -> str:
     result = _post_json(
         base_url.rstrip("/") + "/api/generate",
         {"model": model, "prompt": prompt, "images": [image_b64], "stream": False},
+        timeout=timeout,
     )
     text = result.get("response")
     if not isinstance(text, str) or not text.strip():
@@ -185,7 +235,15 @@ def ask_ollama(base_url: str, model: str, prompt: str, image_b64: str) -> str:
     return text.strip()
 
 
-def ask_openai_compatible(base_url: str, model: str, prompt: str, mime: str, image_b64: str, api_key: str = "") -> str:
+def ask_openai_compatible(
+    base_url: str,
+    model: str,
+    prompt: str,
+    mime: str,
+    image_b64: str,
+    api_key: str = "",
+    timeout: float = ANALYSIS_TIMEOUT,
+) -> str:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     result = _post_json(
         base_url.rstrip("/") + "/v1/chat/completions",
@@ -203,6 +261,7 @@ def ask_openai_compatible(base_url: str, model: str, prompt: str, mime: str, ima
             ],
         },
         headers=headers,
+        timeout=timeout,
     )
     try:
         text = result["choices"][0]["message"]["content"]
@@ -241,8 +300,25 @@ class Analyzer:
         self.openai_key = openai_key
         self.ocr = ocr or run_tesseract
 
-    def describe(self, data: bytes, prompt: str = "") -> Analysis:
+    def describe(self, data: bytes, prompt: str = "", deadline: Optional[float] = None) -> Analysis:
+        """Analyse one image before ``deadline`` (a ``time.monotonic`` value).
+
+        Network reads and the OCR subprocess are given only the time that is
+        left. A caller that has already timed out gets AnalysisTimeout instead
+        of a result that nobody is waiting for.
+        """
+        if deadline is None:
+            deadline = time.monotonic() + ANALYSIS_TIMEOUT
+
+        def remaining() -> float:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise AnalysisTimeout("the analysis deadline was reached")
+            return min(left, float(ANALYSIS_TIMEOUT))
+
+        remaining()
         info = sniff_image(data)
+        check_image_limits(info)
         prompt = prompt.strip() or "Describe what is on this screen for an AI that cannot see it. Be concrete and brief."
         warnings: List[str] = []
 
@@ -250,7 +326,9 @@ class Analyzer:
             return Analysis(self._size_summary(info), "size", info, warnings=warnings)
 
         if self.backend in ("stats", "ocr"):
+            remaining()
             image, note = _pillow_image(data)
+            remaining()
             if note:
                 warnings.append(note)
                 return Analysis(self._size_summary(info), "size", info, warnings=warnings)
@@ -259,9 +337,15 @@ class Analyzer:
             text = ""
             if self.backend == "ocr":
                 try:
-                    text = self.ocr(data)
+                    if self.ocr is run_tesseract:
+                        text = self.ocr(data, timeout=min(20.0, remaining()))
+                    else:
+                        text = self.ocr(data)
+                except AnalysisTimeout:
+                    raise
                 except Exception as exc:  # any OCR failure degrades to stats
-                    warnings.append(f"OCR unavailable: {exc}")
+                    warnings.append(f"OCR unavailable: {str(exc)[:300]}")
+                remaining()
                 if text:
                     summary += f" Text on screen: {text[:1200]}"
             return Analysis(summary, self.backend, info, text=text, warnings=warnings)
@@ -270,7 +354,14 @@ class Analyzer:
             if not self.ollama_model:
                 raise RuntimeError("NEURO_VISION_MODEL must name the Ollama model")
             image_b64 = base64.b64encode(data).decode("ascii")
-            text = ask_ollama(self.ollama_url, self.ollama_model, prompt, image_b64)
+            try:
+                text = ask_ollama(self.ollama_url, self.ollama_model, prompt, image_b64, timeout=remaining())
+            except RuntimeError as exc:
+                if deadline - time.monotonic() <= 0:
+                    raise AnalysisTimeout("the analysis deadline was reached") from exc
+                raise
+            remaining()
+            text = text[:MAX_SUMMARY_CHARS]
             return Analysis(text, "ollama", info, text=text, warnings=warnings)
 
         if self.backend == "openai":
@@ -278,7 +369,16 @@ class Analyzer:
                 raise RuntimeError("NEURO_VISION_OPENAI_URL and NEURO_VISION_MODEL must be set")
             mime = {"PNG": "image/png", "JPEG": "image/jpeg", "GIF": "image/gif", "WEBP": "image/webp"}[info.format]
             image_b64 = base64.b64encode(data).decode("ascii")
-            text = ask_openai_compatible(self.openai_url, self.openai_model, prompt, mime, image_b64, self.openai_key)
+            try:
+                text = ask_openai_compatible(
+                    self.openai_url, self.openai_model, prompt, mime, image_b64, self.openai_key, timeout=remaining()
+                )
+            except RuntimeError as exc:
+                if deadline - time.monotonic() <= 0:
+                    raise AnalysisTimeout("the analysis deadline was reached") from exc
+                raise
+            remaining()
+            text = text[:MAX_SUMMARY_CHARS]
             return Analysis(text, "openai", info, text=text, warnings=warnings)
 
         raise AssertionError("unreachable: backend validated in __init__")
