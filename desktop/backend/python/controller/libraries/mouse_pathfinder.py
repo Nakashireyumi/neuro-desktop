@@ -12,12 +12,18 @@ pyautogui = load_pyautogui()
 pyautogui.PAUSE = 0
 @dataclass
 class PathProfile:
-    """Tuning parameters for different 'personalities'"""
-    min_duration: float = 0.0005
-    max_duration: float = 0.0012
-    overshoot_chance: float = 0.3  # 30% chance of overshoot
-    noise_scale: float = 0.8  # Reduced noise for smoothness
-    smoothing_factor: float = 0.578 # Very human-like smoothness and fluidity
+    """Tuning parameters for different 'personalities'.
+
+    The default is a short, predictable eased move. Organic noise and overshoot
+    are opt-in because a missed endpoint is a functional bug, not a quirk: a
+    later click lands on the wrong control.
+    """
+    min_duration: float = 0.05
+    max_duration: float = 0.35
+    overshoot_chance: float = 0.0
+    noise_scale: float = 0.0
+    smoothing_factor: float = 0.0
+    max_steps: int = 48
 
 class AlgorithmicPath:
     """Human-like algorithmic mouse path generator"""
@@ -73,77 +79,64 @@ class AlgorithmicPath:
         duration: float = None,
         jitter: float = None
     ):
+        """Move to exactly ``(target_x, target_y)``.
+
+        Intermediate points may be eased, noisy or smoothed, but the last move is
+        always the unmodified target. Smoothing against ``pyautogui.position()``
+        inside the loop used to compound its own offset and stop short of the
+        target whenever noise happened not to mask it.
+        """
         start_x, start_y = pyautogui.position()
-        
-        # Calculate distance for adaptive parameters
-        distance = math.sqrt((target_x - start_x)**2 + (target_y - start_y)**2)
-        
-        # Adaptive duration based on distance
+        distance = math.sqrt((target_x - start_x) ** 2 + (target_y - start_y) ** 2)
+
         if duration is None:
-            duration = self.profile.min_duration + (distance / 1000) * 0.3
+            duration = self.profile.min_duration + (distance / 1000.0) * 0.3
             duration = min(duration, self.profile.max_duration)
-        
-        # Adaptive steps: fewer steps = smoother, but distance-dependent
-        #steps = max(15, int(distance / 10))  # About 10 pixels per step
-        #steps = min(steps, 60)  # Cap at 60 for very long distances
-        steps = 1
-        # Create control points for cubic Bézier
-        # Add randomness to curve direction
-        angle_offset = random.uniform(-math.pi/4, math.pi/4)
-        curve_distance = distance * random.uniform(0.2, 0.4)
-        
-        ctrl1_x = start_x + (target_x - start_x) * 0.33 + math.cos(angle_offset) * curve_distance
-        ctrl1_y = start_y + (target_y - start_y) * 0.33 + math.sin(angle_offset) * curve_distance
-        
-        ctrl2_x = start_x + (target_x - start_x) * 0.66 - math.cos(angle_offset) * curve_distance * 0.5
-        ctrl2_y = start_y + (target_y - start_y) * 0.66 - math.sin(angle_offset) * curve_distance * 0.5
-        
-        # Determine if we overshoot
-        overshoot = random.random() < self.profile.overshoot_chance
-        
+        duration = max(0.0, min(float(duration), 30.0))
+
+        steps = max(1, min(self.profile.max_steps, int(distance / 12) + 1))
         delay = duration / steps
         noise_scale = jitter if jitter is not None else self.profile.noise_scale
-        
-        for i in range(steps + 1):
-            t = i / steps
-            
-            # Apply easing
-            t_eased = self.ease_in_out_cubic(t)
-            
-            # Get position on Bézier curve
-            x = self.bezier_cubic(start_x, ctrl1_x, ctrl2_x, target_x, t_eased)
-            y = self.bezier_cubic(start_y, ctrl1_y, ctrl2_y, target_y, t_eased)
-            
-            # Add organic Perlin-like noise (much smoother than random jitter)
-            noise_x = self.perlin_noise_1d(i * 0.3) * noise_scale
-            noise_y = self.perlin_noise_1d(i * 0.3 + 100) * noise_scale
-            
-            x += noise_x
-            y += noise_y
+        smoothing = max(0.0, min(float(self.profile.smoothing_factor), 1.0))
 
-            smoothed_pos = self.lerp(pyautogui.position(), (x, y), self.profile.smoothing_factor)
-            x = smoothed_pos[0]
-            y = smoothed_pos[1]
-            
-            pyautogui.moveTo(int(x), int(y))
-            
-            # Variable delay with slight randomness
-            actual_delay = delay * random.uniform(0.56, 0.75)
-            time.sleep(actual_delay)
-        
-        # Overshoot and correction (human behavior)
-        if overshoot and distance > 50:
-            overshoot_x = target_x + random.randint(-3, 3)
-            overshoot_y = target_y + random.randint(-3, 3)
-            smoothed_pos = self.lerp(pyautogui.position(), (overshoot_x, overshoot_y), self.profile.smoothing_factor)
-            overshoot_x = smoothed_pos[0]
-            overshoot_y = smoothed_pos[1]
-            pyautogui.moveTo(overshoot_x, overshoot_y)
-            time.sleep(random.uniform(0.05, 0.07))
-            pyautogui.moveTo(target_x, target_y)
-        
-        # Final micro-pause
-        time.sleep(random.uniform(0.05, 0.07))
+        for step in range(1, steps + 1):
+            t_eased = self.ease_in_out_cubic(step / steps)
+            x = start_x + (target_x - start_x) * t_eased
+            y = start_y + (target_y - start_y) * t_eased
+
+            if noise_scale:
+                # Fade the organic noise at both ends so it cannot move the
+                # final point away from the target.
+                envelope = math.sin(math.pi * (step / steps))
+                x += self.perlin_noise_1d(step * 0.3) * noise_scale * envelope
+                y += self.perlin_noise_1d(step * 0.3 + 100) * noise_scale * envelope
+
+            if smoothing:
+                # One fixed smoothing pass around the path, not repeated against
+                # the last emitted position (which compounded the shortfall).
+                x = start_x + (x - start_x) * (1.0 - smoothing * 0.5)
+                y = start_y + (y - start_y) * (1.0 - smoothing * 0.5)
+
+            pyautogui.moveTo(int(round(x)), int(round(y)))
+            if delay:
+                time.sleep(delay)
+
+        # Deliberate overshoot is off by default; if a profile enables it, the
+        # correction and the unconditional final move still end exactly here.
+        if (
+            self.profile.overshoot_chance > 0
+            and distance > 50
+            and random.random() < self.profile.overshoot_chance
+        ):
+            pyautogui.moveTo(
+                target_x + random.randint(-3, 3),
+                target_y + random.randint(-3, 3),
+            )
+            time.sleep(min(0.05, duration) if duration else 0.0)
+
+        pyautogui.moveTo(int(target_x), int(target_y))
+        if duration:
+            time.sleep(min(0.02, duration))
 
     def idle_wander(self, radius: int = 80, duration: float = 2.5):
         """Natural idle movement"""

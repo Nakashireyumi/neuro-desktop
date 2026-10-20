@@ -441,12 +441,12 @@ var LLActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdTypeText,
-		Description: "Type text using keyboard. Example: {\"text\": \"hello\"}",
+		Description: "Type printable ASCII using the keyboard. Example: {\"text\": \"hello\"}. Non-ASCII text is refused; use shell_command.",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"text": map[string]interface{}{
 				"type":        "string",
 				"maxLength":   1000,
-				"description": "Text to type",
+				"description": "Printable ASCII text to type",
 			},
 			"execute_now": map[string]interface{}{
 				"type":        "boolean",

@@ -29,7 +29,13 @@ class HeadlessDetectionTest(unittest.TestCase):
     def setUp(self):
         self.saved = {
             key: os.environ.get(key)
-            for key in ("NEURO_HEADLESS", "DISPLAY", "WAYLAND_DISPLAY")
+            for key in (
+                "NEURO_HEADLESS",
+                "NEURO_ALLOW_XWAYLAND_INPUT",
+                "DISPLAY",
+                "WAYLAND_DISPLAY",
+                "XDG_SESSION_TYPE",
+            )
         }
 
     def tearDown(self):
@@ -63,17 +69,34 @@ class HeadlessDetectionTest(unittest.TestCase):
         os.environ["DISPLAY"] = ":0"
         self.assertFalse(is_headless())
 
+    def test_wayland_refuses_xwayland_only_input_by_default(self):
+        if not sys.platform.startswith("linux"):
+            self.skipTest("Wayland is a Linux session type")
+        os.environ["NEURO_HEADLESS"] = "0"
+        os.environ.pop("NEURO_ALLOW_XWAYLAND_INPUT", None)
+        os.environ["WAYLAND_DISPLAY"] = "wayland-test"
+        os.environ["DISPLAY"] = ":0"
+        os.environ["XDG_SESSION_TYPE"] = "wayland"
+        backend = load_pyautogui()
+        self.assertIsInstance(backend, StubPyAutoGUI)
+        self.assertIn("Wayland", backend.reason)
+        self.assertIn("NEURO_ALLOW_XWAYLAND_INPUT", backend.reason)
+
 
 class HeadlessLoadingTest(unittest.TestCase):
     def setUp(self):
-        self.saved = os.environ.get("NEURO_HEADLESS")
+        self.saved = {
+            key: os.environ.get(key)
+            for key in ("NEURO_HEADLESS", "NEURO_ALLOW_XWAYLAND_INPUT")
+        }
         os.environ["NEURO_HEADLESS"] = "1"
 
     def tearDown(self):
-        if self.saved is None:
-            os.environ.pop("NEURO_HEADLESS", None)
-        else:
-            os.environ["NEURO_HEADLESS"] = self.saved
+        for key, value in self.saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     def test_gui_loaders_return_stubs(self):
         self.assertIsInstance(load_pyautogui(), StubPyAutoGUI)
@@ -83,6 +106,7 @@ class HeadlessLoadingTest(unittest.TestCase):
 
     def test_gui_dependency_system_exit_does_not_kill_the_client(self):
         os.environ["NEURO_HEADLESS"] = "0"
+        os.environ["NEURO_ALLOW_XWAYLAND_INPUT"] = "1"
         with mock.patch("builtins.__import__", side_effect=SystemExit("MouseInfo needs tkinter")):
             backend = load_pyautogui()
         self.assertIsInstance(backend, StubPyAutoGUI)
@@ -91,6 +115,7 @@ class HeadlessLoadingTest(unittest.TestCase):
 
     def test_missing_gui_dependency_is_named_in_the_refusal(self):
         os.environ["NEURO_HEADLESS"] = "0"
+        os.environ["NEURO_ALLOW_XWAYLAND_INPUT"] = "1"
         with mock.patch("builtins.__import__", side_effect=ImportError("No module named pyautogui")):
             backend = load_pyautogui()
         with self.assertRaisesRegex(NoDisplayError, "No module named pyautogui"):
@@ -98,6 +123,7 @@ class HeadlessLoadingTest(unittest.TestCase):
 
     def test_missing_tk_only_skips_the_optional_mouseinfo_window(self):
         os.environ["NEURO_HEADLESS"] = "0"
+        os.environ["NEURO_ALLOW_XWAYLAND_INPUT"] = "1"
         existing_mouseinfo = object()
         real_backend = object()
 

@@ -8,7 +8,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from controller.actions import ActionParseError, ActionParser  # noqa: E402
-from controller.platform_intents import apply_intent, resolve_intent  # noqa: E402
+from controller.platform_intents import (  # noqa: E402
+    apply_intent,
+    resolve_intent,
+    supported_intents,
+)
 
 
 class FakeMonitor:
@@ -129,7 +133,6 @@ class ActionParserTests(unittest.TestCase):
                     "MINIMIZE_ALL_WINDOWS",
                     "CLOSE_FOREGROUND_APP",
                     "OPEN_TASK_MANAGER",
-                    "CLOSE_ALL_APPS",
                     "OPEN_FILE_EXPLORER",
                     "OPEN_RUN_DIALOG",
                     "OPEN_SEARCH",
@@ -157,7 +160,6 @@ class ActionParserTests(unittest.TestCase):
                 ("shortcut", ("win", "m")),
                 ("shortcut", ("alt", "f4")),
                 ("shortcut", ("ctrl", "shift", "esc")),
-                ("shortcut", ("win", "d")),
                 ("shortcut", ("win", "e")),
                 ("shortcut", ("win", "r")),
                 ("shortcut", ("win", "s")),
@@ -233,6 +235,18 @@ class PlatformIntentUnitTests(unittest.TestCase):
         kbd = FakeKeyboard()
         with self.assertRaises(ValueError):
             apply_intent(kbd, "OPEN_CLIPBOARD_HISTORY", platform="macos")
+
+    def test_supported_intents_do_not_publish_unsupported_mappings(self):
+        self.assertNotIn("OPEN_CLIPBOARD_HISTORY", supported_intents("macos"))
+        self.assertNotIn("OPEN_POWER_USER_MENU", supported_intents("macos"))
+        self.assertNotIn("CLOSE_ALL_APPS", supported_intents("windows"))
+        self.assertNotIn("CLOSE_ALL_APPS", supported_intents("linux"))
+        self.assertIn("SHOW_DESKTOP", supported_intents("windows"))
+
+    def test_unsupported_intent_fails_with_a_platform_reason(self):
+        parser = ActionParser(FakeKeyboard(), FakeMouse(), FakeMonitor(), platform="windows")
+        with self.assertRaisesRegex(ActionParseError, "not supported"):
+            parser.parse("CLOSE_ALL_APPS")
 
 
 if __name__ == "__main__":

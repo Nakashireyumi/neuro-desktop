@@ -35,6 +35,7 @@ import argparse
 import base64
 import json
 import os
+import shutil
 import socket
 import stat
 import sys
@@ -42,6 +43,8 @@ import tempfile
 import time
 from typing import Any, Dict, Optional
 
+from . import capabilities
+from . import desktop as desktop_module
 from . import shell as shell_module
 from .actions import MAX_PENDING_ACTIONS, MAX_QUEUE_SECONDS, instruction_seconds
 from . import gui_stub
@@ -93,6 +96,21 @@ QUEUE_COMMANDS = (
     "key_hold_for",
     "run_script",
 )
+
+# Script verbs that can run even when desktop input is refused. Everything
+# else (including platform intents) is input. A mixed script must not be
+# blocked merely because it also contains such a verb.
+SCRIPT_NON_INPUT_VERBS = frozenset({"SHELL", "LAUNCH", "WAIT"})
+
+
+def _instruction_touches_input(instruction: Any) -> bool:
+    marker = getattr(instruction, "touches_input", None)
+    if marker is not None:
+        return bool(marker)
+    tokens = getattr(instruction, "tokens", None)
+    if tokens:
+        return str(tokens[0]).upper() not in SCRIPT_NON_INPUT_VERBS
+    return False
 
 
 def _timestamp() -> str:
@@ -154,28 +172,80 @@ class Agent:
         max_processes = _int_param(params, "max_processes", 40)
         max_actions = _int_param(params, "max_actions", 20)
 
-        windows = self._safe(self.monitor.get_open_windows, []) or []
         processes = self._safe(self.monitor.get_running_processes, []) or []
         actions = self._safe(self.monitor.get_action_history, []) or []
 
         backend = keyboard_driver.pyautogui
-        input_available = not self.headless and not isinstance(backend, gui_stub.StubPyAutoGUI)
-        input_error = (describe_headless_reason() if self.headless else backend.reason) if not input_available else None
+        input_state = capabilities.input_capability(
+            headless=self.headless, backend=backend
+        )
+        input_available = bool(input_state["available"])
+        input_error = input_state.get("reason")
+
+        window_state = capabilities.window_capability(
+            headless=self.headless, backend_available=desktop_module.gw is not None
+        )
+        windows: list = []
+        windows_error = window_state.get("reason")
+        if window_state["available"]:
+            try:
+                windows = self.monitor.get_open_windows() or []
+                windows_error = None
+            except Exception as error:
+                window_state = dict(window_state)
+                window_state.update(
+                    {
+                        "available": False,
+                        "reason": str(error),
+                    }
+                )
+                windows_error = str(error)
+
+        capture_state = capabilities.capture_capability(
+            headless=self.headless,
+            mss_available=desktop_module.mss is not None,
+            pillow_available=desktop_module.Image is not None,
+            grim_path=shutil.which("grim"),
+        )
+        hint = self._safe(self.monitor.capture_geometry_hint)
+        capture_state["geometry"] = hint
+
         # Stub geometry is only for queue maths; never report it as a real screen.
         screen = self._safe(self.monitor.get_screen_size) if input_available else None
         position = self._safe(self.monitor.get_current_mouse_position) if input_available else None
+        screen_info = None
+        if screen:
+            screen_info = {
+                "width": screen[0],
+                "height": screen[1],
+                "pointer_bounds": {
+                    "left": 0,
+                    "top": 0,
+                    "right": screen[0] - 1,
+                    "bottom": screen[1] - 1,
+                },
+                "capture_geometry": hint,
+            }
 
         # The screenshot is returned as bytes. The server may be on another PC, and
         # it must never be asked to open a file that this machine names.
         screenshot_png_b64 = None
+        screenshot_geometry = None
         screenshot_error = describe_headless_reason() if params.get("capture_screenshot") and self.headless else None
         if params.get("capture_screenshot") and not self.headless:
+            if hasattr(self.monitor, "_last_capture_geometry"):
+                self.monitor._last_capture_geometry = None
             try:
                 png = self.monitor.capture_screen_png()
                 if png:
                     screenshot_png_b64 = base64.b64encode(png).decode("ascii")
+                    screenshot_geometry = getattr(self.monitor, "last_capture_geometry", None)
             except Exception as error:
                 screenshot_error = str(error)
+        if screenshot_geometry:
+            capture_state["geometry"] = screenshot_geometry
+            if screen_info is not None:
+                screen_info["capture_geometry"] = screenshot_geometry
 
         return {
             "status": "running",
@@ -184,16 +254,24 @@ class Agent:
             # saying so is what lets the bridge (and Neuro) pick shell_command
             # instead of guessing.
             "headless": self.headless,
+            # Legacy flag retained for older bridges. Prefer capabilities.input.
             "input_available": input_available,
             "input_error": input_error,
+            "capabilities": {
+                "input": input_state,
+                "capture": capture_state,
+                "windows": window_state,
+            },
             "platform": self._safe(self.monitor.get_platform, sys.platform),
-            "active_window": self._safe(self.monitor.get_active_window),
+            "active_window": self._safe(self.monitor.get_active_window) if window_state["available"] else None,
             "open_windows": sorted(dict.fromkeys(windows))[:max_windows],
+            "open_windows_error": windows_error,
             "running_processes": sorted(dict.fromkeys(processes))[:max_processes],
             "recent_actions": actions[-max_actions:] if actions else [],
-            "screen": {"width": screen[0], "height": screen[1]} if screen else None,
+            "screen": screen_info,
             "mouse_position": {"x": position[0], "y": position[1]} if position else None,
             "screenshot_png_b64": screenshot_png_b64,
+            "screenshot_geometry": screenshot_geometry,
             "screenshot_error": screenshot_error,
         }
 
@@ -405,6 +483,15 @@ class Agent:
         try:
             if sum(instruction_seconds(instruction) for instruction in self._ordered_queue) > MAX_QUEUE_SECONDS + 1e-9:
                 raise ValueError("Pending actions exceed the 20-second delay budget")
+            # Recheck session/permission state immediately before effects. Do
+            # this before the first instruction so a mixed script cannot run
+            # its SHELL/LAUNCH lines and only then discover that input is denied.
+            if any(_instruction_touches_input(i) for i in self._ordered_queue):
+                refusal = capabilities.input_execution_refusal(
+                    headless=self.headless, backend=keyboard_driver.pyautogui
+                )
+                if refusal:
+                    raise gui_stub.NoDisplayError(refusal)
             for instruction in tuple(self._ordered_queue):
                 self.parser._remaining_seconds()
                 instruction.execute()

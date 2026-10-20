@@ -29,6 +29,11 @@ var unportedCommands = map[string]bool{
 // display. Without one, the no-display message is used instead, as in Python.
 const inputNotPorted = " is not in the Go client yet: mouse, keyboard, screen, window and script commands still run only in the Python client (neuro-client). Run that client on this machine for them."
 
+// goInputUnavailable is published in status so the bridge does not treat the
+// Go client's empty screen/cursor fields as a working but idle desktop.
+const goInputUnavailable = "GUI input is not implemented in the Go client. " +
+	"Run the Python controller (neuro-client) on this machine for mouse, keyboard, screenshots and window context."
+
 // Agent executes commands against this machine. This slice has no input, so the
 // only state is the headless answer.
 type Agent struct {
@@ -161,18 +166,32 @@ func (a *Agent) dispatch(name string, params map[string]interface{}) Result {
 // reads it the same way. Fields this client cannot fill are null or empty, and
 // `unported` says which ones.
 func (a *Agent) status(params map[string]interface{}) map[string]interface{} {
+	unavailable := map[string]interface{}{
+		"available": false,
+		"backend":   "unported",
+		"reason":    goInputUnavailable,
+	}
 	return map[string]interface{}{
-		"status":             "running",
-		"timestamp":          timestamp(),
-		"headless":           a.headless,
-		"platform":           platformName(),
+		"status":          "running",
+		"timestamp":       timestamp(),
+		"headless":        a.headless,
+		"platform":        platformName(),
+		"input_available": false,
+		"input_error":     goInputUnavailable,
+		"capabilities": map[string]interface{}{
+			"input":   unavailable,
+			"capture": unavailable,
+			"windows": unavailable,
+		},
 		"active_window":      nil,
 		"open_windows":       []string{},
+		"open_windows_error": goInputUnavailable,
 		"running_processes":  []string{},
 		"recent_actions":     []interface{}{},
 		"screen":             nil,
 		"mouse_position":     nil,
 		"screenshot_png_b64": nil,
+		"screenshot_error":   goInputUnavailable,
 		"client":             "go",
 		"unported":           []string{"input", "screen", "windows", "processes", "run_script"},
 	}

@@ -49,6 +49,7 @@ func TestStatusHasTheKeysTheServerReads(t *testing.T) {
 	for _, key := range []string{
 		"status", "timestamp", "headless", "platform", "active_window", "open_windows",
 		"running_processes", "recent_actions", "screen", "mouse_position", "screenshot_png_b64",
+		"input_available", "input_error", "capabilities",
 	} {
 		if _, ok := result.Data[key]; !ok {
 			t.Errorf("status lacks %q, which the server reads", key)
@@ -59,6 +60,22 @@ func TestStatusHasTheKeysTheServerReads(t *testing.T) {
 	}
 	if _, ok := result.Data["headless"].(bool); !ok {
 		t.Errorf("headless must be a boolean: %v", result.Data["headless"])
+	}
+	if result.Data["input_available"] != false {
+		t.Errorf("the Go client must report GUI input as unavailable: %v", result.Data["input_available"])
+	}
+	if reason, _ := result.Data["input_error"].(string); !strings.Contains(reason, "Python") {
+		t.Errorf("input_error must point at the working client: %q", reason)
+	}
+	capabilities, ok := result.Data["capabilities"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("capabilities must be an object: %T", result.Data["capabilities"])
+	}
+	for _, key := range []string{"input", "capture", "windows"} {
+		state, ok := capabilities[key].(map[string]interface{})
+		if !ok || state["available"] != false {
+			t.Errorf("%s capability must be explicitly unavailable: %v", key, capabilities[key])
+		}
 	}
 }
 

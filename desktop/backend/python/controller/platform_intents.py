@@ -21,6 +21,10 @@ class IntentAction:
     press_only: bool = False
     # Human-readable note when behavior differs across OSes
     note: str = ""
+    # False → do not advertise or execute this intent on this platform. These
+    # mappings either have no real OS shortcut or were guesses, not behavior
+    # this controller can promise.
+    supported: bool = True
 
 
 def current_platform() -> str:
@@ -48,7 +52,7 @@ def _windows_intents() -> Dict[str, IntentAction]:
         "MINIMIZE_ALL_WINDOWS": IntentAction((_WIN, "m")),
         "CLOSE_FOREGROUND_APP": IntentAction((_ALT, "f4")),
         "OPEN_TASK_MANAGER": IntentAction((_CTRL, _SHIFT, "esc")),
-        "CLOSE_ALL_APPS": IntentAction((_WIN, "d"), note="fallback: show desktop"),
+        "CLOSE_ALL_APPS": _UNSUPPORTED,
         "OPEN_FILE_EXPLORER": IntentAction((_WIN, "e")),
         "OPEN_RUN_DIALOG": IntentAction((_WIN, "r")),
         "OPEN_SEARCH": IntentAction((_WIN, "s")),
@@ -69,24 +73,24 @@ def _windows_intents() -> Dict[str, IntentAction]:
 def _macos_intents() -> Dict[str, IntentAction]:
     return {
         "OPEN_START_MENU": IntentAction((_CMD, "space"), note="Spotlight as launcher"),
-        "OPEN_WINDOWS_MENU": IntentAction((_CMD, "space"), note="Spotlight as launcher"),
-        "SHOW_DESKTOP": IntentAction((_CMD, "f3"), note="Mission Control / desktop; may vary by macOS version"),
-        "MINIMIZE_ALL_WINDOWS": IntentAction((_CMD, _ALT, "h"), note="hide others approximation"),
+        "OPEN_WINDOWS_MENU": _UNSUPPORTED,
+        "SHOW_DESKTOP": IntentAction(("f11",), note="Show Desktop; may require Fn on laptop keyboards"),
+        "MINIMIZE_ALL_WINDOWS": _UNSUPPORTED,
         "CLOSE_FOREGROUND_APP": IntentAction((_CMD, "q")),
         "OPEN_TASK_MANAGER": IntentAction((_CMD, _ALT, "esc"), note="Force Quit"),
-        "CLOSE_ALL_APPS": IntentAction((_CMD, "f3"), note="fallback: Mission Control"),
+        "CLOSE_ALL_APPS": _UNSUPPORTED,
         "OPEN_FILE_EXPLORER": IntentAction((_CMD, _SHIFT, "n"), note="new Finder window"),
         "OPEN_RUN_DIALOG": IntentAction((_CMD, "space"), note="Spotlight"),
         "OPEN_SEARCH": IntentAction((_CMD, "space")),
         "SNAP_WINDOW_LEFT": IntentAction((_CTRL, _CMD, "left"), note="requires window manager support"),
         "SNAP_WINDOW_RIGHT": IntentAction((_CTRL, _CMD, "right"), note="requires window manager support"),
         "OPEN_SETTINGS": IntentAction((_CMD, ","), note="app preferences; System Settings via Spotlight"),
-        "OPEN_WINDOWS_SETTINGS": IntentAction((_CMD, ",")),
-        "OPEN_NOTIFICATION_CENTER": IntentAction((_CTRL, "n"), note="Notification Center gesture alternative"),
+        "OPEN_WINDOWS_SETTINGS": _UNSUPPORTED,
+        "OPEN_NOTIFICATION_CENTER": _UNSUPPORTED,
         "LOCK_WORKSTATION": IntentAction((_CTRL, _CMD, "q")),
         "SWITCH_APP_NEXT": IntentAction((_CMD, "tab")),
         "SWITCH_APP_PREVIOUS": IntentAction((_CMD, _SHIFT, "tab")),
-        "OPEN_POWER_USER_MENU": IntentAction((_CMD, "space"), note="no Win+X equivalent"),
+        "OPEN_POWER_USER_MENU": _UNSUPPORTED,
         "TAKE_SCREEN_SNIP": IntentAction((_CMD, _SHIFT, "4")),
     }
 
@@ -100,7 +104,7 @@ def _linux_intents() -> Dict[str, IntentAction]:
         "MINIMIZE_ALL_WINDOWS": IntentAction((_WIN, "d"), note="often same as show desktop"),
         "CLOSE_FOREGROUND_APP": IntentAction((_ALT, "f4")),
         "OPEN_TASK_MANAGER": IntentAction((_CTRL, _SHIFT, "esc"), note="DE-dependent; may need gnome-system-monitor"),
-        "CLOSE_ALL_APPS": IntentAction((_WIN, "d"), note="fallback: show desktop"),
+        "CLOSE_ALL_APPS": _UNSUPPORTED,
         "OPEN_FILE_EXPLORER": IntentAction((_WIN, "e"), note="DE-dependent"),
         "OPEN_RUN_DIALOG": IntentAction((_ALT, "f2")),
         "OPEN_SEARCH": IntentAction((_WIN,), press_only=True),
@@ -113,13 +117,14 @@ def _linux_intents() -> Dict[str, IntentAction]:
         "LOCK_WORKSTATION": IntentAction((_WIN, "l")),
         "SWITCH_APP_NEXT": IntentAction((_ALT, "tab")),
         "SWITCH_APP_PREVIOUS": IntentAction((_ALT, _SHIFT, "tab")),
-        "OPEN_POWER_USER_MENU": IntentAction((_WIN, "x"), note="DE-dependent"),
+        "OPEN_POWER_USER_MENU": _UNSUPPORTED,
         "TAKE_SCREEN_SNIP": IntentAction((_WIN, _SHIFT, "s"), note="GNOME screenshot UI; else PrintScreen"),
     }
 
 
-# macOS clipboard history has no built-in shortcut; leave empty → unsupported
-_UNSUPPORTED = IntentAction((), note="not supported on this platform")
+# No real shortcut (or only a guess) on this platform; resolve_intent still
+# returns it so callers get a precise "not supported" error instead of "unknown".
+_UNSUPPORTED = IntentAction((), note="not supported on this platform", supported=False)
 
 
 def _finalize_macos(intents: Dict[str, IntentAction]) -> Dict[str, IntentAction]:
@@ -164,6 +169,16 @@ def apply_intent(keyboard, command: str, platform: Optional[str] = None) -> None
 
 
 def supported_intents(platform: Optional[str] = None) -> List[str]:
+    """Only intents this platform can actually realize, for public listings."""
+    plat = platform or current_platform()
+    factory = _PLATFORM_MAP.get(plat, _linux_intents)
+    return sorted(
+        name for name, intent in factory().items() if intent.supported and intent.keys
+    )
+
+
+def known_intents(platform: Optional[str] = None) -> List[str]:
+    """Every mapped name, including ones that fail with a platform explanation."""
     plat = platform or current_platform()
     factory = _PLATFORM_MAP.get(plat, _linux_intents)
     return sorted(factory().keys())

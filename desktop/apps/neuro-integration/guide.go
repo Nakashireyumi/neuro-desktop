@@ -114,7 +114,7 @@ func desktopGuideSection(available map[CommandType]bool) string {
 	}{
 		{CmdGetDesktopContext, "get_desktop_context {}: request current platform, input availability, screen geometry, and application context. The text snapshot follows as a message."},
 		{CmdMouseMove, "move_mouse_to {x,y}: move the pointer; mouse_click {button:\"left\"} clicks its current location."},
-		{CmdTypeText, "type_text {text}: type into the focused control. Focus the target first."},
+		{CmdTypeText, "type_text {text}: type printable ASCII into the focused control. Focus the target first; non-ASCII text is refused and needs shell_command."},
 		{CmdKeyPress, "key_press {key:\"enter\"}: tap one key."},
 		{CmdRunScript, "run_script {script:\"COMBO ctrl c\"}: combine keys or run a short sequence. Request desktop_guide {topic:\"script\"} for syntax."},
 		{EnableLLControls, "enable_low_level_controls {}: switch to direct mouse, keyboard, and script controls."},

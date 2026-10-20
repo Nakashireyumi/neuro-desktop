@@ -22,6 +22,8 @@ class KeyboardInstruction:
 
 
 class KeyTap(KeyboardInstruction):
+    touches_input = True
+
     def __init__(self, key: str, delay: float = 0.02):
         self.key = key
         self.delay = delay
@@ -32,6 +34,8 @@ class KeyTap(KeyboardInstruction):
 
 
 class KeyDown(KeyboardInstruction):
+    touches_input = True
+
     def __init__(self, key: str, tracker: Optional[set] = None):
         self.key = key
         self.tracker = tracker
@@ -43,6 +47,8 @@ class KeyDown(KeyboardInstruction):
 
 
 class KeyUp(KeyboardInstruction):
+    touches_input = True
+
     def __init__(self, key: str, tracker: Optional[set] = None):
         self.key = key
         self.tracker = tracker
@@ -59,6 +65,8 @@ class HoldForInstruction(KeyboardInstruction):
     Game movement ("walk forward for a second") arrives as a single
     hold-for command so a dropped connection cannot leave a key down.
     """
+
+    touches_input = True
 
     def __init__(self, key: str, seconds: float, tracker: Optional[set] = None):
         self.key = key
@@ -77,8 +85,36 @@ class HoldForInstruction(KeyboardInstruction):
                 self.tracker.discard(self.key)
 
 
+def text_error(text: str) -> Optional[str]:
+    """Why this backend cannot type ``text`` exactly, or ``None``.
+
+    PyAutoGUI's character map is not a Unicode input method. On X11 a character
+    without a keysym can be skipped silently, which would partially type a
+    command or secret. Refuse atomically instead of guessing or silently
+    replacing the clipboard.
+    """
+    if not isinstance(text, str) or not text:
+        return "type_text needs a non-empty `text` string"
+    unsupported = sorted({char for char in text if not 0x20 <= ord(char) <= 0x7E})
+    if not unsupported:
+        return None
+    sample = ", ".join(f"{char!r} (U+{ord(char):04X})" for char in unsupported[:3])
+    if len(unsupported) > 3:
+        sample += f", and {len(unsupported) - 3} more"
+    return (
+        "type_text currently supports printable ASCII only; the current keyboard "
+        f"backend cannot type {sample} reliably. Nothing was typed and the "
+        "clipboard was not changed. Use shell_command for other characters."
+    )
+
+
 class TypeText(KeyboardInstruction):
+    touches_input = True
+
     def __init__(self, text: str, interval: float = 0.02):
+        error = text_error(text)
+        if error:
+            raise ValueError(error)
         self.text = text
         self.interval = interval
 
@@ -87,6 +123,8 @@ class TypeText(KeyboardInstruction):
 
 
 class Shortcut(KeyboardInstruction):
+    touches_input = True
+
     def __init__(self, *keys: str):
         self.keys = keys
 
@@ -128,11 +166,19 @@ class KeyboardController:
             raise ValueError(f"Unsupported key: {key}")
         return normalized
 
+    def validate_text(self, text: str) -> str:
+        """Reject text this backend cannot type, before anything is queued."""
+        error = text_error(text)
+        if error:
+            raise ValueError(error)
+        return text
+
     # ------------------------
     # Intent-level API
     # ------------------------
 
     def type(self, text: str, interval: float = 0.02):
+        self.validate_text(text)
         self.monitor.record_action(
             source="keyboard",
             action_type="TYPE",

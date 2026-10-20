@@ -149,6 +149,19 @@ class CommandCoverageTest(unittest.TestCase):
             self.assertIn(key, data)
         self.assertIsInstance(data["headless"], bool)
 
+    def test_status_publishes_separate_capabilities(self):
+        data = self.agent.status({})
+        capabilities = data["capabilities"]
+        for name in ("input", "capture", "windows"):
+            self.assertIn(name, capabilities)
+            self.assertIsInstance(capabilities[name]["available"], bool)
+            self.assertIn("reason", capabilities[name])
+        self.assertEqual(
+            data["input_available"], capabilities["input"]["available"]
+        )
+        self.assertIn("open_windows_error", data)
+        self.assertIn("screenshot_geometry", data)
+
     def test_missing_input_driver_does_not_report_stub_geometry_as_a_screen(self):
         from controller.gui_stub import StubPyAutoGUI
 

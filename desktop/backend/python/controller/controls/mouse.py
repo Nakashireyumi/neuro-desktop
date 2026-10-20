@@ -18,6 +18,8 @@ class MouseInstruction:
 
 
 class MoveInstruction(MouseInstruction):
+    touches_input = True
+
     def __init__(self, x: int, y: int, duration: float = 0.1):
         self.x = x
         self.y = y
@@ -28,6 +30,8 @@ class MoveInstruction(MouseInstruction):
 
 
 class ClickInstruction(MouseInstruction):
+    touches_input = True
+
     def __init__(self, button: str = "left"):
         self.button = button
 
@@ -44,6 +48,8 @@ class MoveRelativeInstruction(MouseInstruction):
     does not drift while the path is being generated.
     """
 
+    touches_input = True
+
     def __init__(self, dx: int, dy: int, duration: float = 0.0):
         self.dx = dx
         self.dy = dy
@@ -59,6 +65,8 @@ class HoldClickInstruction(MouseInstruction):
     Bounded on purpose: an unbounded button-down is the mouse equivalent of a
     stuck key, and nothing in the protocol can rescue it.
     """
+
+    touches_input = True
 
     def __init__(self, button: str = "left", seconds: float = 0.2, tracker: Optional[set] = None):
         self.button = button
@@ -89,6 +97,9 @@ class PathInstruction(MouseInstruction):
     """
     Moves mouse through a sequence of points (a drawn line/path).
     """
+
+    touches_input = True
+
     def __init__(self, points: List[Point], step_duration: float = 0.02):
         self.points = points
         self.step_duration = step_duration

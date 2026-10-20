@@ -112,6 +112,17 @@ func buildDesktopContextMessage(status map[string]interface{}, visionSummary str
 		reason, _ := status["input_error"].(string)
 		lines = append(lines, "- Desktop input: unavailable ("+contextField(reason, 144)+"). Use shell_command for approved command-line work.")
 	}
+	if capabilities := toMap(status["capabilities"]); capabilities != nil {
+		if windows := toMap(capabilities["windows"]); windows != nil {
+			if available, ok := windows["available"].(bool); ok && !available {
+				reason, _ := windows["reason"].(string)
+				if reason == "" {
+					reason, _ = status["open_windows_error"].(string)
+				}
+				lines = append(lines, "- Window list: unavailable ("+contextField(reason, 120)+")")
+			}
+		}
+	}
 	if title := contextField(activeWindow, 160); title != "" {
 		lines = append(lines, "- Active window: "+title)
 	} else {

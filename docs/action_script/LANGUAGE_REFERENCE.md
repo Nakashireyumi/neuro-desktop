@@ -58,7 +58,7 @@ closing the updated executor also discards its pending session and releases inpu
 
 | Syntax | Behavior |
 | --- | --- |
-| `TYPE "hello world"` | Types literal text into the focused control, at about 20 ms per character. Supported characters depend on the OS input backend; this is not Unicode text insertion. |
+| `TYPE "hello world"` | Types printable ASCII into the focused control, at about 20 ms per character. Non-ASCII or control characters are rejected before any character is typed; this is not Unicode text insertion and it never substitutes the clipboard. |
 | `PRESS enter` | Presses and releases one supported key. |
 | `ENTER` | Alias for pressing Enter. |
 | `HOLD shift` | Holds a key until released; pair it with `RELEASE`. |
@@ -164,12 +164,21 @@ TAKE_SCREEN_SNIP
 
 The `WINDOWS` aliases remain for compatibility. macOS uses alternate mappings
 such as Spotlight for the launcher, while Linux mappings depend on desktop
-shortcut settings. Some are approximations: `CLOSE_ALL_APPS` shows the desktop
-rather than terminating applications; `OPEN_FILE_EXPLORER` on macOS currently
-uses the new-folder shortcut and needs a suitable Finder context. Clipboard
-history is unsupported on macOS. Inspect the current context before using an
-intent and observe its outcome. These names do not guarantee equivalent behavior
-on every desktop configuration.
+shortcut settings. An intent with no real mapping is rejected before anything
+runs instead of substituting a different action:
+
+- `CLOSE_ALL_APPS` is unsupported everywhere; use individual window controls.
+- On macOS, `OPEN_WINDOWS_MENU`, `MINIMIZE_ALL_WINDOWS`,
+  `OPEN_WINDOWS_SETTINGS`, `OPEN_NOTIFICATION_CENTER`,
+  `OPEN_POWER_USER_MENU` and `OPEN_CLIPBOARD_HISTORY` have no reliable native
+  shortcut and are rejected.
+- On Linux, `OPEN_POWER_USER_MENU` is rejected; other mappings depend on the
+  desktop environment.
+
+Some supported intents are still approximations: `OPEN_FILE_EXPLORER` on macOS
+uses the new-folder shortcut and needs a suitable Finder context. Inspect the
+current context before using an intent and observe its outcome. These names do
+not guarantee equivalent behavior on every desktop configuration.
 
 ## A short workflow
 

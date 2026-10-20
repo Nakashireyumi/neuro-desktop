@@ -42,3 +42,18 @@ func TestDesktopContextExplainsUnavailableInput(t *testing.T) {
 		t.Fatalf("Neuro needs an actionable explanation: %s", message)
 	}
 }
+
+func TestDesktopContextExplainsUnavailableWindows(t *testing.T) {
+	message := buildDesktopContextMessage(map[string]interface{}{
+		"open_windows": []interface{}{},
+		"capabilities": map[string]interface{}{
+			"windows": map[string]interface{}{
+				"available": false,
+				"reason":    "PyGetWindow cannot list native Wayland windows",
+			},
+		},
+	}, "")
+	if !strings.Contains(message, "Window list: unavailable") || !strings.Contains(message, "Wayland") {
+		t.Fatalf("an empty list must not look like a desktop with no windows: %s", message)
+	}
+}

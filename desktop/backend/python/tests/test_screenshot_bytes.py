@@ -88,6 +88,35 @@ class ScreenshotSizeTest(unittest.TestCase):
         image = desktop.Image.new("RGB", (800, 600), (10, 20, 30))
         self.assertEqual(desktop._fit_within(image, desktop.SCREENSHOT_MAX_SIDE).size, (800, 600))
 
+    def test_capture_geometry_keeps_logical_origin_pixel_scale_and_output_scale(self):
+        geometry = desktop._capture_geometry(
+            "mss", -100, 50, 2880, 1800, 5760, 3600
+        )
+        self.assertEqual(geometry["origin"], {"x": -100, "y": 50})
+        self.assertEqual(geometry["logical"], {"width": 2880, "height": 1800})
+        self.assertEqual(geometry["pixel"], {"width": 5760, "height": 3600})
+        self.assertEqual(geometry["pixel_scale"], {"x": 2.0, "y": 2.0})
+
+        output = desktop._with_output_geometry(geometry, (1600, 1000))
+        self.assertEqual(output["output"], {"width": 1600, "height": 1000})
+        self.assertAlmostEqual(output["output_scale"]["x"], 1600 / 2880, places=5)
+        self.assertAlmostEqual(output["output_scale"]["y"], 1000 / 1800, places=5)
+
+    def test_wayland_without_grim_does_not_fall_back_to_mss(self):
+        class ForbiddenMSS:
+            def __enter__(self):
+                raise AssertionError("MSS must not be used on Wayland without grim")
+
+            def __exit__(self, *exc):
+                return False
+
+        monitor = desktop.DesktopMonitor(track_mouse=False)
+        with mock.patch.dict(os.environ, {"WAYLAND_DISPLAY": "wayland-test", "XDG_SESSION_TYPE": "wayland"}), mock.patch.object(desktop.sys, "platform", "linux"), mock.patch.object(desktop, "mss", ForbiddenMSS()), mock.patch.object(desktop.shutil, "which", return_value=None):
+            with self.assertRaises(desktop.NoDisplayError) as raised:
+                monitor.capture_screen_png()
+        self.assertIn("grim", str(raised.exception))
+        self.assertIn("XWayland", str(raised.exception))
+
     def test_encoded_png_is_a_png_under_the_byte_limit(self):
         image = desktop.Image.new("RGB", (1600, 900), (1, 2, 3))
         data = desktop._encode_png(image)

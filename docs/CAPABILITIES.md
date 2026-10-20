@@ -4,7 +4,7 @@ Honest snapshot of what works today (post bridge/executor split). This is not a
 roadmap; see [VISION.md](../VISION.md) and [PRODUCTION_TODO.md](PRODUCTION_TODO.md)
 for direction and backlog.
 
-Last updated: 2026-10-16
+Last updated: 2026-10-20
 
 ## Architecture (what you actually run)
 
@@ -33,16 +33,23 @@ supervisor were removed; see `docs/ARCHITECTURE.md`.
 
 | Capability | Windows | Linux | macOS |
 |------------|---------|-------|-------|
-| Low-level mouse / keyboard (`pyautogui`) | Yes | Yes* | Yes* |
-| High-level desktop intents (start menu, snap, lock, …) | Yes (Win shortcuts) | Best-effort (DE-dependent) | Best-effort (⌘ mappings) |
-| Window enumeration | Yes | Weak / optional | Weak / optional |
-| Screenshots | MSS | MSS on X11; `grim` on supported Wayland compositors* | MSS* |
+| Low-level mouse / keyboard (`pyautogui`) | Yes, on an interactive input desktop* | X11 yes; Wayland no (XWayland-only input needs explicit opt-in) | Yes, after Accessibility permission* |
+| High-level desktop intents (start menu, snap, lock, …) | Yes (Win shortcuts); unsupported names are rejected | Best-effort (DE-dependent) | Best-effort (⌘ mappings); unsupported names are rejected |
+| Window enumeration | `pygetwindow` when available | X11 only; unavailable on Wayland | `pygetwindow` when available |
+| Screenshots | MSS | MSS on X11; `grim` only on Wayland | MSS, after Screen Recording permission* |
 | Headless / CLI-only OS (no display) | Supported (`NEURO_HEADLESS` or no session) | Supported (no `DISPLAY`) | Supported (forced) |
 | Command lines (`shell_command`) | Yes (allowlist + firewall) | Yes | Yes |
 
 The table describes implemented backends, not certification on every desktop. Linux native manager and Wayland screenshot transport have been exercised locally. Windows/macOS desktop input and capture still require real-device verification; CI checks their builds, protocol and native widgets.
 
-\* Needs a real graphical session. Do **not** run with `sudo` (breaks Wayland/X auth and file ownership). On Omarchy/Hyprland, run from your logged-in desktop session.
+`get_status` reports separate `capabilities.input`, `capabilities.capture` and
+`capabilities.windows` objects with an `available` flag and a reason, while
+keeping the legacy `input_available`/`input_error` pair for older bridges.
+Capture geometry reports the capture origin, logical bounds, original pixel
+size, pixel scale and the encoded output size/scale; pointer bounds are reported
+separately in `screen.pointer_bounds`.
+
+\* Needs a real graphical session. Do **not** run with `sudo` (breaks Wayland/X auth and file ownership). On Omarchy/Hyprland, run from your logged-in desktop session. PyAutoGUI on Wayland reaches only XWayland windows; full-desktop input is refused unless `NEURO_ALLOW_XWAYLAND_INPUT=1` explicitly accepts that limit. The controller does not change desktop configuration or grant device permissions. Grant macOS Accessibility and Screen Recording in System Settings, then restart the controller.
 
 ## Neuro API integration
 

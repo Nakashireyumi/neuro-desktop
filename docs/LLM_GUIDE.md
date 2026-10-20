@@ -61,7 +61,7 @@ turn.
 | `get_desktop_context` | `{}` | Requests platform, input availability, geometry, and application context in either mode; the snapshot follows as a message. |
 | `move_mouse_to` | `{"x":640,"y":360}` | Low-level absolute pointer movement, in screen pixels. |
 | `mouse_click` | `{"button":"left"}` | Clicks at the pointer; move to the target first. |
-| `type_text` | `{"text":"hello"}` | Types into the focused control. |
+| `type_text` | `{"text":"hello"}` | Types printable ASCII into the focused control. Non-ASCII text is refused before anything is typed; use `shell_command` instead. |
 | `key_press` | `{"key":"enter"}` | Taps one key. |
 | `run_script` | `{"script":"COMBO ctrl c"}` | Low-level ordered script; use `command` on macOS where appropriate. |
 | `shell_command` | `{"command":"echo hello"}` | Requires the shell scope and effective program allowlist. Output follows acceptance as a message. |

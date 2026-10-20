@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from .launcher import LaunchError, launch_target
-from .platform_intents import apply_intent, resolve_intent, supported_intents
+from .platform_intents import apply_intent, known_intents, resolve_intent
 from .shell import ShellDeniedError, ShellTimeoutError, check_command, run as run_shell_command, shell_timeout
 
 if TYPE_CHECKING:
@@ -16,10 +16,12 @@ if TYPE_CHECKING:
 
 Point = Tuple[int, int]
 
-# High-level desktop intents resolved via platform_intents (OS-specific shortcuts).
-_DESKTOP_INTENTS = frozenset(supported_intents("windows")) | frozenset(
-    supported_intents("linux")
-) | frozenset(supported_intents("macos"))
+# Known high-level intents, including platform-unsupported ones. Keeping the
+# names here lets a script get "not supported on this platform" instead of a
+# misleading "unknown command"; public listings use supported_intents() only.
+_DESKTOP_INTENTS = frozenset(known_intents("windows")) | frozenset(
+    known_intents("linux")
+) | frozenset(known_intents("macos"))
 
 
 class ActionParseError(Exception):
@@ -155,6 +157,11 @@ class ActionParser:
         if cmd == "TYPE":
             if len(tokens) < 2:
                 raise ActionParseError("TYPE requires quoted text")
+            # Validate the whole text during planning: a later execution error
+            # would otherwise leave earlier actions in the same script applied.
+            validate_text = getattr(self.kbd, "validate_text", None)
+            if callable(validate_text):
+                validate_text(" ".join(tokens[1:]))
         elif cmd in ("ENTER", "RELEASE_ALL"):
             self._arity(tokens, 1)
         elif cmd in ("PRESS", "HOLD", "RELEASE", "HOLD_FOR", "SHORTCUT", "COMBO"):

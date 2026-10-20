@@ -57,6 +57,38 @@ def is_headless() -> bool:
     return headless_requested() or not display_available()
 
 
+def wayland_session() -> bool:
+    """True when this is a Wayland session, including one with XWayland.
+
+    ``DISPLAY`` alone is not enough: on Wayland it usually points at XWayland,
+    which PyAutoGUI can reach but native Wayland windows are outside it.
+    """
+    if sys.platform != "linux":
+        return False
+    if os.environ.get("XDG_SESSION_TYPE", "").strip().lower() == "wayland":
+        return True
+    return bool(os.environ.get("WAYLAND_DISPLAY"))
+
+
+def allow_xwayland_input() -> bool:
+    """Operator opt-in for explicitly XWayland-only input on Wayland."""
+    return os.environ.get("NEURO_ALLOW_XWAYLAND_INPUT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def wayland_input_reason() -> str:
+    return (
+        "Wayland session detected. PyAutoGUI drives X11/XWayland windows only and "
+        "cannot control native Wayland windows, so full-desktop input is disabled. "
+        "Set NEURO_ALLOW_XWAYLAND_INPUT=1 only if you explicitly accept XWayland-only "
+        "input, or install a compositor input backend."
+    )
+
+
 def describe_headless_reason() -> str:
     if headless_requested():
         return "NEURO_HEADLESS is set"
@@ -97,6 +129,7 @@ class StubPyAutoGUI:
     KEYBOARD_KEYS = KEYBOARD_KEYS
     FAILSAFE = False
     PAUSE = 0.0
+    _headless_stub = True
 
     def __init__(self, reason: str = "") -> None:
         self.reason = reason
@@ -130,6 +163,11 @@ def load_pyautogui() -> Any:
     """Import the real pyautogui, or return the stub when that is impossible."""
     if is_headless():
         return StubPyAutoGUI()
+    if wayland_session() and not allow_xwayland_input():
+        # Importing succeeds here through XWayland, but the resulting input can
+        # only reach X11 windows. Refuse that misleading half-capability; the
+        # operator can opt in explicitly for XWayland-only input.
+        return StubPyAutoGUI(reason=wayland_input_reason())
     missing = object()
     saved_mouseinfo = missing
     blocked_mouseinfo = False
