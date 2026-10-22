@@ -291,9 +291,9 @@ including loopback. The token is read from the `X-ND-Token` header or a Bearer
 header, never a query parameter. Sensitive writes need a freshly entered operator
 token. The dashboard program adds no authority and stores no secret.
 
-**Protocols.** HTTP plus JSON; the server also serves WebSocket-backed viewer and
-event traffic where documented. The program refuses non-`/api` and non-`/health`
-paths.
+**Protocols.** HTTP plus JSON. The dashboard program refuses non-`/api` and
+non-`/health` paths. The local viewer overlay reads a separate feed with a
+read-only token.
 
 **Tests.**
 
