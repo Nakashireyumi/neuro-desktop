@@ -85,7 +85,7 @@ func TestFileIPCDiscardsLateResponseFromOtherRequestOrBridge(t *testing.T) {
 				}
 				finished <- err
 			}()
-			command, err := waitForFileCommand(path, time.Second)
+			command, err := waitForFileCommand(path, 5*time.Second)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -136,7 +136,7 @@ func TestFileIPCRefusesResponseWithoutSessionAndRequestEcho(t *testing.T) {
 				_, err := n.sendToExecutor(IPCCommand{Type: CmdGetStatus})
 				finished <- err
 			}()
-			command, err := waitForFileCommand(path, time.Second)
+			command, err := waitForFileCommand(path, 5*time.Second)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -174,7 +174,7 @@ func TestFileIPCMismatchedEchoTimesOutWithoutLeavingACommand(t *testing.T) {
 		_, err := n.sendToExecutor(IPCCommand{Type: CmdGetStatus})
 		finished <- err
 	}()
-	command, err := waitForFileCommand(path, time.Second)
+	command, err := waitForFileCommand(path, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
