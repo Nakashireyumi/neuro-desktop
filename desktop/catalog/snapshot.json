@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "Nakashireyumi/neuro-desktop",
-  "commit": "7d4504c9ba063ffd41df3fe8bca7928bfb353e48",
+  "commit": "4bbe65144c97ca25992840807b38424ca9da91c8",
   "files": {
     "games/README.md": "desktop/catalog/games/README.md",
     "games/generic-keyboard-mouse.json": "desktop/catalog/games/generic-keyboard-mouse.json",

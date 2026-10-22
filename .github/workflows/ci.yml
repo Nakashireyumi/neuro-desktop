@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Nakashireyumi/neuro-desktop
-          ref: 7d4504c9ba063ffd41df3fe8bca7928bfb353e48
+          ref: 4bbe65144c97ca25992840807b38424ca9da91c8
           path: .catalog-source
           persist-credentials: false
 
