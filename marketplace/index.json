@@ -31,7 +31,7 @@
       ],
       "neuro_api": {
         "transport": "websocket",
-        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neurcro-specific protocol changes are required."
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
       },
       "install": {
         "mode": "manual",
@@ -95,7 +95,7 @@
           "https://github.com/VX1D/neuro-sdk-neuratro/blob/12a558e5f9ad5e49ab6442a5fbc519b088620d4a/LICENSE"
         ],
         "unverified": [
-          "Game or application runtime not executed by Neurcro maintainers.",
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
           "No managed install/uninstall recipe or per-platform end-to-end certification."
         ]
       }
@@ -124,7 +124,7 @@
       ],
       "neuro_api": {
         "transport": "websocket",
-        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neurcro-specific protocol changes are required."
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
       },
       "install": {
         "mode": "manual",
@@ -180,7 +180,7 @@
           "https://github.com/Pekotaker/NeuroCompanion"
         ],
         "unverified": [
-          "Game or application runtime not executed by Neurcro maintainers.",
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
           "No managed install/uninstall recipe or per-platform end-to-end certification."
         ]
       }
@@ -209,7 +209,7 @@
       ],
       "neuro_api": {
         "transport": "websocket",
-        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neurcro-specific protocol changes are required."
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
       },
       "install": {
         "mode": "manual",
@@ -267,7 +267,7 @@
           "https://github.com/EthLeigh/dont-starve-neuro/blob/500892a001a57d3bef017b0075ec80ac8ec2501c/LICENSE"
         ],
         "unverified": [
-          "Game or application runtime not executed by Neurcro maintainers.",
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
           "No managed install/uninstall recipe or per-platform end-to-end certification."
         ]
       }
@@ -296,7 +296,7 @@
       ],
       "neuro_api": {
         "transport": "websocket",
-        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neurcro-specific protocol changes are required."
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
       },
       "install": {
         "mode": "manual",
@@ -343,7 +343,7 @@
           "https://github.com/pandapanda135/neuro-stardew-integration/blob/183fe203119bae2b3ea3236a0b5c9373f3f6bc01/LICENSE"
         ],
         "unverified": [
-          "Game or application runtime not executed by Neurcro maintainers.",
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
           "No managed install/uninstall recipe or per-platform end-to-end certification."
         ]
       }
@@ -374,7 +374,7 @@
       ],
       "neuro_api": {
         "transport": "websocket",
-        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neurcro-specific protocol changes are required."
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
       },
       "install": {
         "mode": "manual",
@@ -434,7 +434,7 @@
           "https://github.com/vituha230/Neuro-Skyrim-Integration/blob/cff51c45afe9a6e69983bb0f9609208cced1e445/LICENSE"
         ],
         "unverified": [
-          "Game or application runtime not executed by Neurcro maintainers.",
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
           "No managed install/uninstall recipe or per-platform end-to-end certification."
         ]
       }
@@ -461,7 +461,7 @@
       "game_ids": [],
       "neuro_api": {
         "transport": "websocket",
-        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neurcro-specific protocol changes are required."
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
       },
       "install": {
         "mode": "manual",
@@ -476,7 +476,7 @@
         "notes": [
           "Use the streamable-http branch captured by this listing.",
           "The configured MCP server determines the actual file, network and tool access; review its permissions separately.",
-          "This is an independent bridge, rather than a stdio MCP server for Neurcro to launch as an MCP tool."
+          "This is an independent bridge, rather than a stdio MCP server for Neuro Desktop to launch as an MCP tool."
         ]
       },
       "permissions": {
@@ -524,7 +524,7 @@
           "https://github.com/ECHO-HELLO-WORLD424/NeuroMCP/blob/2ef4ab8bf9f05a2beff885e64671d5293808c65f/LICENSE"
         ],
         "unverified": [
-          "Game or application runtime not executed by Neurcro maintainers.",
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
           "No managed install/uninstall recipe or per-platform end-to-end certification."
         ]
       }
@@ -551,7 +551,7 @@
       "game_ids": [],
       "neuro_api": {
         "transport": "websocket",
-        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neurcro-specific protocol changes are required."
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
       },
       "install": {
         "mode": "manual",
@@ -597,7 +597,7 @@
           "https://github.com/VSC-NeuroPilot/neurontainer/blob/c7e6b59f12825c5b6189783653ca5f617168973e/LICENSE"
         ],
         "unverified": [
-          "Game or application runtime not executed by Neurcro maintainers.",
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
           "No managed install/uninstall recipe or per-platform end-to-end certification."
         ]
       }
@@ -624,7 +624,7 @@
       "game_ids": [],
       "neuro_api": {
         "transport": "websocket",
-        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neurcro-specific protocol changes are required."
+        "configuration": "Use the upstream connection setting; preserve the stable game display name. No Neuro Desktop-specific protocol changes are required."
       },
       "install": {
         "mode": "manual",
@@ -678,7 +678,7 @@
           "https://github.com/VSC-NeuroPilot/neuropilot/blob/0b0abd373a440d13614080b4767a284cca17e538/LICENSE"
         ],
         "unverified": [
-          "Game or application runtime not executed by Neurcro maintainers.",
+          "Game or application runtime not executed by Neuro Desktop maintainers.",
           "No managed install/uninstall recipe or per-platform end-to-end certification."
         ]
       }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Nakashireyumi/neuro-desktop/marketplace/index.schema.json",
-  "title": "Neurcro marketplace source index v1",
+  "title": "Neuro Desktop marketplace source index v1",
   "description": "Descriptive, pinned upstream listings. No executable installation instructions. validate.py also checks URL credentials, duplicate IDs, license readiness and commit-pinned instructions.",
   "type": "object",
   "additionalProperties": false,

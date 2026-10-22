@@ -1,9 +1,9 @@
-# Neurcro marketplace index
+# Neuro Desktop marketplace index
 
 Choose dedicated integrations for your games and applications here. The index
 records upstream sources, exact commits, prerequisites, connection settings and
 capabilities to review. It contains all eight projects requested for the initial
-marketplace. Neurcro's ordinary desktop controls remain useful when no
+marketplace. Neuro Desktop's ordinary desktop controls remain useful when no
 dedicated integration is available.
 
 These are **source listings**, with upstream installation instructions. They are
@@ -36,7 +36,7 @@ Each listing contains:
 | --- | --- |
 | `source_ref`, `source_commit` | Human-readable upstream branch and the exact reviewed revision. Fetch by commit, not by a mutable branch name. |
 | `license` | Actual repository license status. A README badge alone is insufficient. |
-| `platforms.documented`, `.tested` | Upstream documented platforms and platforms actually exercised by Neurcro maintainers, respectively. |
+| `platforms.documented`, `.tested` | Upstream documented platforms and platforms actually exercised by Neuro Desktop maintainers, respectively. |
 | `game_ids` | Game profile associations; these do not claim an installed game or a connected integration. |
 | `neuro_api` | Connection protocol; upstream integrations keep using the official Neuro API. |
 | `install` | Manual setup readiness, pinned instructions and prerequisites. Version 1 contains no executable commands. |

@@ -1,7 +1,7 @@
-# Neurcro catalog
+# Neuro Desktop catalog
 
 This branch maintains the integration marketplace index and signed built-in catalog
-for [Neurcro](https://github.com/Nakashireyumi/neuro-desktop).
+for [Neuro Desktop](https://github.com/Nakashireyumi/neuro-desktop).
 Application source is developed separately; this branch contains metadata and validators.
 
 - `marketplace/index.json`: reviewed upstream integration sources, pinned commits,
