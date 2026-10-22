@@ -36,5 +36,5 @@
     "recommended": true,
     "prompt": "Describe the Minecraft scene: what is in front of the player, what the hotbar and health show, and whether anything is dangerous."
   },
-  "notes": "Look before you walk. Movement is a bounded key hold, so long walks need several game_move calls. With control.mode \"auto\", a Minecraft integration connected through the relay takes over input and Neuro Desktop only observes."
+  "notes": "Look before you walk. Movement is a bounded key hold, so long walks need several game_move calls. With control.mode \"auto\", a Minecraft integration connected through the relay takes over input and Neurcro only observes."
 }
