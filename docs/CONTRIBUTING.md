@@ -1,6 +1,6 @@
-# Contributing to Neuro Desktop
+# Contributing to Neurcro
 
-> **Thank you for your interest in contributing to Neuro Desktop!**
+> **Thank you for your interest in contributing to Neurcro!**
 
 We welcome contributions of all kinds: bug reports, feature requests, documentation improvements, code contributions, and more.
 
@@ -99,7 +99,7 @@ python3 desktop/tools/ci/repo_checks.py               # repository checks
 Brief description of the bug.
 
 ## Steps to Reproduce
-1. Start Neuro Desktop
+1. Start Neurcro
 2. Send action: `{"action": "move_mouse_to", "params": {"x": 5000, "y": 5000}}`
 3. Observe crash
 
@@ -525,6 +525,6 @@ If you have questions about contributing, feel free to:
 
 ---
 
-**Thank you for contributing to Neuro Desktop!** 🎉
+**Thank you for contributing to Neurcro!** 🎉
 
 Every contribution, no matter how small, helps make this project better for everyone.

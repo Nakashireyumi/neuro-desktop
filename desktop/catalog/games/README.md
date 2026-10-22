@@ -1,11 +1,11 @@
 # Game profiles
 
-A **game profile** is how Neuro Desktop turns "play this game" into concrete
+A **game profile** is how Neurcro turns "play this game" into concrete
 input on the controlled machine. Neuro gets the same neutral action vocabulary
 for every game; the profile supplies the keybinds.
 
 ```
-catalog/games/*.json          →  bundled profiles (shipped with Neuro Desktop)
+catalog/games/*.json          →  bundled profiles (shipped with Neurcro)
 $NEURO_GAME_PROFILES_DIR      →  your own directory of *.json profiles
 $NEURO_GAME_PROFILES_FILE     →  a single file (object, array, or {"profiles": [...]})
 ```
@@ -13,18 +13,18 @@ $NEURO_GAME_PROFILES_FILE     →  a single file (object, array, or {"profiles":
 Profiles from the environment are loaded in addition to the bundled ones.
 Profile ids are lower-case and unique; the first definition of an id wins.
 
-## Control modes — how Neuro Desktop coexists with game integrations
+## Control modes — how Neurcro coexists with game integrations
 
-| `control.mode` | Who drives the game | What Neuro Desktop does |
+| `control.mode` | Who drives the game | What Neurcro does |
 | --- | --- | --- |
-| `nd` | Neuro Desktop | `game_move`, `game_look`, `game_action`, `game_press` all work |
+| `nd` | Neurcro | `game_move`, `game_look`, `game_action`, `game_press` all work |
 | `external` | an existing integration | Input actions are refused with a message naming the owner; `game_observe` / `game_status` still work |
-| `hybrid` | both | Neuro Desktop may only inject the actions listed in `control.nd_actions` |
+| `hybrid` | both | Neurcro may only inject the actions listed in `control.nd_actions` |
 | `auto` | decided at session start | `external` when an integration named in `control.external_integration` is connected through the relay, otherwise `nd` |
 
 `auto` is what makes "run alongside existing integrations" work without editing
 files: install the game's own integration and connect it through Neuro Relay,
-and Neuro Desktop steps aside automatically. Remove it, and Neuro Desktop takes
+and Neurcro steps aside automatically. Remove it, and Neurcro takes
 the controls again.
 
 ## Field reference
@@ -54,7 +54,7 @@ the controls again.
     },
     "move_hold_seconds": 0.75,            // default hold for game_move
     "max_actions_per_minute": 120,        // runaway-loop guard
-    "nd_actions": ["game_observe"],       // hybrid only: what Neuro Desktop may inject
+    "nd_actions": ["game_observe"],       // hybrid only: what Neurcro may inject
     "allow_raw_keys": true                // false = game_action only, no game_press
   },
 

@@ -1,6 +1,6 @@
 # Development, integration, and release workflow
 
-Neuro Desktop gives Neuro and Evil general control of applications and operating systems. Dedicated game and application integrations are optional: they provide more precise state and actions when available. Keep the desktop controls useful without requiring a dedicated integration for every app.
+Neurcro gives Neuro and Evil general control of applications and operating systems. Dedicated game and application integrations are optional: they provide more precise state and actions when available. Keep the desktop controls useful without requiring a dedicated integration for every app.
 
 The native manager is a separate GTK application with its own startup splash. The server owns Neuro API connections, permissions, the executor hub, the marketplace, and local management APIs. The packaged Python client runs on the computer being controlled. The browser dashboard remains an optional management surface. See [architecture](ARCHITECTURE.md) and [deployment](DEPLOYMENT.md) for split-machine layouts.
 
@@ -20,7 +20,7 @@ Use short-lived `codex/` feature branches for new application work. Stage subseq
 
 Upstream's development branch is currently named `dev/latest`; the fork's is `dev`. Check the actual refs before choosing a base. The [branch review](BRANCH_REVIEW.md) records the earlier master revert, the existing PRs, duplicate branches, and unique work that needs preserving. It is a dated snapshot, not a reason to reset a newer branch.
 
-This workflow uses the development/release separation described in [NeuroPilot's contributor workflow](https://github.com/VSC-NeuroPilot/neuropilot/blob/0b0abd373a440d13614080b4767a284cca17e538/.github/README.md). Neuro Desktop builds its own native programs and promotes the exact tested archives into a draft release.
+This workflow uses the development/release separation described in [NeuroPilot's contributor workflow](https://github.com/VSC-NeuroPilot/neuropilot/blob/0b0abd373a440d13614080b4767a284cca17e538/.github/README.md). Neurcro builds its own native programs and promotes the exact tested archives into a draft release.
 
 ## Make and verify a change
 
@@ -71,9 +71,9 @@ CI's **Release gate (every required job succeeded)** is the required aggregate r
 
 ## Add an integration or marketplace listing
 
-Keep the [official Neuro API](https://github.com/VedalAI/neuro-sdk/blob/main/API/SPECIFICATION.md) as the action/context protocol. The Neuro Desktop SDK adds a manifest, scoped presence and health, Games associations, and an optional curated activity feed. It does not require publishing a private game or Discord backend.
+Keep the [official Neuro API](https://github.com/VedalAI/neuro-sdk/blob/main/API/SPECIFICATION.md) as the action/context protocol. The Neurcro SDK adds a manifest, scoped presence and health, Games associations, and an optional curated activity feed. It does not require publishing a private game or Discord backend.
 
-For an existing Minecraft, osu!, or private integration, add a local SDK manifest and adapter around the existing connection. Preserve its Neuro API game display name and register the matching game IDs. Verify the dedicated integration is healthy before handing input ownership to it. Test that disconnecting returns ownership safely and that Neuro Desktop and the dedicated integration do not issue duplicate input.
+For an existing Minecraft, osu!, or private integration, add a local SDK manifest and adapter around the existing connection. Preserve its Neuro API game display name and register the matching game IDs. Verify the dedicated integration is healthy before handing input ownership to it. Test that disconnecting returns ownership safely and that Neurcro and the dedicated integration do not issue duplicate input.
 
 For a marketplace update, work on a feature branch based on the canonical `catalog` branch and submit a PR back to `catalog`. Review the exact upstream commit, its license and prerequisites, then update the source entry and commit-pinned instructions. Run the directory's validator and tests in that branch. Keep platform results explicitly unverified until tested. See the [marketplace guide](MARKETPLACE.md).
 

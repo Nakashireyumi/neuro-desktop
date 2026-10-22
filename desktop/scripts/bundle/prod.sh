@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-echo "=== Building Neuro Desktop Bundle ==="
+echo "=== Building Neurcro Bundle ==="
 
 # --------------------------------------------------
 # OS DETECTION

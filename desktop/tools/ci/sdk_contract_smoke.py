@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the installed SDK against a real, isolated Neuro Desktop server.
+"""Check the installed SDK against a real, isolated Neurcro server.
 
 No Neuro backend, game, Discord connection, image, or input executor is needed.
 Credentials and runtime state live only in a temporary directory and memory.

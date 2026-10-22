@@ -2,7 +2,7 @@
 
 Open **Extensions → Built-in services → Vision Service** in the native manager
 or browser dashboard. This default built-in service controls image capture and
-analysis in Neuro Desktop. It is separate from installable extensions, so it has
+analysis in Neurcro. It is separate from installable extensions, so it has
 no install or uninstall action.
 
 You can switch the service off globally, or allow it separately for Neuro and
@@ -13,13 +13,13 @@ server restart and bundle rebuild.
 Disabling prevents new image work and invalidates pending results. It does not
 terminate an external vision-server process, uninstall a model, or revoke other
 programs' access to that server. A request already sent may have disclosed its
-image; cancellation cannot recall bytes. Neuro Desktop discards the outdated
+image; cancellation cannot recall bytes. Neurcro discards the outdated
 result, including when you disable and re-enable the service while it is running.
 
 ## Choose the connection persona
 
 The official Neuro action envelope does not identify which twin sent an action.
-Neuro Desktop therefore uses your server startup setting, never an `actor`
+Neurcro therefore uses your server startup setting, never an `actor`
 parameter supplied by a model:
 
 ```sh
@@ -33,7 +33,7 @@ distinguish them. To permit one twin independently, configure separate trusted
 connections through your backend and set the corresponding server persona.
 Apply the policy to each server instance you operate; editing one server does
 not remotely configure another instance. A persona label is your routing
-assertion, not identity detection by Neuro Desktop.
+assertion, not identity detection by Neurcro.
 
 The card's effective state describes this service decision. The global `vision`
 permission, action policy, pause state, client capture support, and analysis

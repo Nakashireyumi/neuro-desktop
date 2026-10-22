@@ -33,7 +33,7 @@ const SCOPE_DESCRIPTIONS: Record<ScopeName, { title: string; description: string
   game: {
     title: "Game Interface",
     description:
-      "Playing a game through Neuro Desktop itself: moving, looking, pressing keys, and running the game session",
+      "Playing a game through Neurcro itself: moving, looking, pressing keys, and running the game session",
     icon: "🎮",
   },
   filesystem: {

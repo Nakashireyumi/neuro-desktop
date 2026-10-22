@@ -43,8 +43,8 @@ def main():
                 run(python, "-m", "pip", "install", "--quiet", f"pyinstaller=={PYINSTALLER_VERSION}")
             run(python, "-m", "PyInstaller", "--noconfirm", "--distpath", work / "dist", "--workpath", work / "work", SOURCE / "neuro-manager.spec")
             if sys.platform == "darwin":
-                shutil.copytree(work / "dist" / "Neuro Desktop Manager.app", stage / "Neuro Desktop Manager.app", symlinks=True)
-                (stage / "neuro-manager").write_text('#!/bin/sh\nHERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$HERE/Neuro Desktop Manager.app/Contents/MacOS/neuro-manager" "$@"\n')
+                shutil.copytree(work / "dist" / "Neurcro Manager.app", stage / "Neurcro Manager.app", symlinks=True)
+                (stage / "neuro-manager").write_text('#!/bin/sh\nHERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"\nexec "$HERE/Neurcro Manager.app/Contents/MacOS/neuro-manager" "$@"\n')
                 (stage / "neuro-manager").chmod(0o755)
             else:
                 shutil.copytree(work / "dist" / "neuro-manager", stage, dirs_exist_ok=True, symlinks=True)
@@ -58,7 +58,7 @@ if ! "$PY" -c 'import gi; gi.require_version("Gtk", "4.0")' 2>/dev/null; then
   if [ -z "${NEURO_MANAGER_PYTHON:-}" ] && /usr/bin/python3 -c 'import gi; gi.require_version("Gtk", "4.0")' 2>/dev/null; then
     PY=/usr/bin/python3
   else
-    echo "Neuro Desktop Manager needs GTK 4 and PyGObject. See manager/README.md." >&2
+    echo "Neurcro Manager needs GTK 4 and PyGObject. See manager/README.md." >&2
     exit 1
   fi
 fi
@@ -68,7 +68,7 @@ exec "$PY" "$HERE/launch.py" "$@"
             (stage / "neuro-manager.cmd").write_text('@echo off\nif defined NEURO_MANAGER_PYTHON (\n  "%NEURO_MANAGER_PYTHON%" "%~dp0launch.py" %*\n) else if exist "C:\\msys64\\ucrt64\\bin\\python.exe" (\n  "C:\\msys64\\ucrt64\\bin\\python.exe" "%~dp0launch.py" %*\n) else (\n  python "%~dp0launch.py" %*\n)\n')
         if (SOURCE / "README.md").exists():
             shutil.copyfile(SOURCE / "README.md", stage / "README.md")
-        (stage / MARKER).write_text("Native Neuro Desktop manager build output\n")
+        (stage / MARKER).write_text("Native Neurcro manager build output\n")
         # Stage the complete replacement first; unrelated directories are refused above.
         if out.exists():
             shutil.rmtree(out)

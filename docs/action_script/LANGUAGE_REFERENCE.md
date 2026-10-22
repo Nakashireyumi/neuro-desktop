@@ -188,7 +188,7 @@ text field is at the specified location and that Enter submits it:
 ```text
 MOVE 500 300
 CLICK left
-TYPE "Neuro Desktop"
+TYPE "Neurcro"
 PRESS enter
 ```
 

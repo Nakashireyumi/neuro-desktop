@@ -54,7 +54,7 @@ export default function SignIn({ mode, reason, onSignedIn }: Props) {
   return (
     <div className="signin-root">
       <section className="signin-card" aria-labelledby="signin-title">
-        <h1 id="signin-title">Neuro Desktop</h1>
+        <h1 id="signin-title">Neurcro</h1>
         {mode === "setup" ? (
           <>
             <h2>Set up the server first</h2>

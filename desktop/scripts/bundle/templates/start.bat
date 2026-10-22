@@ -1,5 +1,5 @@
 @echo off
-rem Neuro Desktop launcher (bundled). Installed as start.bat.
+rem Neurcro launcher (bundled). Installed as start.bat.
 rem
 rem Starts the server (dashboard at http://127.0.0.1:8300/ui/) and the agent on this
 rem PC. The agent is neuro-client\neuro-client.exe when the bundle has it, else the
@@ -39,14 +39,14 @@ echo Dashboard: http://127.0.0.1:8300/ui/ ^(sign in with the dashboard token^)
 if "%NEURO_NO_AGENT%"=="1" goto run_server
 
 if exist "%~dp0neuro-client\neuro-client.exe" (
-  start "Neuro Desktop agent" /min "%~dp0neuro-client\neuro-client.exe" --bridge 127.0.0.1:9876
+  start "Neurcro agent" /min "%~dp0neuro-client\neuro-client.exe" --bridge 127.0.0.1:9876
   goto run_server
 )
 
 where python >nul 2>nul
 if errorlevel 1 goto no_agent
 
-start "Neuro Desktop agent" /min python -m controller.agent --bridge 127.0.0.1:9876
+start "Neurcro agent" /min python -m controller.agent --bridge 127.0.0.1:9876
 goto run_server
 
 :no_agent
@@ -58,9 +58,9 @@ echo   neuro-client.exe --bridge ^<server-ip^>:9876 --token ^<executor token^>
 if "%NEURO_NO_MANAGER%"=="1" goto server
 if not defined NEURO_MANAGER_SERVER set NEURO_MANAGER_SERVER=http://127.0.0.1:8300
 if exist "%~dp0manager\neuro-manager.exe" (
-  start "Neuro Desktop Manager" "%~dp0manager\neuro-manager.exe" --server "%NEURO_MANAGER_SERVER%"
+  start "Neurcro Manager" "%~dp0manager\neuro-manager.exe" --server "%NEURO_MANAGER_SERVER%"
 ) else if exist "%~dp0manager\neuro-manager.cmd" (
-  start "Neuro Desktop Manager" cmd /c ""%~dp0manager\neuro-manager.cmd" --server "%NEURO_MANAGER_SERVER%""
+  start "Neurcro Manager" cmd /c ""%~dp0manager\neuro-manager.cmd" --server "%NEURO_MANAGER_SERVER%""
 )
 :server
 "%~dp0@SERVER@" %*

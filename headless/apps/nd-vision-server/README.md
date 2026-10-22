@@ -1,10 +1,10 @@
 # nd-vision-server
 
-An optional screen-description service for Neuro Desktop. The server calls it
+An optional screen-description service for Neurcro. The server calls it
 through `NEURO_VISION_URL` when Neuro asks what is on screen (`game_observe`), and
 the dashboard shows whether it is reachable.
 
-You control Neuro Desktop's image use from **Extensions → Built-in services →
+You control Neurcro's image use from **Extensions → Built-in services →
 Vision Service**. Review the [per-twin controls and privacy guide](../../../docs/VISION.md).
 Those controls do not stop this independently managed HTTP process.
 

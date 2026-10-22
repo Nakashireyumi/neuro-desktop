@@ -1,4 +1,4 @@
-# Neuro Desktop Action Script System
+# Neurcro Action Script System
 
 Use the [language reference](../../../../docs/action_script/LANGUAGE_REFERENCE.md)
 for the complete grammar, limits, permissions, and valid examples. This compact

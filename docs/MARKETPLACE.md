@@ -1,6 +1,6 @@
 # Marketplace and dedicated integration workflow
 
-Neuro Desktop gives Neuro and Evil general desktop controls first. Dedicated
+Neurcro gives Neuro and Evil general desktop controls first. Dedicated
 integrations add precise application state and higher-level actions when you
 choose to connect them. Existing Minecraft, osu! or private stream integrations
 can continue using your current setup; you do not need to publish their source
@@ -20,7 +20,7 @@ the branch process documented by
 
 The index is separate from the runtime's signed `desktop/catalog/index.json`.
 The source directory records useful upstream projects even when an installer
-does not exist. The signed runtime catalog authorizes code that Neuro Desktop
+does not exist. The signed runtime catalog authorizes code that Neurcro
 may fetch or run. A source listing must not acquire execution privileges merely
 because its repository is in the directory.
 
@@ -65,7 +65,7 @@ public source metadata and documentation on 2026-10-15; it did not run the games
 
 Use the [official Neuro API](https://github.com/VedalAI/neuro-sdk/blob/main/API/SPECIFICATION.md)
 for game actions and context. The separate
-[Neuro Desktop SDK](https://github.com/cassitly/neuro-desktop-sdk) adds a versioned
+[Neurcro SDK](https://github.com/cassitly/neuro-desktop-sdk) adds a versioned
 manifest, scoped configuration, lifecycle health and Games tab association.
 Existing integrations keep their action protocol and private backend. Follow the
 [workflow](WORKFLOW.md#add-an-integration-or-marketplace-listing) to register an
@@ -92,7 +92,7 @@ The existing Games profiles support `nd`, `external`, `hybrid` and `auto` contro
 modes. Associate your integration's relay display name with
 `control.external_integration`; `auto` can hand off when that peer is connected.
 Use `external` when your existing integration always owns control. In `hybrid`,
-list the precise Neuro Desktop actions that may inject input. Do not allow two
+list the precise Neurcro actions that may inject input. Do not allow two
 independent controllers to issue movement simultaneously by accident.
 
 Minecraft and osu! need no fabricated public repository listing for your private
@@ -121,7 +121,7 @@ permission controls. Installation and grant changes are audited without tokens,
 secret settings or private message contents.
 
 Index capabilities are **review notes inferred from source**, not claims that
-upstream authors adopted an SDK manifest or that Neuro Desktop enforces those
+upstream authors adopted an SDK manifest or that Neurcro enforces those
 limits on separately installed programs. Author-declared capabilities and actual
 runtime grants belong to the managed adapter contract.
 

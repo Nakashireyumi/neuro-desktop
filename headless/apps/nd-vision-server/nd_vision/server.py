@@ -460,7 +460,7 @@ def main(argv=None) -> int:
     except ValueError as exc:
         print(f"nd-vision: {exc}", file=sys.stderr)
         return 2
-    parser = argparse.ArgumentParser(prog="nd-vision", description="Vision endpoint for Neuro Desktop (NEURO_VISION_URL).")
+    parser = argparse.ArgumentParser(prog="nd-vision", description="Vision endpoint for Neurcro (NEURO_VISION_URL).")
     parser.add_argument("--host", default=os.environ.get("NEURO_VISION_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("NEURO_VISION_PORT", "8610")))
     parser.add_argument(

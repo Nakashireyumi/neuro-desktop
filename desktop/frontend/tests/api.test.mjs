@@ -64,7 +64,7 @@ test("an old rejected request cannot clear a newer sign-in", async () => {
 
 test("network and malformed response failures are actionable API errors", async () => {
   globalThis.fetch = async () => { throw new TypeError("offline"); };
-  await assert.rejects(request("/api/status"), /Cannot reach the Neuro Desktop bridge/);
+  await assert.rejects(request("/api/status"), /Cannot reach the Neurcro bridge/);
   globalThis.fetch = async () => new Response("<html>proxy error</html>");
   await assert.rejects(request("/api/status"), /invalid JSON response/);
 });

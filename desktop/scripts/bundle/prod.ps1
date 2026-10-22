@@ -39,7 +39,7 @@ try {
     $AgentDist = "$Dist/agent"
     $Server = 'neuro-integration.exe'
 
-    Write-Host '=== Building Neuro Desktop bundle ==='
+    Write-Host '=== Building Neurcro bundle ==='
 
     Write-Host "Updating $Dist (keeping credentials, policy, installed extensions and custom profiles)..."
     New-Item -ItemType Directory -Force -Path $Dist | Out-Null

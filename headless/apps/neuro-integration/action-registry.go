@@ -298,7 +298,7 @@ var ManagementActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdListCatalogItems,
-		Description: "List available catalog integrations/apps configured for Neuro Desktop",
+		Description: "List available catalog integrations/apps configured for Neurcro",
 		Schema:      nil,
 	},
 	{
@@ -328,7 +328,7 @@ var ManagementActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdListInstalledExts,
-		Description: "List installed/managed Neuro Desktop extensions",
+		Description: "List installed/managed Neurcro extensions",
 		Schema:      nil,
 	},
 	{
@@ -910,7 +910,7 @@ func (a *IPCProxyAction) Execute(state interface{}) {
 func (a *IPCProxyAction) executionAllowed() error {
 	select {
 	case <-a.integration.done:
-		return fmt.Errorf("Neuro Desktop is shutting down")
+		return fmt.Errorf("Neurcro is shutting down")
 	default:
 	}
 	if reason := a.integration.stop.blockReason(a.GetName()); reason != "" {

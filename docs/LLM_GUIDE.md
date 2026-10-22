@@ -1,6 +1,6 @@
 # Context and actions for Neuro and Evil
 
-Neuro Desktop exposes registered actions, a short connection brief, and help on
+Neurcro exposes registered actions, a short connection brief, and help on
 demand. This follows the [Neuro SDK best practices](https://github.com/VedalAI/neuro-sdk/blob/main/API/BEST_PRACTICES.md):
 use readable, meaningful context, concise action descriptions, and prompt results
 after validation. Reconnecting does not erase Neuro's existing context.
@@ -40,7 +40,7 @@ Use this only if the backend needs an additional prompt. The bridge already
 provides its startup brief and registered action descriptions.
 
 ```text
-Use only your registered Neuro Desktop actions with their exact parameters.
+Use only your registered Neurcro actions with their exact parameters.
 Request get_desktop_context {} before acting on an unknown desktop; read the
 snapshot that follows. Accepted work is queued, not proof that an action finished.
 Use short sequences and observe again when the next step depends on screen state.

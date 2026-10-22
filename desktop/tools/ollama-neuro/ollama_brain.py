@@ -148,7 +148,7 @@ class OllamaBrain:
     def _system_prompt(self, game: str) -> str:
         return (
             "You are Neuro-sama testing a desktop control integration.\n"
-            f"The connected game/app is: {game or 'Neuro Desktop'}.\n"
+            f"The connected game/app is: {game or 'Neurcro'}.\n"
             "Choose exactly ONE registered tool/action that moves the desktop task forward.\n"
             "Prefer safe, reversible actions. Avoid lock_workstation and shutdown_* unless asked.\n"
             "Keep typed text short (a few words). Prefer high-level intents when available.\n"

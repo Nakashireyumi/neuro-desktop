@@ -62,7 +62,7 @@ export default function VisionServicePanel({ state, operator, onSaved }: {
   return <section className="vision-service-card" aria-labelledby="vision-service-title">
     <h2 id="vision-service-title">Vision Service</h2>
     <p className="hint">Default built-in service</p>
-    <p>Disabling stops image capture and analysis in Neuro Desktop. An external vision server keeps running.</p>
+    <p>Disabling stops image capture and analysis in Neurcro. An external vision server keeps running.</p>
     {state && draft ? <>
       <p><strong>Bridge persona:</strong> {state.persona} · <strong>Service available to this bridge:</strong> {state.effective ? "yes" : "no"} · <strong>Analysis endpoint:</strong> {state.configured ? "configured" : "not configured"}</p>
       {state.reason && <p className="hint">{state.reason}</p>}

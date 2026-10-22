@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Neuro Desktop run_script Action Payload",
+  "title": "Neurcro run_script Action Payload",
   "type": "object",
   "additionalProperties": false,
   "properties": {

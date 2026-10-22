@@ -252,7 +252,7 @@ export default function App() {
     return (
       <div className="signin-root">
         <section className="signin-card" aria-live="polite">
-          <h1>Neuro Desktop</h1>
+          <h1>Neurcro</h1>
           <p>{connectionError || "Connecting to the bridge…"}</p>
           {connectionError && <button className="primary" onClick={() => void load()}>Try again</button>}
         </section>
@@ -264,7 +264,7 @@ export default function App() {
     <div className="manager-root">
       <header className="manager-titlebar">
         <div className="titlebar-left">
-          <h1>Neuro Desktop</h1>
+          <h1>Neurcro</h1>
           <nav className="titlebar-nav">
             {(["extensions", "marketplace", "games", ...(operator ? ["permissions", "activity"] : []), "settings"] as Tab[]).map((tab) => (
               <button

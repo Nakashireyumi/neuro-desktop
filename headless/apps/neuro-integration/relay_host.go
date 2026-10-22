@@ -3,7 +3,7 @@ package main
 // Neuro Relay host: the intermediary, written in Go.
 //
 // It speaks the wire protocol of Nakashireyumi/neuro-relay's intermediary for the
-// parts Neuro Desktop uses, so existing integrations and Neuro-OS watchers keep
+// parts Neurcro uses, so existing integrations and Neuro-OS watchers keep
 // working. It is one process of the same binary as the bridge:
 //
 //	neuro-integration relay --listen 127.0.0.1:8765

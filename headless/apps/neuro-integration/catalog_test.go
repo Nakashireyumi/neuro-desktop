@@ -45,7 +45,7 @@ func TestFindCatalogItemsByTag(t *testing.T) {
 
 	content := `{
   "items": [
-    {"id":"neuro-desktop","name":"Neuro Desktop","description":"Windows integration","tags":["windows","desktop"]},
+    {"id":"neuro-desktop","name":"Neurcro","description":"Windows integration","tags":["windows","desktop"]},
     {"id":"neuro-relay","name":"Neuro Relay","description":"Multiplexer","tags":["relay","backend"]}
   ]
 }`

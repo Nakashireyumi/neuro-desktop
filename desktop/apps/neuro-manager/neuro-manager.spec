@@ -16,4 +16,4 @@ pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name="neuro-manager", console=False)
 collection = COLLECT(exe, analysis.binaries, analysis.datas, name="neuro-manager")
 if sys.platform == "darwin":
-    application = BUNDLE(collection, name="Neuro Desktop Manager.app", bundle_identifier="io.neurodesktop.Manager")
+    application = BUNDLE(collection, name="Neurcro Manager.app", bundle_identifier="io.neurodesktop.Manager")

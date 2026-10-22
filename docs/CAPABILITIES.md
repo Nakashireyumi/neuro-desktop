@@ -1,4 +1,4 @@
-# Neuro Desktop — Current Capabilities
+# Neurcro — Current Capabilities
 
 Honest snapshot of what works today (post bridge/executor split). This is not a
 roadmap; see [VISION.md](../VISION.md) and [PRODUCTION_TODO.md](PRODUCTION_TODO.md)
@@ -156,7 +156,7 @@ The [standalone SDK](https://github.com/cassitly/neuro-desktop-sdk) links existi
 - `TestRelayRegistrationMatchesIntermediaryProtocol` pins the client's frames to the intermediary's protocol, and `TestRelayClientAgainstTheGoHost` runs the server's own client against the built-in host in CI.
 - Not repeated after the shim was removed: a live run against the upstream Python relay with its own integrations. Re-run it by hand before relying on that combination.
 - `NEURO_RESERVED_ACTIONS` keeps another integration's action names out of the registry, so the two cannot shadow each other.
-- `control.mode: auto` delegates a game to its dedicated integration when that integration is connected, and drives it from Neuro Desktop when it is not.
+- `control.mode: auto` delegates a game to its dedicated integration when that integration is connected, and drives it from Neurcro when it is not.
 
 ## Operator / Vedal controls
 

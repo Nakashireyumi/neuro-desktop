@@ -1,5 +1,5 @@
-Neuro Desktop
-=============
+Neurcro
+-------
 
 What is in this folder
 ----------------------

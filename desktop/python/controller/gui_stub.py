@@ -8,7 +8,7 @@ have no display, and the GUI libraries fail in different ways there:
 * ``pynput``/``mss``/``pygetwindow`` either import fine and fail on use, or are
   not installed at all.
 
-Neuro Desktop is still useful on such a machine — it can run shell commands,
+Neurcro is still useful on such a machine — it can run shell commands,
 report status and answer context — so instead of crashing, the input libraries
 degrade into stubs that raise a clear, actionable error only if an action
 actually tries to touch a mouse or keyboard that is not there.

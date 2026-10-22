@@ -87,7 +87,7 @@ def credential_entry(**properties):
 
 class ManagerApplication(Gtk.Application):
     def __init__(self, server, diagnostics=False, non_unique=False, smoke=False):
-        GLib.set_application_name("Neuro Desktop Manager")
+        GLib.set_application_name("Neurcro Manager")
         super().__init__(application_id="io.neurodesktop.Manager", flags=Gio.ApplicationFlags.NON_UNIQUE if non_unique else Gio.ApplicationFlags(0))
         self.server = server
         self.diagnostics = diagnostics
@@ -148,12 +148,12 @@ class ManagerApplication(Gtk.Application):
         provider = Gtk.CssProvider()
         provider.load_from_data(CSS)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        self.splash = Gtk.ApplicationWindow(application=self, title="Starting Neuro Desktop", decorated=False)
+        self.splash = Gtk.ApplicationWindow(application=self, title="Starting Neurcro", decorated=False)
         self.splash.set_resizable(False)
         self.splash.set_default_size(660, 360)
         content = box(spacing=14)
         content.add_css_class("nd-splash")
-        content.append(label("Neuro Desktop", "nd-brand"))
+        content.append(label("Neurcro", "nd-brand"))
         content.append(label("Manager", "nd-subtitle"))
         spacer = box()
         spacer.set_vexpand(True)
@@ -167,7 +167,7 @@ class ManagerApplication(Gtk.Application):
         self.submit(lambda: Client(self.server).request("/health"), self.finish_startup)
 
     def finish_startup(self, _health, error):
-        self.window = Gtk.ApplicationWindow(application=self, title="Neuro Desktop Manager", default_width=1100, default_height=760)
+        self.window = Gtk.ApplicationWindow(application=self, title="Neurcro Manager", default_width=1100, default_height=760)
         self.window.connect("notify::is-active", self.on_focus)
         self.window.connect("close-request", self.on_close)
         self.header = Gtk.HeaderBar()
@@ -186,7 +186,7 @@ class ManagerApplication(Gtk.Application):
         # Focus out while the old entry is still rooted. Win32's IME removes
         # its native message filter during focus-out, before widget teardown.
         self.window.set_focus(None)
-        self.header.set_title_widget(label("Neuro Desktop Manager", "nd-subheading"))
+        self.header.set_title_widget(label("Neurcro Manager", "nd-subheading"))
         if hasattr(self, "signout_button"):
             self.header.remove(self.signout_button)
             del self.signout_button
@@ -194,7 +194,7 @@ class ManagerApplication(Gtk.Application):
         center.set_halign(Gtk.Align.CENTER)
         center.set_valign(Gtk.Align.CENTER)
         center.set_size_request(420, -1)
-        center.append(label("Connect to Neuro Desktop", "nd-heading"))
+        center.append(label("Connect to Neurcro", "nd-heading"))
         center.append(label("Use your operator token from neuro-integration setup, or a limited Neuro/Evil manager token. It stays in memory until sign-out or exit.", "nd-muted"))
         center.append(label("Server"))
         self.server_entry = Gtk.Entry(text=self.server, placeholder_text="http://127.0.0.1:8300")
@@ -645,7 +645,7 @@ class ManagerApplication(Gtk.Application):
         target.append(label(profile.get("description", "")))
         target.append(label("Keybinds: " + ", ".join(f"{name}: {key}" for name, key in (profile.get("keys") or {}).items()), "nd-muted"))
         target.append(label("Control mode"))
-        self.mode = Gtk.DropDown.new_from_strings(["Auto", "Neuro Desktop", "External integration", "Hybrid"])
+        self.mode = Gtk.DropDown.new_from_strings(["Auto", "Neurcro", "External integration", "Hybrid"])
         target.append(self.mode)
         self.launch = Gtk.CheckButton(label="Launch the game (requires system permission)")
         self.launch.set_sensitive(bool(profile.get("launchable")))

@@ -10,7 +10,7 @@ from .shell import ShellDeniedError, ShellTimeoutError, run as run_shell_command
 def _headless() -> bool:
     """Headless when asked, or when there is simply no display session.
 
-    The second half is what makes Neuro Desktop work on a command-line-only OS
+    The second half is what makes Neurcro work on a command-line-only OS
     without any configuration: pyautogui cannot drive a machine with no X/Wayland
     session, but the shell capability can, and Neuro should still be able to use
     the machine.

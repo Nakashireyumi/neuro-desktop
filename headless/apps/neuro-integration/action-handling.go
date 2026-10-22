@@ -12,8 +12,8 @@ import (
 )
 
 // reservedActionNames lists action names owned by another integration (for
-// example a dedicated Minecraft integration running beside Neuro Desktop
-// through the relay). Neuro Desktop must not register those, or the two
+// example a dedicated Minecraft integration running beside Neurcro
+// through the relay). Neurcro must not register those, or the two
 // integrations would shadow each other.
 func (n *NDIntegration) reservedActionNames() map[string]bool {
 	reserved := map[string]bool{}

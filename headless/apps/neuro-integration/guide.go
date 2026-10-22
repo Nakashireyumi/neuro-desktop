@@ -170,7 +170,7 @@ func gameGuideSection(n *NDIntegration, available map[CommandType]bool) string {
 		"- game_action {action}: a named action such as jump or attack from the control map. game_press {keys:[\"e\"]} requires allow_raw_keys in the profile.",
 		"- game_status: current session and owner. game_observe: window/game state and an approved vision description when configured; the text follows as a message.",
 		"- game_end_session stops the session. game_release_all releases held input. Accepted work reports failures as messages.",
-		"When input belongs to a dedicated integration, use its registered actions. Neuro Desktop must not compete with it. A session does not grant permissions.",
+		"When input belongs to a dedicated integration, use its registered actions. Neurcro must not compete with it. A session does not grant permissions.",
 	}
 	if n != nil && n.games != nil {
 		profiles := n.games.Profiles()
@@ -219,7 +219,7 @@ func safetyGuideSection(n *NDIntegration) string {
 
 func (n *NDIntegration) startupGuide() string {
 	return strings.TrimSpace(`
-## Neuro Desktop connected
+## Neurcro connected
 
 Use only the registered actions and their exact parameters. Request get_desktop_context {} for current platform, screen, input availability, and application state; its text snapshot follows as a message. This connection does not prove an executor or desktop input is ready.
 

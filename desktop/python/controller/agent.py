@@ -1,4 +1,4 @@
-"""Neuro Desktop agent — the process that runs on the machine Neuro controls.
+"""Neurcro agent — the process that runs on the machine Neuro controls.
 
 This is the "server side" of the pair: the Go bridge (``neuro-integration``)
 holds the Neuro connection, the permission policy, the game interface and the
@@ -817,7 +817,7 @@ def process_ipc_file(path: str, response_path: str, agent: Agent) -> Optional[bo
 
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Neuro Desktop agent (runs on the machine Neuro controls)"
+        description="Neurcro agent (runs on the machine Neuro controls)"
     )
     target = parser.add_mutually_exclusive_group()
     target.add_argument(

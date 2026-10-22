@@ -1,4 +1,4 @@
-# Neuro Desktop Manager
+# Neurcro Manager
 
 The manager is its own GTK 4 desktop application. It uses native widgets and a
 native startup splash. It does not embed a browser. The HTTP dashboard remains
@@ -82,7 +82,7 @@ python3 scripts/build-manager.py --standalone
 
 Build on each target OS and architecture; PyInstaller does not cross-compile.
 Linux and Windows produce a directory containing `neuro-manager` or
-`neuro-manager.exe`. macOS produces `Neuro Desktop Manager.app` plus a command
+`neuro-manager.exe`. macOS produces `Neurcro Manager.app` plus a command
 line launcher. Keep the directory together. Distribution signing and macOS
 notarization require the publisher's own credentials.
 

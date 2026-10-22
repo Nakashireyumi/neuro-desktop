@@ -424,14 +424,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: cassitly/neuro-desktop-sdk
-          ref: ae5e0aba797dfe08ccba7100e117acefa6701c6b
+          ref: 172c8868d6a767a3f5bbaa38f393bb759aae293d
           path: ecosystem/neuro-desktop-sdk
 
       - name: Checkout the pinned standalone Vencord adapter
         uses: actions/checkout@v4
         with:
           repository: cassitly/neuro-desktop-vencord
-          ref: e0f9c3755a305f72dcf1118b36e173e0a5bd9a3c
+          ref: 3c912d3754732d6b2ea57ab3c4b39970d4dff7da
           path: ecosystem/neuro-desktop-vencord
 
       - name: Setup Python
@@ -498,14 +498,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout Neuro Desktop
+      - name: Checkout Neurcro
         uses: actions/checkout@v4
 
       - name: Checkout the pinned standalone Vencord adapter
         uses: actions/checkout@v4
         with:
           repository: cassitly/neuro-desktop-vencord
-          ref: e0f9c3755a305f72dcf1118b36e173e0a5bd9a3c
+          ref: 3c912d3754732d6b2ea57ab3c4b39970d4dff7da
           path: ecosystem/neuro-desktop-vencord
 
       - name: Checkout the reviewed Vencord API target

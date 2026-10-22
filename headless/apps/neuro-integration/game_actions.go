@@ -33,7 +33,7 @@ func gameActionSpecs() []actionSpec {
 		{
 			Name:        CmdGameListProfiles,
 			Kind:        actionKindGame,
-			Description: "List the game profiles Neuro Desktop can interface with, and how each one is controlled",
+			Description: "List the game profiles Neurcro can interface with, and how each one is controlled",
 			Schema:      nil,
 		},
 		{
@@ -65,14 +65,14 @@ func gameActionSpecs() []actionSpec {
 				"mode": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"auto", "nd", "external", "hybrid"},
-					"description": "Override the profile's control mode for this session. auto hands the game to the dedicated integration when it is connected, otherwise Neuro Desktop drives it",
+					"description": "Override the profile's control mode for this session. auto hands the game to the dedicated integration when it is connected, otherwise Neurcro drives it",
 				},
 			}, nil),
 		},
 		{
 			Name:        CmdGameEndSession,
 			Kind:        actionKindGame,
-			Description: "Stop the current game session and release any keys/buttons Neuro Desktop is holding",
+			Description: "Stop the current game session and release any keys/buttons Neurcro is holding",
 			Schema:      nil,
 		},
 		{
@@ -159,7 +159,7 @@ func gameActionSpecs() []actionSpec {
 		{
 			Name:        CmdGameReleaseAll,
 			Kind:        actionKindGame,
-			Description: "Safety: release every key and mouse button Neuro Desktop is holding",
+			Description: "Safety: release every key and mouse button Neurcro is holding",
 			Schema:      nil,
 		},
 		{
@@ -410,13 +410,13 @@ func (n *NDIntegration) describeGameStatusGuarded(permit *observationPermit) str
 	}
 
 	profile, _ := n.games.ProfileByID(session.ProfileID)
-	allowed := "input allowed (Neuro Desktop drives this game)"
+	allowed := "input allowed (Neurcro drives this game)"
 	if profile != nil {
 		switch session.ControlMode {
 		case ControlModeExternal:
 			allowed = fmt.Sprintf("input delegated to the %s integration", nonEmptyOr(session.ExternalName, session.ProfileID))
 		case ControlModeHybrid:
-			allowed = fmt.Sprintf("hybrid: Neuro Desktop may only use %s", strings.Join(profile.Control.NDActions, ", "))
+			allowed = fmt.Sprintf("hybrid: Neurcro may only use %s", strings.Join(profile.Control.NDActions, ", "))
 		}
 	}
 
@@ -567,7 +567,7 @@ func (n *NDIntegration) startGameSessionGuarded(profileID string, launch bool, m
 	// Tell Neuro how to play, and keep the message in context so later actions
 	// are still grounded in the control map.
 	context := profile.GameControlSummary()
-	context += fmt.Sprintf("\n\n_Session started %s. Neuro Desktop will report input failures as context._",
+	context += fmt.Sprintf("\n\n_Session started %s. Neurcro will report input failures as context._",
 		started.StartedAt.Format("15:04:05Z"))
 	if n.client != nil {
 		if err := n.client.SendContext(boundedContextMessage(context), true); err != nil {
