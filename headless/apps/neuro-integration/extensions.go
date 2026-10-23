@@ -463,10 +463,11 @@ type extensionJob struct {
 
 func (n *NDIntegration) runExtensionJob(job *extensionJob) {
 	var result neuro.ExecutionResult
-	action := string(CmdInstallExtension)
-	if job.op == "stage" {
-		action = string(CmdStageIntegration)
+	actions := map[string]CommandType{
+		"install": CmdInstallExtension, "stage": CmdStageIntegration,
+		"uninstall": CmdUninstallExtension, "enable": CmdEnableExtension, "disable": CmdDisableExtension,
 	}
+	action := string(actions[job.op])
 	if err := n.checkExtensionManagement(job.id); err != nil {
 		result = neuro.NewFailureResult(err.Error())
 	} else if policy := n.policy(); policy == nil || !policy.IsAllowed(action) {
@@ -479,6 +480,10 @@ func (n *NDIntegration) runExtensionJob(job *extensionJob) {
 			result = n.installExtension(job.id)
 		case "stage":
 			result = n.stageMarketplaceSource(job.id)
+		case "uninstall":
+			result = n.uninstallExtension(job.id)
+		case "enable", "disable":
+			result = n.setExtensionEnabled(job.id, job.op == "enable")
 		default:
 			result = neuro.NewFailureResult("unknown extension operation " + job.op)
 		}

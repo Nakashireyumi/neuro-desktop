@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func extensionPermissionFixture(t *testing.T) *NDIntegration {
@@ -22,6 +24,86 @@ func extensionPermissionFixture(t *testing.T) *NDIntegration {
 	policy.scopes[ScopeInput] = ScopeConfig{Allowed: true}
 	n.setPolicy(policy)
 	return n
+}
+
+func TestExtensionManagementAcknowledgementDoesNotWaitForInstallLock(t *testing.T) {
+	n := extensionPermissionFixture(t)
+	grantExtensionFixture(t, "demo", ExtensionPermissionPolicy{ManageAllowed: true, RunAllowed: true, Grants: map[string]bool{"input": true}})
+	if result := n.installExtension("demo"); !result.Successful {
+		t.Fatal(result.Message)
+	}
+	for _, name := range []CommandType{CmdEnableExtension, CmdDisableExtension, CmdUninstallExtension} {
+		action := &IPCProxyAction{integration: n, spec: actionSpec{Name: name}}
+		n.extensionMu.Lock() // A slow installation is holding this lock.
+		finished := make(chan bool, 1)
+		go func() {
+			state, result := action.Validate(json.RawMessage(`{"item_id":"demo"}`))
+			work, ok := state.(pendingWork)
+			finished <- result.Successful && ok && work.extension != nil
+		}()
+		select {
+		case ok := <-finished:
+			n.extensionMu.Unlock()
+			if !ok {
+				t.Fatalf("%s was not accepted as deferred work", name)
+			}
+		case <-time.After(time.Second):
+			n.extensionMu.Unlock()
+			<-finished
+			t.Fatalf("%s acknowledgement waited for an install", name)
+		}
+	}
+	state, err := loadExtensionState(extensionStatePath())
+	if err != nil || len(state.Installed) != 1 || state.Installed["demo"].Enabled {
+		t.Fatalf("validation mutated extension state: %+v %v", state, err)
+	}
+}
+
+func TestDeferredExtensionManagementExecutesOnlyWithCurrentGrants(t *testing.T) {
+	for _, name := range []CommandType{CmdEnableExtension, CmdDisableExtension, CmdUninstallExtension} {
+		for _, revoke := range []bool{false, true} {
+			t.Run(string(name)+map[bool]string{false: "/approved", true: "/revoked"}[revoke], func(t *testing.T) {
+				n := extensionPermissionFixture(t)
+				grantExtensionFixture(t, "demo", ExtensionPermissionPolicy{ManageAllowed: true, RunAllowed: true, Grants: map[string]bool{"input": true}})
+				if result := n.installExtension("demo"); !result.Successful {
+					t.Fatal(result.Message)
+				}
+				if name == CmdDisableExtension {
+					if result := n.setExtensionEnabled("demo", true); !result.Successful {
+						t.Fatal(result.Message)
+					}
+				}
+				action := &IPCProxyAction{integration: n, spec: actionSpec{Name: name}}
+				work, result := action.Validate(json.RawMessage(`{"item_id":"demo"}`))
+				if !result.Successful {
+					t.Fatal(result.Message)
+				}
+				before, err := loadExtensionState(extensionStatePath())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if revoke {
+					grantExtensionFixture(t, "demo", ExtensionPermissionPolicy{})
+				}
+				action.Execute(work)
+				after, err := loadExtensionState(extensionStatePath())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if revoke {
+					if !reflect.DeepEqual(before, after) {
+						t.Fatal("revoked management changed extension state")
+					}
+				} else if name == CmdUninstallExtension {
+					if len(after.Installed) != 0 {
+						t.Fatal("approved uninstall did not run")
+					}
+				} else if after.Installed["demo"].Enabled != (name == CmdEnableExtension) {
+					t.Fatal("approved enable/disable did not run")
+				}
+			})
+		}
+	}
 }
 
 func grantExtensionFixture(t *testing.T, id string, policy ExtensionPermissionPolicy) {

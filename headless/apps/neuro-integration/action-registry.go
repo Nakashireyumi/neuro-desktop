@@ -707,36 +707,22 @@ func (a *IPCProxyAction) Validate(data json.RawMessage) (interface{}, neuro.Exec
 		})
 		return pendingWork{extension: &extensionJob{op: "install", id: itemID}},
 			neuro.NewSuccessResult("accepted: installing " + itemID + ". The outcome arrives as a message when it finishes.")
-	case CmdUninstallExtension:
+	case CmdUninstallExtension, CmdEnableExtension, CmdDisableExtension:
 		itemID, _ := params["item_id"].(string)
-		itemID = strings.TrimSpace(itemID)
-		if itemID == "" {
-			return nil, neuro.NewFailureResult("item_id is required")
+		itemID, err := normalizeExtensionID(itemID)
+		if err != nil {
+			return nil, neuro.NewFailureResult(err.Error())
 		}
 		if err := a.integration.checkExtensionManagement(itemID); err != nil {
 			return nil, neuro.NewFailureResult(err.Error())
 		}
-		return nil, a.integration.uninstallExtension(itemID)
-	case CmdEnableExtension:
-		itemID, _ := params["item_id"].(string)
-		itemID = strings.TrimSpace(itemID)
-		if itemID == "" {
-			return nil, neuro.NewFailureResult("item_id is required")
+		if a.spec.Name == CmdEnableExtension {
+			if err := a.integration.extensionItemRuntimeAllowed(itemID); err != nil {
+				return nil, neuro.NewFailureResult(err.Error())
+			}
 		}
-		if err := a.integration.checkExtensionManagement(itemID); err != nil {
-			return nil, neuro.NewFailureResult(err.Error())
-		}
-		return nil, a.integration.setExtensionEnabled(itemID, true)
-	case CmdDisableExtension:
-		itemID, _ := params["item_id"].(string)
-		itemID = strings.TrimSpace(itemID)
-		if itemID == "" {
-			return nil, neuro.NewFailureResult("item_id is required")
-		}
-		if err := a.integration.checkExtensionManagement(itemID); err != nil {
-			return nil, neuro.NewFailureResult(err.Error())
-		}
-		return nil, a.integration.setExtensionEnabled(itemID, false)
+		op := strings.TrimSuffix(string(a.spec.Name), "_extension")
+		return pendingWork{extension: &extensionJob{op: op, id: itemID}}, neuro.NewSuccessResult("accepted; the extension outcome follows when ready")
 	}
 
 	// A script can contain multiple capabilities. Validate every line before
