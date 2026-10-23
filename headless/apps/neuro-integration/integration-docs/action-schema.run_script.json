@@ -8,7 +8,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 65536,
-      "description": "Action script body. See Action Script Documentation.md for supported commands."
+      "description": "Neurcro macro body. See Action Script Documentation.md for supported commands."
     },
     "execute_now": {
       "type": "boolean",

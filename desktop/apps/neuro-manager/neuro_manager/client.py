@@ -65,7 +65,7 @@ class Client:
 
     def request(self, path: str, method: str = "GET", body=None, *, operator_token=""):
         if not (path.startswith("/api/") or path == "/health"):
-            raise ValueError("Only Neurcro API routes are supported.")
+            raise ValueError("Only Neuro Desktop API routes are supported.")
         headers = {"Accept": "application/json"}
         if self.token:
             headers["X-ND-Token"] = _header_token(self.token)

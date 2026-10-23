@@ -1,4 +1,4 @@
-# Neurcro module guide
+# Neuro Desktop module guide
 
 This is the map for operators and contributors who need to understand more than
 one program. Each section covers the same eight questions: purpose, setup,
@@ -6,7 +6,7 @@ configuration, permissions, protocols, tests, interconnection and platform
 limits. Protocol detail stays in the dedicated guides linked below, so this page
 does not become a second, drifting specification.
 
-Neurcro is the public name. Executables, repository paths, package IDs,
+Neuro Desktop is the product; Neurcro is its macro language. Executables, repository paths, package IDs,
 `NEURO_*` variables and wire action names deliberately keep their `neuro-*`
 forms for compatibility. In particular, `run_script` keeps its existing name and
 wire format.
@@ -318,7 +318,7 @@ rotated token hash; rerun `setup --rotate-dashboard` deliberately.
 ## Vision service (`nd-vision-server`)
 
 **Purpose.** Optional screen description for `game_observe` and approved
-observations. It is a separate HTTP process; disabling Neurcro's image use does
+observations. It is a separate HTTP process; disabling Neuro Desktop's image use does
 not stop it.
 
 **Setup.**
@@ -369,7 +369,7 @@ disabled globally or for that persona.
 ## Relay host and relay client
 
 **Purpose.** Share one Neuro connection among several integrations and watchers,
-or let Neurcro coexist with an existing game integration. The host is built into
+or let Neuro Desktop coexist with an existing game integration. The host is built into
 the server binary; the server can also connect to it as an integration.
 
 **Setup.**

@@ -20,6 +20,7 @@ so a missing optional piece never produces a silent empty answer.
 from __future__ import annotations
 
 import base64
+import http.client
 import io
 import json
 import shutil
@@ -31,6 +32,8 @@ import urllib.request
 import warnings
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
+
+from .deadline import SocketDeadline
 
 BACKENDS = ("size", "stats", "ocr", "ollama", "openai")
 
@@ -199,19 +202,54 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _post_json(url: str, payload: dict, headers: Optional[Dict[str, str]] = None, timeout: float = ANALYSIS_TIMEOUT) -> dict:
+
+    deadline = time.monotonic() + max(0.0, min(float(timeout), ANALYSIS_TIMEOUT))
+    timers = []
+
+    class DeadlineConnection:
+        def connect(self):
+            super().connect()
+            timer = SocketDeadline(self.sock, deadline)
+            timers.append(timer)
+            timer.__enter__()
+
+    class HTTPConnection(DeadlineConnection, http.client.HTTPConnection):
+        pass
+
+    class HTTPSConnection(DeadlineConnection, http.client.HTTPSConnection):
+        pass
+
+    class HTTPHandler(urllib.request.HTTPHandler):
+        def http_open(self, request):
+            return self.do_open(HTTPConnection, request)
+
+    class HTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, request):
+            return self.do_open(HTTPSConnection, request, context=self._context)
+
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=body, method="POST")
     request.add_header("Content-Type", "application/json")
     for key, value in (headers or {}).items():
         request.add_header(key, value)
-    opener = urllib.request.build_opener(_NoRedirect())
+    # Private images and bearer credentials must not follow ambient proxy
+    # settings. Workers and model endpoints are explicitly configured locally.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), HTTPHandler(), HTTPSHandler(), _NoRedirect())
     try:
         with opener.open(request, timeout=max(0.1, min(float(timeout), ANALYSIS_TIMEOUT))) as response:
             raw = response.read(MAX_UPSTREAM_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
+        exc.close()
         raise RuntimeError(f"upstream returned {exc.code}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as exc:
+        if time.monotonic() >= deadline:
+            raise AnalysisTimeout("the analysis deadline was reached") from exc
         raise RuntimeError(f"upstream not reachable: {exc}") from exc
+    finally:
+        for timer in timers:
+            timer.cancel()
+    if time.monotonic() >= deadline:
+        raise AnalysisTimeout("the analysis deadline was reached")
     if len(raw) > MAX_UPSTREAM_RESPONSE_BYTES:
         raise RuntimeError(f"upstream response exceeds {MAX_UPSTREAM_RESPONSE_BYTES} bytes")
     try:

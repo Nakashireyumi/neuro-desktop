@@ -51,7 +51,7 @@ func runSetupCommand(args []string, stdout, stderr io.Writer) int {
 	relayPath := absolutePath(*relayFileFlag)
 	dashboardPath := absolutePath(*dashboardFileFlag)
 
-	fmt.Fprintln(stdout, "Neurcro setup")
+	fmt.Fprintln(stdout, "Neuro Desktop setup")
 	fmt.Fprintln(stdout)
 
 	if !*checkOnly {

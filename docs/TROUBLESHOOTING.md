@@ -22,8 +22,8 @@ common ones.
 
 | Reply starts with | Why | What to do |
 | --- | --- | --- |
-| `Neurcro is stopped: the kill switch file … exists.` | the kill-switch file is present | delete the file, or ask Vedal to |
-| `Neurcro is paused by the operator, so "…" is refused.` | the bridge is paused | Vedal resumes it on the dashboard (Pause / Resume) |
+| `Neuro Desktop is stopped: the kill switch file … exists.` | the kill-switch file is present | delete the file, or ask Vedal to |
+| `Neuro Desktop is paused by the operator, so "…" is refused.` | the bridge is paused | Vedal resumes it on the dashboard (Pause / Resume) |
 | `Action "…" is denied by the permission policy (explicit deny list).` | the action is on the deny list | Vedal allows it under Permissions → Explicitly Denied Actions |
 | `… is denied by the permission policy` with a scope named | the scope is off | Vedal turns the scope on, or, if the scope is requestable, Neuro asks with `request_permission` |
 | `Rate limit reached for the … scope … Try again in about N s` | the scope's `max_actions_per_minute` is used up | wait, or raise the limit in the policy if that is intended |
@@ -92,7 +92,7 @@ the `X-ND-Token` header only. A `?token=` in the URL is ignored.
   printed. Do not put the token in a URL you share.
 - **The page loads but has no assets.** Open the dashboard at `/ui/`, not at the root.
   The bundle's asset links are relative, and CI checks that.
-- **The dashboard program answers `502`.** Its JSON reply says `the Neurcro server
+- **The dashboard program answers `502`.** Its JSON reply says `the Neuro Desktop server
   at … did not answer`. The program is running, but the server it forwards to (`--server`,
   default `http://127.0.0.1:8300`) is not. Start the server, or fix the address. Over SSH,
   check that the tunnel is still open.

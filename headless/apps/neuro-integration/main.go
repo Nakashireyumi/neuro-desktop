@@ -159,7 +159,7 @@ func (n *NDIntegration) Close() error {
 	n.stopAllMCPServers()
 
 	if err := n.client.SendContext(
-		"Neurcro integration is shutting down. WebSocket will close.",
+		"Neuro Desktop integration is shutting down. WebSocket will close.",
 		true,
 	); err != nil {
 		log.Printf("Warning: failed to send shutdown context: %v", err)
@@ -200,7 +200,7 @@ func main() {
 	adminListenFlag := flag.String("admin-listen", "", "HTTP dashboard addr (default 127.0.0.1:8300)")
 	adminTokenFlag := flag.String("admin-token", "", "Token required for destructive dashboard calls (NEURO_ADMIN_TOKEN)")
 	relayURLFlag := flag.String("relay-url", "", "Neuro Relay intermediary WebSocket URL (enables relay participation)")
-	relayNameFlag := flag.String("relay-name", "", "Name Neurcro registers with the relay as")
+	relayNameFlag := flag.String("relay-name", "", "Name Neuro Desktop registers with the relay as")
 	gameActionsFlag := flag.Bool("game-actions", RegisterGameActionsOnStartup, "Register the high-level game interface actions")
 	flag.Parse()
 
@@ -246,7 +246,7 @@ func main() {
 		dashboardCred = dashboardCredential{}
 	}
 
-	log.Printf("Starting Neurcro bridge (server) v%s", Version)
+	log.Printf("Starting Neuro Desktop bridge (server) v%s", Version)
 	log.Printf("- Neuro WebSocket: %s", wsURL)
 	log.Printf("- Executor listen: %s", executorListen)
 	if executorToken != "" {
@@ -269,7 +269,7 @@ func main() {
 
 	integration, err := NewNDIntegration(IntegrationOptions{
 		WSURL:           wsURL,
-		GameName:        "Neurcro",
+		GameName:        "Neuro Desktop",
 		Persona:         persona,
 		IPCPath:         ipcPath,
 		PermissionsPath: permissionsPath,
@@ -353,7 +353,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// webSocketHeadersFromEnv lets Neurcro authenticate against a relay or a
+// webSocketHeadersFromEnv lets Neuro Desktop authenticate against a relay or a
 // backend that wants a bearer token: NEURO_WS_TOKEN or NEURO_WS_HEADERS
 // ("X-Api-Key=abc;X-Other=def").
 func webSocketHeadersFromEnv() map[string]string {

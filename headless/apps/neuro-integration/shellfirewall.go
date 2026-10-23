@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-// The shell capability is the only path where Neurcro runs a program the
+// The shell capability is the only path where Neuro Desktop runs a program the
 // model asked for, so it is fenced in three places:
 //
 //  1. the `shell` permission scope (denied in the shipped example policy),

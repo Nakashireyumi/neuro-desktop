@@ -147,7 +147,7 @@ func newRelayTestHarness(t *testing.T, endpoint string, token string) (*NDIntegr
 		Enabled:         true,
 		IntermediaryURL: endpoint,
 		Token:           token,
-		Name:            "Neurcro",
+		Name:            "Neuro Desktop",
 	}
 	relay := newRelayState(cfg)
 	relay.setOwner(integration)
@@ -185,8 +185,8 @@ func TestRelayRegistrationMatchesIntermediaryProtocol(t *testing.T) {
 	if first["type"] != "integration" {
 		t.Fatalf(`the first frame must be a registration, got %#v`, first)
 	}
-	if first["name"] != "Neurcro" {
-		t.Fatalf("registration name is %v, want Neurcro", first["name"])
+	if first["name"] != "Neuro Desktop" {
+		t.Fatalf("registration name is %v, want Neuro Desktop", first["name"])
 	}
 	if first["auth_token"] != "super-secret-token" {
 		t.Fatalf("registration must carry the intermediary auth_token, got %v", first["auth_token"])

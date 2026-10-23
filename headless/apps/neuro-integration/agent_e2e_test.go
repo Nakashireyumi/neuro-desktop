@@ -37,7 +37,7 @@ func TestRealHeadlessAgentActionFlow(t *testing.T) {
 	backend := startFakeNeuro(t)
 	hub := newHub(t, "")
 	integration, err := NewNDIntegration(IntegrationOptions{
-		WSURL: backend.url(), GameName: "Neurcro", PermissionsPath: policyPath,
+		WSURL: backend.url(), GameName: "Neuro Desktop", PermissionsPath: policyPath,
 		IPCPath: filepath.Join(t.TempDir(), "ipc.json"),
 	})
 	if err != nil {

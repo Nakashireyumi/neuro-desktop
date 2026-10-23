@@ -217,7 +217,7 @@ func writeFile(t *testing.T, path string, contents string) {
 	}
 }
 
-// writeProfileFixtures writes two game profiles: one Neurcro drives
+// writeProfileFixtures writes two game profiles: one Neuro Desktop drives
 // itself and one that belongs to a dedicated integration.
 func writeProfileFixtures(dir string) error {
 	minecraft := `{
@@ -284,7 +284,7 @@ func newBridgeHarness(t *testing.T, policyJSON string) *bridgeHarness {
 
 	integration, err := NewNDIntegration(IntegrationOptions{
 		WSURL:           backend.url(),
-		GameName:        "Neurcro",
+		GameName:        "Neuro Desktop",
 		IPCPath:         ipcPath,
 		PermissionsPath: permissionsPath,
 	})
@@ -340,7 +340,7 @@ func TestBridgeActionFlow(t *testing.T) {
 
 	// Startup handshake and action registration.
 	startup := harness.backend.waitFor("startup", 5*time.Second)
-	if game, _ := startup["game"].(string); game != "Neurcro" {
+	if game, _ := startup["game"].(string); game != "Neuro Desktop" {
 		t.Fatalf("unexpected startup message: %v", startup)
 	}
 
@@ -456,7 +456,7 @@ func TestBridgeHandsTheGameToAnotherIntegration(t *testing.T) {
 		t.Fatalf("game_start_session in external mode failed: %v", result)
 	}
 
-	// ...and then Neurcro must refuse to drive it itself. Input actions are
+	// ...and then Neuro Desktop must refuse to drive it itself. Input actions are
 	// acknowledged before execution, so the refusal arrives as bounded context.
 	harness.backend.sendAction("e2", "game_move", `{"direction": "forward"}`)
 	result = harness.backend.waitForActionResult("e2", 5*time.Second)
@@ -671,7 +671,7 @@ func TestShellOutputIsDeliveredToNeuro(t *testing.T) {
 
 	integration, err := NewNDIntegration(IntegrationOptions{
 		WSURL:           backend.url(),
-		GameName:        "Neurcro",
+		GameName:        "Neuro Desktop",
 		IPCPath:         ipcPath,
 		PermissionsPath: permissionsPath,
 	})

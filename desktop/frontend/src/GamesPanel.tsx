@@ -16,9 +16,9 @@ type GamesState = {
 };
 
 const MODE_LABELS: Record<string, string> = {
-  nd: "Neurcro drives it",
+  nd: "Neuro Desktop drives it",
   external: "Dedicated integration drives it",
-  hybrid: "Shared (integration + Neurcro)",
+  hybrid: "Shared (integration + Neuro Desktop)",
   auto: "Auto (decide from the relay peers)",
 };
 
@@ -243,7 +243,7 @@ export default function GamesPanel({ executor }: { executor: ExecutorInfo | null
                   Mode for this session
                   <select value={mode} onChange={(event) => setMode(event.target.value)}>
                     <option value="auto">Auto</option>
-                    <option value="nd">Neurcro</option>
+                    <option value="nd">Neuro Desktop</option>
                     <option value="external">External integration</option>
                     <option value="hybrid">Hybrid</option>
                   </select>
@@ -278,7 +278,7 @@ export default function GamesPanel({ executor }: { executor: ExecutorInfo | null
             <div className="panel-header">
               <div>
                 <h1>No game profile selected</h1>
-                <p>Add profiles to desktop/catalog/games to teach Neurcro about a game.</p>
+                <p>Add profiles to desktop/catalog/games to teach Neuro Desktop about a game.</p>
               </div>
             </div>
           )}

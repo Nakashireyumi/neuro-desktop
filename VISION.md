@@ -1,6 +1,6 @@
 # Vision
 
-Neurcro gives Neuro and Evil a reliable **desktop control surface** on
+Neuro Desktop gives Neuro and Evil a reliable **desktop control surface** on
 Windows, Linux, and macOS, interoperable with dedicated game integrations and
 Neuro Relay.
 

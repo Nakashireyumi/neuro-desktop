@@ -250,7 +250,7 @@ func (a *AdminServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	status := map[string]interface{}{
 		"ok":          true,
 		"version":     Version,
-		"integration": "Neurcro",
+		"integration": "Neuro Desktop",
 		"uptime":      int(time.Since(integration.startedAt).Seconds()),
 		"started_at":  integration.startedAt.UTC().Format(time.RFC3339),
 		"executor":    executor,
@@ -894,7 +894,7 @@ func (a *AdminServer) handleUI(w http.ResponseWriter, r *http.Request) {
 	root, err := resolveFrontendRoot()
 	if err != nil {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprintf(w, "Neurcro dashboard assets not found: %v\n\nBuild the UI with `npm run build` in desktop/frontend, or use the bundled release.", err)
+		fmt.Fprintf(w, "Neuro Desktop dashboard assets not found: %v\n\nBuild the UI with `npm run build` in desktop/frontend, or use the bundled release.", err)
 		return
 	}
 

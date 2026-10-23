@@ -1,6 +1,6 @@
 # Architecture
 
-Neurcro lets Neuro and Evil use applications and operating systems, including
+Neuro Desktop lets Neuro and Evil use applications and operating systems, including
 applications without a dedicated integration. The native manager, server and
 controlled-machine client run as separate processes:
 

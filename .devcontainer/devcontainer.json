@@ -1,5 +1,5 @@
 {
-  "name": "Neurcro",
+  "name": "Neuro Desktop",
   "build": {
     "dockerfile": "Dockerfile",
     "context": "."

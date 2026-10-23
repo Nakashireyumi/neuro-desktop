@@ -5,7 +5,7 @@
 # ============================================================
 $ErrorActionPreference = 'Stop'
 
-Write-Host 'Building the Neurcro server for every platform...'
+Write-Host 'Building the Neuro Desktop server for every platform...'
 
 $Desktop = Split-Path -Parent $PSScriptRoot
 $OUTPUT_DIR = Join-Path $Desktop '..\headless\apps\neuro-integration\dist'

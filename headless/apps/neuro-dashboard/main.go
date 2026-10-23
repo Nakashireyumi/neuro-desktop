@@ -175,7 +175,7 @@ func newAPIProxy(target *url.URL) http.Handler {
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		writeJSONError(w, http.StatusBadGateway,
-			fmt.Sprintf("the Neurcro server at %s did not answer (%v); start it, or check --server", target, err))
+			fmt.Sprintf("the Neuro Desktop server at %s did not answer (%v); start it, or check --server", target, err))
 	}
 	return proxy
 }

@@ -138,13 +138,13 @@ func (s *stopSwitch) blockReason(action string) string {
 	}
 	if s.fileKillActive() {
 		return fmt.Sprintf(
-			"Neurcro is stopped: the kill switch file %s exists. "+
+			"Neuro Desktop is stopped: the kill switch file %s exists. "+
 				"Remove that file (or ask the operator) before trying %q again.",
 			s.killSwitchFile, action)
 	}
 	if s.pausedNow() {
 		return fmt.Sprintf(
-			"Neurcro is paused by the operator, so %q is refused. "+
+			"Neuro Desktop is paused by the operator, so %q is refused. "+
 				"Vedal can resume it from the dashboard (Pause / Resume).", action)
 	}
 	return ""

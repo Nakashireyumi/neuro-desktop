@@ -23,9 +23,9 @@ func TestRelayClientAgainstTheGoHost(t *testing.T) {
 
 	waitUntilTrue(t, func() bool { return relay.status().Registered })
 	arrived := readUntil(t, watcher, func(m map[string]interface{}) bool {
-		return m["event"] == "integration_connected" && m["name"] == "Neurcro"
+		return m["event"] == "integration_connected" && m["name"] == "Neuro Desktop"
 	})
-	if arrived["name"] != "Neurcro" {
+	if arrived["name"] != "Neuro Desktop" {
 		t.Fatalf("watcher saw %v", arrived)
 	}
 

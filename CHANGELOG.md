@@ -53,7 +53,7 @@ This project aims to follow semantic versioning once stable releases begin.
   what is (and is not) on the shipping path.
 - `docs/EXECUTOR_PROTOCOL.md` — the server↔agent wire format, the command table,
   queue semantics and file-IPC rules.
-- `docs/RELAY.md` — how Neurcro coexists with other integrations through
+- `docs/RELAY.md` — how Neuro Desktop coexists with other integrations through
   Neuro Relay, including the two modes and the upstream limitation that actions
   registered on the intermediary never reach Neuro.
 - `docs/LLM_GUIDE.md` and `docs/SAFETY.md` — prompting tactics for small models,
@@ -74,7 +74,9 @@ This project aims to follow semantic versioning once stable releases begin.
 
 ### Changed
 
-- The public product name is now **Neurcro**. User-facing UI text, documentation, startup context, catalog descriptions and the default Neuro API game display name use it. Executable names, repository paths, package IDs, environment variables and action names are unchanged, including the `run_script` wire format, so existing integrations and scripts keep working.
+- The macro language is named **Neurcro**; the product remains **Neuro Desktop**. Existing executable names, API actions, scripts and configuration stay compatible.
+- Queued game input is tied to its original session and discarded after a session ends or changes. Vision request/response deadlines also stop peers that trickle bytes.
+
 - Executor disconnects clear pending work, release held input, and close monitor listeners. File IPC atomically claims commands, correlates each result with its bridge session and request, refuses incompatible clients, and preserves pre-existing files during startup.
 - Windows manager credential fields use GTK's simple input method to avoid a stale native IME callback when replacing signed-in views; ordinary text fields retain their configured input method.
 - Installed SDK packages are tested against the real server on Linux, Windows, and macOS, including approval, presence leases, viewer activity, and revocation.

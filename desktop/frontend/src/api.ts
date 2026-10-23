@@ -1,5 +1,5 @@
 /**
- * Neurcro dashboard API client.
+ * Neuro Desktop dashboard API client.
  *
  * The dashboard is served by the Go bridge itself (http://127.0.0.1:8300/ui/),
  * so every call is same-origin and relative. When the UI is served from the Vite
@@ -501,7 +501,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     if (error instanceof ApiError) throw error;
     throw new ApiError(0, controller.signal.aborted
       ? "The bridge did not respond in time. Refresh the dashboard to check whether the request completed."
-      : `Cannot reach the Neurcro bridge (${path}). Is it running?`);
+      : `Cannot reach the Neuro Desktop bridge (${path}). Is it running?`);
   } finally {
     window.clearTimeout(timeout);
     init.signal?.removeEventListener("abort", abort);

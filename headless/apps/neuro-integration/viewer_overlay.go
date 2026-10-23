@@ -40,5 +40,5 @@ func viewerScriptHash() string {
 	return base64.StdEncoding.EncodeToString(sum[:])
 }
 func viewerOverlayHTML() string {
-	return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Neurcro activity</title><style>body{margin:0;background:transparent;color:white;font:22px system-ui}main{display:grid;gap:10px;padding:16px}.event{padding:14px 18px;background:#171827eb;border-radius:12px;display:grid;gap:5px}.event strong{color:#c7b6ff;font-size:16px}#status{display:none}</style><main aria-live="polite"></main><p id="status"></p><script>` + viewerScript + `</script></html>`
+	return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Neuro Desktop activity</title><style>body{margin:0;background:transparent;color:white;font:22px system-ui}main{display:grid;gap:10px;padding:16px}.event{padding:14px 18px;background:#171827eb;border-radius:12px;display:grid;gap:5px}.event strong{color:#c7b6ff;font-size:16px}#status{display:none}</style><main aria-live="polite"></main><p id="status"></p><script>` + viewerScript + `</script></html>`
 }

@@ -1,6 +1,6 @@
-# Action Script Language Reference
+# Neurcro language reference
 
-Action scripts are short, ordered instructions for the controlled computer. They
+Neurcro is Neuro Desktop’s macro language: short, ordered instructions for the controlled computer. They
 run through the Python executor, using the same input, shell, and system
 permissions as individual actions. A script can change the real desktop, start
 programs, or run an approved command; it is not a sandbox or a way around policy.
@@ -188,7 +188,7 @@ text field is at the specified location and that Enter submits it:
 ```text
 MOVE 500 300
 CLICK left
-TYPE "Neurcro"
+TYPE "Neuro Desktop"
 PRESS enter
 ```
 

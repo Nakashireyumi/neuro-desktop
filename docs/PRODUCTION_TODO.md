@@ -1,6 +1,7 @@
 # Production TODO
 
-Last updated: 2026-10-18. Each status below was checked against the code in this
+Last updated: 2026-10-23. See the [development review](REVIEW_2026_10_23.md)
+for the latest findings, validation limits and next priorities. Each status below was checked against the code in this
 repository. `[x]` done, `[~]` partly done (what is missing is written next to it),
 `[ ]` open, `[-]` declined with the reason.
 

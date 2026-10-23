@@ -1,4 +1,4 @@
-// Shared type declarations for the Neurcro dashboard.
+// Shared type declarations for the Neuro Desktop dashboard.
 //
 // The dashboard is a plain web app served by the Go bridge; the only native
 // affordance left is the optional bootstrap object the bridge injects into the

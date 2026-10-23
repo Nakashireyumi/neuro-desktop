@@ -28,6 +28,7 @@ import hmac
 import json
 import logging
 import os
+import socket
 import sys
 import threading
 import time
@@ -44,6 +45,7 @@ from .analysis import (
     sniff_image,
 )
 from .cluster import ClusterAnalyzer, parse_workers
+from .deadline import SocketDeadline
 
 MAX_BODY_BYTES = 12 * 1024 * 1024
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -161,6 +163,11 @@ class VisionHandler(BaseHTTPRequestHandler):
     # or silent request body as well as an idle keep-alive connection.
     timeout = REQUEST_READ_TIMEOUT_SECONDS
 
+    def handle_one_request(self):
+        with SocketDeadline(self.connection, time.monotonic() + REQUEST_READ_TIMEOUT_SECONDS) as timer:
+            self._header_deadline = timer
+            super().handle_one_request()
+
     def log_request(self, code="-", size="-") -> None:
         log.info("%s %s %s", self.command, self.path.split("?")[0], code)
 
@@ -191,6 +198,7 @@ class VisionHandler(BaseHTTPRequestHandler):
         return hmac.compare_digest(header[7:].strip().encode("utf-8"), token.encode("utf-8"))
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib naming
+        self._header_deadline.cancel()
         path = self.path.split("?")[0]
         if path != "/health":
             self._send(404, {"ok": False, "error": "not found: use GET /health or POST /describe"})
@@ -215,6 +223,7 @@ class VisionHandler(BaseHTTPRequestHandler):
         self._send(200, payload)
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib naming
+        self._header_deadline.cancel()
         path = self.path.split("?")[0]
         if path not in ("/describe", "/"):
             self.close_connection = True
@@ -256,7 +265,27 @@ class VisionHandler(BaseHTTPRequestHandler):
             self.server.inference_slots.release()  # type: ignore[attr-defined]
 
     def _describe(self, started: float) -> None:
-        raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        try:
+            deadline = self._deadline(started)
+        except RequestProblem as problem:
+            self.close_connection = True
+            self._send(problem.status, {"ok": False, "error": problem.message})
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        with SocketDeadline(self.connection, min(deadline, started + REQUEST_READ_TIMEOUT_SECONDS), socket.SHUT_RD) as timer:
+            try:
+                raw = self.rfile.read(length)
+            except OSError:
+                raw = b""
+            expired = timer.expired.is_set()
+        if expired or time.monotonic() >= deadline:
+            self.close_connection = True
+            self._send(504, {"ok": False, "error": "the request body deadline was reached"})
+            return
+        if len(raw) != length:
+            self.close_connection = True
+            self._send(400, {"ok": False, "error": "the request body is incomplete"})
+            return
         try:
             payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
@@ -264,12 +293,6 @@ class VisionHandler(BaseHTTPRequestHandler):
             return
         if not isinstance(payload, dict):
             self._send(400, {"ok": False, "error": "the body must be a JSON object"})
-            return
-
-        try:
-            deadline = self._deadline(started)
-        except RequestProblem as problem:
-            self._send(problem.status, {"ok": False, "error": problem.message})
             return
 
         prompt = str(payload.get("prompt") or "")[:MAX_PROMPT_CHARS]
@@ -460,7 +483,7 @@ def main(argv=None) -> int:
     except ValueError as exc:
         print(f"nd-vision: {exc}", file=sys.stderr)
         return 2
-    parser = argparse.ArgumentParser(prog="nd-vision", description="Vision endpoint for Neurcro (NEURO_VISION_URL).")
+    parser = argparse.ArgumentParser(prog="nd-vision", description="Vision endpoint for Neuro Desktop (NEURO_VISION_URL).")
     parser.add_argument("--host", default=os.environ.get("NEURO_VISION_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("NEURO_VISION_PORT", "8610")))
     parser.add_argument(

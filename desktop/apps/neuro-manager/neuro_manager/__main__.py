@@ -7,7 +7,7 @@ from .client import server_url
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Neurcro's native GTK manager")
+    parser = argparse.ArgumentParser(description="Neuro Desktop's native GTK manager")
     parser.add_argument("--server", default=os.environ.get("NEURO_DASHBOARD_SERVER", "http://127.0.0.1:8300"))
     parser.add_argument("--diagnostics", action="store_true", help="print startup timing and request counts, never credentials")
     parser.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)

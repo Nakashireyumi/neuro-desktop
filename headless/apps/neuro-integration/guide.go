@@ -116,7 +116,7 @@ func desktopGuideSection(available map[CommandType]bool) string {
 		{CmdMouseMove, "move_mouse_to {x,y}: move the pointer; mouse_click {button:\"left\"} clicks its current location."},
 		{CmdTypeText, "type_text {text}: type printable ASCII into the focused control. Focus the target first; non-ASCII text is refused and needs shell_command."},
 		{CmdKeyPress, "key_press {key:\"enter\"}: tap one key."},
-		{CmdRunScript, "run_script {script:\"COMBO ctrl c\"}: combine keys or run a short sequence. Request desktop_guide {topic:\"script\"} for syntax."},
+		{CmdRunScript, "run_script {script:\"COMBO ctrl c\"}: combine keys or run a short Neurcro macro. Request desktop_guide {topic:\"script\"} for syntax."},
 		{EnableLLControls, "enable_low_level_controls {}: switch to direct mouse, keyboard, and script controls."},
 		{DisableLLControls, "disable_low_level_controls {}: switch to the high-level desktop actions already described in their schemas."},
 	} {
@@ -135,7 +135,7 @@ func desktopScriptSection(available bool) string {
 	return strings.TrimSpace(`
 ## Script syntax
 
-Call run_script with a script string. One command per line; blank lines and whole-line # comments are ignored. Inline comments are not supported. Quote literal text and paths, escaping backslashes when needed.
+Neurcro is Neuro Desktop’s macro language. Call run_script with a script string. One command per line; blank lines and whole-line # comments are ignored. Inline comments are not supported. Quote literal text and paths, escaping backslashes when needed.
 
 `) + "\n```text\n" + strings.TrimSpace(`
 TYPE "hello world"
@@ -170,7 +170,7 @@ func gameGuideSection(n *NDIntegration, available map[CommandType]bool) string {
 		"- game_action {action}: a named action such as jump or attack from the control map. game_press {keys:[\"e\"]} requires allow_raw_keys in the profile.",
 		"- game_status: current session and owner. game_observe: window/game state and an approved vision description when configured; the text follows as a message.",
 		"- game_end_session stops the session. game_release_all releases held input. Accepted work reports failures as messages.",
-		"When input belongs to a dedicated integration, use its registered actions. Neurcro must not compete with it. A session does not grant permissions.",
+		"When input belongs to a dedicated integration, use its registered actions. Neuro Desktop must not compete with it. A session does not grant permissions.",
 	}
 	if n != nil && n.games != nil {
 		profiles := n.games.Profiles()
@@ -219,7 +219,7 @@ func safetyGuideSection(n *NDIntegration) string {
 
 func (n *NDIntegration) startupGuide() string {
 	return strings.TrimSpace(`
-## Neurcro connected
+## Neuro Desktop connected
 
 Use only the registered actions and their exact parameters. Request get_desktop_context {} for current platform, screen, input availability, and application state; its text snapshot follows as a message. This connection does not prove an executor or desktop input is ready.
 

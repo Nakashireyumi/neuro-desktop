@@ -8,7 +8,7 @@ def service_card(app, state):
     card.add_css_class("nd-card")
     card.append(label("Vision Service", "nd-subheading"))
     card.append(label("Default built-in service", "nd-muted"))
-    card.append(label("Disabling stops image capture and analysis in Neurcro. An external vision server keeps running."))
+    card.append(label("Disabling stops image capture and analysis in Neuro Desktop. An external vision server keeps running."))
     if not isinstance(state, dict):
         card.append(label("Vision controls unavailable. Update the bridge to manage this service.", "nd-muted"))
         return card
@@ -43,7 +43,7 @@ def show_service(app):
         dialog = Gtk.Window(title="Vision Service settings", transient_for=app.window, modal=True, default_width=540)
         content = box(spacing=14, margin=22)
         content.append(label("Vision Service", "nd-heading"))
-        content.append(label("Disabling stops image capture and analysis in Neurcro. An external vision server keeps running.", "nd-muted"))
+        content.append(label("Disabling stops image capture and analysis in Neuro Desktop. An external vision server keeps running.", "nd-muted"))
         switches = {}
         actors = state.get("actors") or {}
         for key, title, active in (("enabled", "Enabled", state.get("enabled")), ("neuro", "Neuro", actors.get("neuro")), ("evil", "Evil", actors.get("evil"))):

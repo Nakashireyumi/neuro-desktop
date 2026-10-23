@@ -293,7 +293,7 @@ func (c *mcpClient) readLoop(stdout io.Reader) {
 					_ = c.write(map[string]interface{}{
 						"jsonrpc": "2.0",
 						"id":      json.RawMessage(msg.ID),
-						"error":   map[string]interface{}{"code": -32601, "message": "method not supported by Neurcro"},
+						"error":   map[string]interface{}{"code": -32601, "message": "method not supported by Neuro Desktop"},
 					})
 				}
 			}

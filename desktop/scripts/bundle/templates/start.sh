@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Neurcro launcher (bundled). Installed as start.sh.
+# Neuro Desktop launcher (bundled). Installed as start.sh.
 #
 # Starts the native manager, server and local agent. The server also serves a
 # browser dashboard at http://127.0.0.1:8300/ui/ and

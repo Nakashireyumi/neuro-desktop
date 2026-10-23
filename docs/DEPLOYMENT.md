@@ -1,6 +1,6 @@
 # Deployment
 
-This describes how to build, bundle, and run Neurcro. It replaces the older
+This describes how to build, bundle, and run Neuro Desktop. It replaces the older
 guide, which described the Rust executor and the C++ supervisor; both were removed
 (see `CHANGELOG.md`).
 

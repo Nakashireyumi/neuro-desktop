@@ -14,13 +14,13 @@ import (
 
 // The game layer is what lets Neuro play a game that has no dedicated
 // integration. A profile describes how to recognise a game on the controlled
-// machine, which keys its controls map to, and whether Neurcro is
+// machine, which keys its controls map to, and whether Neuro Desktop is
 // allowed to drive the input at all.
 //
-// Control modes exist because Neurcro must be able to run *alongside*
+// Control modes exist because Neuro Desktop must be able to run *alongside*
 // existing game integrations:
 //
-//	nd       — Neurcro owns input; the generic interface below is used.
+//	nd       — Neuro Desktop owns input; the generic interface below is used.
 //	external — an existing integration owns input; ND only observes.
 //	hybrid   — ND owns input for the actions listed in control.nd_actions.
 type GameControlMode string
@@ -30,7 +30,7 @@ const (
 	ControlModeExternal GameControlMode = "external"
 	ControlModeHybrid   GameControlMode = "hybrid"
 	// ControlModeAuto resolves at session start: external when the game's own
-	// integration is connected through the relay, otherwise Neurcro drives.
+	// integration is connected through the relay, otherwise Neuro Desktop drives.
 	ControlModeAuto GameControlMode = "auto"
 )
 
@@ -74,7 +74,7 @@ type GameLaunch struct {
 	Commands map[string]string `json:"commands,omitempty"`
 }
 
-// GameProfile is one game Neurcro knows how to interface with.
+// GameProfile is one game Neuro Desktop knows how to interface with.
 type GameProfile struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
@@ -578,7 +578,7 @@ func (g *GameRuntime) cachedDetection(permit *observationPermit) (GameDetected, 
 	return detected, true
 }
 
-// inputAllowed decides whether Neurcro may inject input for a game
+// inputAllowed decides whether Neuro Desktop may inject input for a game
 // action, given the profile's control mode and (in hybrid mode) the action list.
 func inputAllowed(profile *GameProfile, session *GameSession, actionKey string, relay *RelayState) error {
 	if profile == nil {
@@ -594,7 +594,7 @@ func inputAllowed(profile *GameProfile, session *GameSession, actionKey string, 
 	case ControlModeND, ControlModeAuto:
 		return nil
 	case ControlModeExternal:
-		return fmt.Errorf("this game is controlled by the %q integration, so Neurcro will not inject input (%s). %s",
+		return fmt.Errorf("this game is controlled by the %q integration, so Neuro Desktop will not inject input (%s). %s",
 			ownerFor(profile), actionKey, externalDelegationHint(relay, ownerFor(profile)))
 	case ControlModeHybrid:
 		for _, allowed := range profile.Control.NDActions {
@@ -603,7 +603,7 @@ func inputAllowed(profile *GameProfile, session *GameSession, actionKey string, 
 			}
 		}
 		return fmt.Errorf(
-			"%s is outside Neurcro's hybrid allow-list for %s (the %q integration owns input). %s",
+			"%s is outside Neuro Desktop's hybrid allow-list for %s (the %q integration owns input). %s",
 			actionKey, profile.Name, ownerFor(profile), externalDelegationHint(relay, ownerFor(profile)))
 	default:
 		return fmt.Errorf("unknown control mode %q for profile %s", mode, profile.ID)
@@ -623,10 +623,10 @@ func (p *GameProfile) GameControlSummary() string {
 	case ControlModeHybrid:
 		owner := nonEmptyOr(p.Control.ExternalName, p.ID)
 		lines = append(lines, fmt.Sprintf(
-			"- Control: hybrid — the %s integration owns most input; Neurcro may only use: %s",
+			"- Control: hybrid — the %s integration owns most input; Neuro Desktop may only use: %s",
 			owner, strings.Join(p.Control.NDActions, ", ")))
 	default:
-		lines = append(lines, "- Control: Neurcro drives this game through the actions below.")
+		lines = append(lines, "- Control: Neuro Desktop drives this game through the actions below.")
 	}
 
 	move := p.Control.MoveHoldSeconds

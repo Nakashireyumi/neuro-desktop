@@ -1,4 +1,4 @@
-# Testing Neurcro
+# Testing Neuro Desktop
 
 From `desktop/`, run `NEURO_HEADLESS=1 make test` for the Go server and dashboard,
 Python client, frontend API, and repository checks. `./scripts/build-all.sh` also

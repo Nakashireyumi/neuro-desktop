@@ -9,6 +9,7 @@ import base64
 import io
 import json
 import os
+import socket
 import struct
 import tempfile
 import threading
@@ -93,13 +94,14 @@ class Running:
             with urllib.request.urlopen(request, timeout=10) as response:
                 return response.status, json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            return exc.code, json.loads(exc.read().decode("utf-8") or "{}")
+            with exc:
+                return exc.code, json.loads(exc.read().decode("utf-8") or "{}")
 
 
 class FakeUpstream:
     """A stand-in for Ollama, an OpenAI-compatible server, or a Vision worker."""
 
-    def __init__(self, reply: dict, status: int = 200, delay: float = 0.0):
+    def __init__(self, reply: dict, status: int = 200, delay: float = 0.0, trickle: str = ""):
         self.requests = []
         upstream = self
 
@@ -113,6 +115,19 @@ class FakeUpstream:
                 if delay:
                     time.sleep(delay)
                 body = json.dumps(reply).encode("utf-8")
+                if trickle:
+                    header = f"HTTP/1.1 {status} OK\r\nContent-Length: {len(body)}\r\n\r\n".encode()
+                    first, slow = (b"", header + body) if trickle == "headers" else (header, body)
+                    try:
+                        self.wfile.write(first)
+                        self.wfile.flush()
+                        for byte in slow:
+                            self.wfile.write(bytes([byte]))
+                            self.wfile.flush()
+                            time.sleep(0.04)
+                    except OSError:
+                        pass
+                    return
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -136,6 +151,19 @@ class FakeUpstream:
 
 
 class HealthAndDescribeTests(unittest.TestCase):
+    def test_body_deadline_releases_inference_slot_before_upload_finishes(self):
+        with Running(max_inference=1) as running:
+            with socket.create_connection(running.server.server_address, timeout=2) as peer:
+                peer.sendall(b"POST /describe HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1000\r\nX-Neuro-Deadline-Ms: 150\r\n\r\n{")
+                started = time.monotonic()
+                response = peer.recv(4096)
+                self.assertIn(b"504", response)
+                self.assertLess(time.monotonic() - started, 1.0)
+            self.assertTrue(running.server.inference_slots.acquire(timeout=1), "expired upload kept the inference slot")
+            running.server.inference_slots.release()
+            status, _ = running.call("POST", "/describe", {"image_base64": base64.b64encode(png_bytes(2, 2)).decode()})
+            self.assertEqual(status, 200, "a new request must work after the expired upload")
+
     def test_health_reports_backend_and_that_paths_are_not_read(self):
         with Running() as running:
             status, body = running.call("GET", "/health")
@@ -362,6 +390,15 @@ class AuthTests(unittest.TestCase):
 
 
 class ModelBackendTests(unittest.TestCase):
+    def test_deadline_interrupts_trickling_headers_and_body(self):
+        for part in ("headers", "body"):
+            with self.subTest(part=part), FakeUpstream({"response": "x" * 30}, trickle=part) as upstream:
+                analyzer = Analyzer(backend="ollama", ollama_url=upstream.url, ollama_model="test")
+                started = time.monotonic()
+                with self.assertRaises(AnalysisTimeout):
+                    analyzer.describe(png_bytes(2, 2), deadline=started + 0.25)
+                self.assertLess(time.monotonic() - started, 1.0)
+
     def test_ollama_backend_sends_the_image_and_returns_its_answer(self):
         with FakeUpstream({"response": "a cat asleep on a keyboard"}) as upstream:
             analyzer = Analyzer(backend="ollama", ollama_url=upstream.url, ollama_model="llava")

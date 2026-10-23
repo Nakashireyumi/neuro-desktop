@@ -298,7 +298,7 @@ var ManagementActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdListCatalogItems,
-		Description: "List available catalog integrations/apps configured for Neurcro",
+		Description: "List available catalog integrations/apps configured for Neuro Desktop",
 		Schema:      nil,
 	},
 	{
@@ -328,7 +328,7 @@ var ManagementActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdListInstalledExts,
-		Description: "List installed/managed Neurcro extensions",
+		Description: "List installed/managed Neuro Desktop extensions",
 		Schema:      nil,
 	},
 	{
@@ -482,12 +482,12 @@ var LLActionSpecs = []actionSpec{
 	},
 	{
 		Name:        CmdRunScript,
-		Description: "Execute action script language (see integration docs)",
+		Description: "Run a Neurcro macro: one command per line. Request desktop_guide topic script for syntax and queue options.",
 		Schema: neuro.WrapSchema(map[string]interface{}{
 			"script": map[string]interface{}{
 				"type":        "string",
 				"maxLength":   65536,
-				"description": "Action script body",
+				"description": "Neurcro macro body",
 			},
 			"execute_now": map[string]interface{}{
 				"type":        "boolean",
@@ -789,6 +789,8 @@ type pendingWork struct {
 	gameCommands []IPCCommand
 	// gameActionName is the Neuro action that produced this work.
 	gameActionName string
+	// Bind queued input to the session that supplied its control map.
+	gameSession *GameSession
 	// reset is the escape hatch (reset_controls): clear queued inputs, then
 	// release every held key and button.
 	reset bool
@@ -910,7 +912,7 @@ func (a *IPCProxyAction) Execute(state interface{}) {
 func (a *IPCProxyAction) executionAllowed() error {
 	select {
 	case <-a.integration.done:
-		return fmt.Errorf("Neurcro is shutting down")
+		return fmt.Errorf("Neuro Desktop is shutting down")
 	default:
 	}
 	if reason := a.integration.stop.blockReason(a.GetName()); reason != "" {
@@ -941,7 +943,7 @@ func (a *IPCProxyAction) reportOutcome(result neuro.ExecutionResult) {
 // releases everything if any of them fails, so a half-applied input cannot
 // leave a key stuck down.
 func (a *IPCProxyAction) executeGameCommands(work pendingWork) neuro.ExecutionResult {
-	session := a.integration.games.Session()
+	session := work.gameSession
 	guard := func() error {
 		if err := a.executionAllowed(); err != nil {
 			return err
@@ -950,7 +952,13 @@ func (a *IPCProxyAction) executeGameCommands(work pendingWork) neuro.ExecutionRe
 		if session == nil || current == nil || session.ProfileID != current.ProfileID || !session.StartedAt.Equal(current.StartedAt) {
 			return fmt.Errorf("game session changed; request a new game action")
 		}
-		return inputAllowed(a.integration.currentProfile(), current, work.gameActionName, a.integration.relay)
+		profile, _ := a.integration.games.ProfileByID(current.ProfileID)
+		return inputAllowed(profile, current, work.gameActionName, a.integration.relay)
+	}
+	if err := guard(); err != nil {
+		// No input from this batch has run. Do not release controls belonging
+		// to a replacement session as a side effect of discarding stale work.
+		return neuro.NewFailureResult(err.Error())
 	}
 	for _, cmd := range work.gameCommands {
 		resp, err := a.integration.sendToExecutorForAction(cmd, work.gameActionName, guard)

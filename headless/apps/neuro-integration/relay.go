@@ -20,17 +20,17 @@ import (
 // Neuro Relay support.
 //
 // Neuro Relay (https://github.com/Nakashireyumi/neuro-relay) multiplexes
-// several integrations behind one Neuro connection. Neurcro takes part in
+// several integrations behind one Neuro connection. Neuro Desktop takes part in
 // two ways:
 //
 //  1. As a Neuro API client pointed at the relay instead of the raw backend
 //     (NEURO_SDK_WS_URL / --ws-url). In that mode the relay owns action
 //     arbitration and namespaces each integration's actions.
-//  2. As a relay *integration*: Neurcro registers on the relay's
+//  2. As a relay *integration*: Neuro Desktop registers on the relay's
 //     intermediary socket so Neuro-OS watchers can see it and drive it. That
 //     registration is what this file implements.
 //
-// Neurcro does not start, supervise, or spawn a relay process. The relay
+// Neuro Desktop does not start, supervise, or spawn a relay process. The relay
 // runs separately: the Go host in this binary (`neuro-integration relay`, see
 // relay_host.go) or the upstream Python relay. Both speak the same intermediary
 // socket, which is all this file uses. (An earlier version could start a relay
@@ -44,7 +44,7 @@ type RelayConfig struct {
 	TokenError string
 	Name       string
 	// ReservedActions are action names owned by another integration. They are
-	// left unregistered so Neurcro cannot shadow a game integration.
+	// left unregistered so Neuro Desktop cannot shadow a game integration.
 	ReservedActions []string
 }
 
@@ -53,7 +53,7 @@ func relayConfigFromEnv() RelayConfig {
 		Enabled:         getEnvBool("NEURO_RELAY_ENABLED", false),
 		IntermediaryURL: strings.TrimSpace(os.Getenv("NEURO_RELAY_URL")),
 		Token:           strings.TrimSpace(os.Getenv("NEURO_RELAY_TOKEN")),
-		Name:            nonEmptyOr(strings.TrimSpace(os.Getenv("NEURO_RELAY_NAME")), "Neurcro"),
+		Name:            nonEmptyOr(strings.TrimSpace(os.Getenv("NEURO_RELAY_NAME")), "Neuro Desktop"),
 	}
 
 	if cfg.IntermediaryURL == "" {
@@ -314,7 +314,7 @@ func (r *RelayState) isSelf(name string) bool {
 }
 
 // Start begins the client loop that keeps the intermediary link up. It is
-// tolerant: a relay that is not running must not stop Neurcro from working
+// tolerant: a relay that is not running must not stop Neuro Desktop from working
 // as a direct Neuro integration.
 func (r *RelayState) Start() error {
 	if r == nil || !r.cfg.Enabled {
@@ -331,7 +331,7 @@ func (r *RelayState) Start() error {
 }
 
 // Stop ends the client loop. It does not touch any relay process, because
-// Neurcro does not run one.
+// Neuro Desktop does not run one.
 func (r *RelayState) Stop() {
 	if r == nil {
 		return
@@ -466,7 +466,7 @@ func (r *RelayState) runSession() error {
 	r.noteEvent("registered", nil)
 	log.Printf("Registered with Neuro Relay as %q at %s", r.cfg.Name, r.cfg.endpoint())
 
-	// Announce which actions Neurcro provides.
+	// Announce which actions Neuro Desktop provides.
 	//
 	// The relay's intermediary keeps `actions` as a name -> schema mapping
 	// (`for act_name, schema in actions.items()` in intermediary.py) and
@@ -642,7 +642,7 @@ func (r *RelayState) handleRelayMessage(envelope map[string]interface{}) string 
 		// Events still may carry a command (see below).
 	}
 
-	// A watcher (Neuro-OS / operator UI) can drive Neurcro through the
+	// A watcher (Neuro-OS / operator UI) can drive Neuro Desktop through the
 	// relay. Commands are subject to the same permission policy as Neuro.
 	if cmd, ok := envelope["cmd"].(map[string]interface{}); ok {
 		from, _ := envelope["from_watcher"].(string)

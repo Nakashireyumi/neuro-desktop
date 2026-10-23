@@ -1,11 +1,8 @@
-# Neurcro
+# Neuro Desktop
+
+Neurcro is the macro language used by Neuro Desktop; `run_script` and existing scripts keep their wire format.
 
 > **An AI-powered desktop control system that gives Neuro-sama the ability to control a computer through natural language commands.**
-
-Neurcro is the public product name. Repository paths, executable names, package
-IDs and `NEURO_*` environment variables keep their existing `neuro-*` forms so
-current integrations, scripts and deployments keep working. The `run_script`
-action name and wire format are unchanged.
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/cassitly/neuro-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/cassitly/neuro-desktop/actions/workflows/ci.yml)
@@ -26,9 +23,9 @@ action name and wire format are unchanged.
 
 ## Overview
 
-Neurcro is a multi-language integration system that enables [Neuro-sama](https://twitch.tv/vedal987) to interact with desktop environments through a sophisticated action scripting language. The system bridges AI decision-making with real-world computer control through a carefully designed architecture that prioritizes safety, reliability, and human-like interaction patterns.
+Neuro Desktop is a multi-language integration system that enables [Neuro-sama](https://twitch.tv/vedal987) to interact with desktop environments through a sophisticated action scripting language. The system bridges AI decision-making with real-world computer control through a carefully designed architecture that prioritizes safety, reliability, and human-like interaction patterns.
 
-### What Makes Neurcro Special?
+### What Makes Neuro Desktop Special?
 
 - **Separate native manager, server and controlled-PC client**: the GTK 4 manager uses native widgets and a startup splash; the Go server handles the Neuro API, permissions, audit, relay and vision; the Python client executes actions. An optional browser dashboard supports remote use. See [architecture](docs/ARCHITECTURE.md) and [native manager setup](desktop/apps/neuro-manager/README.md).
 - **Human-Like Mouse Movement**: Advanced algorithmic pathfinding that mimics natural human mouse movements with Bézier curves and Perlin noise
@@ -53,7 +50,7 @@ See **[docs/CAPABILITIES.md](docs/CAPABILITIES.md)** for an honest “what works
 
 ## Architecture
 
-Neurcro has a native manager, server, controlled-PC client and optional web
+Neuro Desktop has a native manager, server, controlled-PC client and optional web
 dashboard. Per the
 [Neuro SDK](https://github.com/VedalAI/neuro-sdk), the server is a WebSocket
 **client** of Neuro's API server. Internally:
@@ -179,13 +176,13 @@ NEURO_UI_DIR=../../desktop/frontend/dist go run .
 
 ### Playing games
 
-Neurcro can play a game two ways, and picks the right one per game:
+Neuro Desktop can play a game two ways, and picks the right one per game:
 
 1. **Alongside a dedicated integration** (Minecraft, osu!, ...). The game keeps its
-   own integration; Neurcro does not register the actions that integration
+   own integration; Neuro Desktop does not register the actions that integration
    owns (`NEURO_RESERVED_ACTIONS`, relay peers) and refuses to send input while the
    session is delegated (`control.mode: external`).
-2. **On its own**, for anything without an integration: Neurcro supplies the
+2. **On its own**, for anything without an integration: Neuro Desktop supplies the
    high-level interface (`game_list_profiles`, `game_detect`, `game_start_session`,
    `game_move`, `game_look`, `game_action`, `game_press`, `game_observe`, ...), using
    the profile's keybinds and masked keys.
@@ -205,14 +202,14 @@ Profiles live in `desktop/catalog/games/*.json` (see
 ```
 
 `mode: auto` hands the game to the dedicated integration when it is connected
-(through the relay) and drives it from Neurcro otherwise. Override it per
+(through the relay) and drives it from Neuro Desktop otherwise. Override it per
 session from the dashboard or with the `mode` parameter of `game_start_session`
 (`auto`, `nd`, `external`, `hybrid`). `generic-keyboard-mouse.json` is the fallback
 profile for games nobody wrote a profile for.
 
 ### Headless machines (no display, command line only)
 
-Neurcro runs on a server, container, SSH session or CI runner with no
+Neuro Desktop runs on a server, container, SSH session or CI runner with no
 graphical session. Nothing has to be installed for it: mouse and keyboard
 libraries are loaded only when a display actually exists, and `NEURO_HEADLESS`
 forces the mode either way.
@@ -472,7 +469,7 @@ docker compose -f docker-compose.tests.yml run --rm python-parser-tests
 ### Coexistence with other integrations (Neuro Relay)
 
 [Neuro Relay](https://github.com/Nakashireyumi/neuro-relay) multiplexes several
-integrations behind one Neuro connection. Neurcro participates as a relay
+integrations behind one Neuro connection. Neuro Desktop participates as a relay
 *integration* — it does not spawn the relay, which is a Python service with its own
 YAML config:
 
@@ -480,7 +477,7 @@ YAML config:
 export NEURO_RELAY_ENABLED=true
 export NEURO_RELAY_URL="ws://127.0.0.1:8765"                 # relay intermediary socket
 export NEURO_RELAY_TOKEN_FILE="$HOME/upstream-relay-token"   # a file holding the upstream intermediary.auth_token
-export NEURO_RELAY_NAME="Neurcro"
+export NEURO_RELAY_NAME="Neuro Desktop"
 export NEURO_RESERVED_ACTIONS="minecraft_place_block,osu_click"
 ```
 
@@ -496,7 +493,7 @@ There are two ways to coexist, and they are complementary:
    Neuro API client at the relay's Nakurity Backend instead of at Neuro
    (`NEURO_SDK_WS_URL=ws://127.0.0.1:8001`, the `nakurity-backend` port in the
    relay's `authentication.yaml`). The bridge then looks like any other Neuro SDK
-   client to the relay: it sends `startup` (`game: "Neurcro"`) and
+   client to the relay: it sends `startup` (`game: "Neuro Desktop"`) and
    `actions/register`, and the relay multiplexes everything to the real backend.
    This is the path that makes "run alongside an existing game integration" work
    with no extra configuration.
@@ -591,7 +588,7 @@ cd Randy
 npm install
 npm start
 
-# Terminal 2: Run Neurcro
+# Terminal 2: Run Neuro Desktop
 cd headless/apps/neuro-integration
 go run .
 ```
@@ -600,7 +597,6 @@ Randy will send random actions to test your integration.
 
 ## Documentation
 
-- [Module Guide](docs/MODULES.md) — purpose, setup, configuration, permissions, protocols, tests and platform limits for every program
 - [Native Manager Setup](desktop/apps/neuro-manager/README.md) — registration, approvals and scoped tokens
 - [Development and Release Workflow](docs/WORKFLOW.md) — repositories, catalog updates, checks and releases
 - [Delegated Manager Sessions](docs/DELEGATED_MANAGER.md) — let Neuro/Evil manage approved integrations
@@ -699,7 +695,7 @@ Bundled third-party components retain their own licenses.
 
 ## Acknowledgments
 
-- **Nakashireyumi** - Original Neurcro / Neuro-OS development
+- **Nakashireyumi** - Original Neuro Desktop / Neuro-OS development
 - **Neuro-sama** - The AI that makes this all worthwhile
 - **Vedal** - Creator of Neuro-sama
 - The community for testing and feedback
@@ -712,7 +708,7 @@ Bundled third-party components retain their own licenses.
 
 ---
 
-**Made with ❤️ by the Neurcro Team**
+**Made with ❤️ by the Neuro Desktop Team**
 
 *"Giving Neuro the keys to the desktop, one action at a time."*
 

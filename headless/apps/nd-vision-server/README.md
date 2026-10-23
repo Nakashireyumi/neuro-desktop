@@ -1,10 +1,10 @@
 # nd-vision-server
 
-An optional screen-description service for Neurcro. The server calls it
+An optional screen-description service for Neuro Desktop. The server calls it
 through `NEURO_VISION_URL` when Neuro asks what is on screen (`game_observe`), and
 the dashboard shows whether it is reachable.
 
-You control Neurcro's image use from **Extensions → Built-in services →
+You control Neuro Desktop's image use from **Extensions → Built-in services →
 Vision Service**. Review the [per-twin controls and privacy guide](../../../docs/VISION.md).
 Those controls do not stop this independently managed HTTP process.
 
@@ -85,6 +85,9 @@ base64 image) or `image_path` (only inside `NEURO_VISION_ROOT`), plus an optiona
 
 A caller may send `X-Neuro-Deadline-Ms` to shorten the configured deadline. The bridge
 sends 40 seconds. The server never extends a deadline above `NEURO_VISION_DEADLINE_SECONDS`.
+Header and upload reads have wall-clock limits, including clients that trickle
+bytes. Upstream model/worker connections also enforce an absolute deadline on
+headers and bodies, and ignore ambient HTTP proxy settings. Redirects are refused.
 The analysis passes the remaining time to upstream sockets and to the OCR subprocess,
 so neither keeps working after the deadline.
 

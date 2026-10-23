@@ -1,6 +1,6 @@
-# Neurcro — desktop control for Neuro-sama
+# Neuro Desktop — desktop control for Neuro-sama
 
-Neurcro lets Neuro (or Evil) use a real computer: move the mouse, press
+Neuro Desktop lets Neuro (or Evil) use a real computer: move the mouse, press
 keys, run scripts and shell commands, play games that have no integration of
 their own, and read the desktop back as context. Vedal/you get a dashboard to
 watch it, grant permissions, and pause or kill anything at any time.

@@ -1,6 +1,6 @@
 """Command-line capability: the one thing a headless machine can still do.
 
-This is the only place Neurcro runs a program the model asked for, so the
+This is the only place Neuro Desktop runs a program the model asked for, so the
 rules are deliberately conservative and are enforced in three places:
 
 * the Go bridge refuses a command before it reaches the executor (fast, clear

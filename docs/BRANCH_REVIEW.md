@@ -1,5 +1,12 @@
 # Branch review
 
+## Current review — 2026-10-23
+
+The [current development review](REVIEW_2026_10_23.md) supersedes the dated PR
+status below. PR #29 is ready with no unresolved review threads; master updates
+are restricted by ruleset 9661234. The catalog is still independent. Refresh refs
+and exact-head CI before promotion; the inventories below preserve history.
+
 ## Consolidation completed on 2026-10-18
 
 The original inventory below is retained as the audit trail. The reviewed

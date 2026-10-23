@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fake Neurcro executor — a protocol simulator for the dashboard.
+"""Fake Neuro Desktop executor — a protocol simulator for the dashboard.
 
 It speaks the same protocol as the real executor (Rust + pyo3 + pyautogui) so
 the Go bridge, the dashboard and the game interface can be exercised on a
@@ -61,7 +61,7 @@ def send(writer, payload: dict) -> None:
 
 def status_payload() -> dict:
     """A believable get_status answer, configurable through the environment."""
-    window = os.environ.get("NEURO_FAKE_WINDOW", "Neurcro Dashboard")
+    window = os.environ.get("NEURO_FAKE_WINDOW", "Neuro Desktop Dashboard")
     processes = os.environ.get("NEURO_FAKE_PROCESSES", "python.exe,javaw.exe,explorer.exe")
 
     return {
@@ -171,7 +171,7 @@ def run_session(addr: str, token: str | None, quiet: bool) -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fake Neurcro executor (protocol simulator)")
+    parser = argparse.ArgumentParser(description="Fake Neuro Desktop executor (protocol simulator)")
     parser.add_argument("--addr", default=os.environ.get("NEURO_EXECUTOR_ADDR", "127.0.0.1:9876"))
     parser.add_argument("--token", default=os.environ.get("NEURO_EXECUTOR_TOKEN", ""))
     parser.add_argument("--once", action="store_true", help="do not reconnect after a disconnect")
@@ -182,7 +182,7 @@ def main() -> int:
     QUIET = args.quiet
 
     log("simulator only: no mouse or keyboard input is ever generated")
-    log(f"active window reported as {os.environ.get('NEURO_FAKE_WINDOW', 'Neurcro Dashboard')!r}")
+    log(f"active window reported as {os.environ.get('NEURO_FAKE_WINDOW', 'Neuro Desktop Dashboard')!r}")
 
     attempt = 0
     while True:

@@ -18,7 +18,7 @@ import (
 
 // Catalog trust.
 //
-// The catalog index is the only list of things Neurcro will install. An
+// The catalog index is the only list of things Neuro Desktop will install. An
 // item is "verified" when its signature checks out against a key in
 // publishers.json. The signature covers the item's JSON minus the signature
 // field, with keys sorted and no insignificant whitespace. Changing a

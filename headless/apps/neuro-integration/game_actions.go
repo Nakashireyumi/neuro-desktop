@@ -33,7 +33,7 @@ func gameActionSpecs() []actionSpec {
 		{
 			Name:        CmdGameListProfiles,
 			Kind:        actionKindGame,
-			Description: "List the game profiles Neurcro can interface with, and how each one is controlled",
+			Description: "List the game profiles Neuro Desktop can interface with, and how each one is controlled",
 			Schema:      nil,
 		},
 		{
@@ -65,14 +65,14 @@ func gameActionSpecs() []actionSpec {
 				"mode": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"auto", "nd", "external", "hybrid"},
-					"description": "Override the profile's control mode for this session. auto hands the game to the dedicated integration when it is connected, otherwise Neurcro drives it",
+					"description": "Override the profile's control mode for this session. auto hands the game to the dedicated integration when it is connected, otherwise Neuro Desktop drives it",
 				},
 			}, nil),
 		},
 		{
 			Name:        CmdGameEndSession,
 			Kind:        actionKindGame,
-			Description: "Stop the current game session and release any keys/buttons Neurcro is holding",
+			Description: "Stop the current game session and release any keys/buttons Neuro Desktop is holding",
 			Schema:      nil,
 		},
 		{
@@ -159,7 +159,7 @@ func gameActionSpecs() []actionSpec {
 		{
 			Name:        CmdGameReleaseAll,
 			Kind:        actionKindGame,
-			Description: "Safety: release every key and mouse button Neurcro is holding",
+			Description: "Safety: release every key and mouse button Neuro Desktop is holding",
 			Schema:      nil,
 		},
 		{
@@ -410,13 +410,13 @@ func (n *NDIntegration) describeGameStatusGuarded(permit *observationPermit) str
 	}
 
 	profile, _ := n.games.ProfileByID(session.ProfileID)
-	allowed := "input allowed (Neurcro drives this game)"
+	allowed := "input allowed (Neuro Desktop drives this game)"
 	if profile != nil {
 		switch session.ControlMode {
 		case ControlModeExternal:
 			allowed = fmt.Sprintf("input delegated to the %s integration", nonEmptyOr(session.ExternalName, session.ProfileID))
 		case ControlModeHybrid:
-			allowed = fmt.Sprintf("hybrid: Neurcro may only use %s", strings.Join(profile.Control.NDActions, ", "))
+			allowed = fmt.Sprintf("hybrid: Neuro Desktop may only use %s", strings.Join(profile.Control.NDActions, ", "))
 		}
 	}
 
@@ -567,7 +567,7 @@ func (n *NDIntegration) startGameSessionGuarded(profileID string, launch bool, m
 	// Tell Neuro how to play, and keep the message in context so later actions
 	// are still grounded in the control map.
 	context := profile.GameControlSummary()
-	context += fmt.Sprintf("\n\n_Session started %s. Neurcro will report input failures as context._",
+	context += fmt.Sprintf("\n\n_Session started %s. Neuro Desktop will report input failures as context._",
 		started.StartedAt.Format("15:04:05Z"))
 	if n.client != nil {
 		if err := n.client.SendContext(boundedContextMessage(context), true); err != nil {
@@ -667,8 +667,11 @@ func (n *NDIntegration) currentProfile() *GameProfile {
 // guardGameInput enforces control-mode arbitration plus the per-session rate
 // limit. It returns the active profile when input may proceed.
 func (n *NDIntegration) guardGameInput(actionKey string) (*GameProfile, *GameSession, neuro.ExecutionResult, bool) {
-	profile := n.currentProfile()
 	session := n.games.Session()
+	var profile *GameProfile
+	if session != nil {
+		profile, _ = n.games.ProfileByID(session.ProfileID)
+	}
 	if err := inputAllowed(profile, session, actionKey, n.relay); err != nil {
 		return nil, session, neuro.NewFailureResult(err.Error()), false
 	}
@@ -681,7 +684,7 @@ func (n *NDIntegration) guardGameInput(actionKey string) (*GameProfile, *GameSes
 }
 
 func (n *NDIntegration) buildGameMove(a *IPCProxyAction, params map[string]interface{}) (interface{}, neuro.ExecutionResult) {
-	profile, _, failure, ok := n.guardGameInput("game_move")
+	profile, session, failure, ok := n.guardGameInput("game_move")
 	if !ok {
 		return nil, failure
 	}
@@ -730,11 +733,11 @@ func (n *NDIntegration) buildGameMove(a *IPCProxyAction, params map[string]inter
 		})
 	}
 
-	return pendingWork{gameCommands: commands, gameActionName: string(a.spec.Name)}, neuro.NewSuccessResult("accepted")
+	return pendingWork{gameCommands: commands, gameActionName: string(a.spec.Name), gameSession: session}, neuro.NewSuccessResult("accepted")
 }
 
 func (n *NDIntegration) buildGameLook(a *IPCProxyAction, params map[string]interface{}) (interface{}, neuro.ExecutionResult) {
-	profile, _, failure, ok := n.guardGameInput("game_look")
+	profile, session, failure, ok := n.guardGameInput("game_look")
 	if !ok {
 		return nil, failure
 	}
@@ -785,11 +788,12 @@ func (n *NDIntegration) buildGameLook(a *IPCProxyAction, params map[string]inter
 			ClearAfter: false,
 		}},
 		gameActionName: string(a.spec.Name),
+		gameSession:    session,
 	}, neuro.NewSuccessResult("accepted")
 }
 
 func (n *NDIntegration) buildGameAction(a *IPCProxyAction, params map[string]interface{}) (interface{}, neuro.ExecutionResult) {
-	profile, _, failure, ok := n.guardGameInput("game_action")
+	profile, session, failure, ok := n.guardGameInput("game_action")
 	if !ok {
 		return nil, failure
 	}
@@ -819,11 +823,12 @@ func (n *NDIntegration) buildGameAction(a *IPCProxyAction, params map[string]int
 	return pendingWork{
 		gameCommands:   []IPCCommand{command},
 		gameActionName: string(a.spec.Name),
+		gameSession:    session,
 	}, neuro.NewSuccessResult("accepted")
 }
 
 func (n *NDIntegration) buildGamePress(a *IPCProxyAction, params map[string]interface{}) (interface{}, neuro.ExecutionResult) {
-	profile, _, failure, ok := n.guardGameInput("game_press")
+	profile, session, failure, ok := n.guardGameInput("game_press")
 	if !ok {
 		return nil, failure
 	}
@@ -866,6 +871,7 @@ func (n *NDIntegration) buildGamePress(a *IPCProxyAction, params map[string]inte
 	return pendingWork{
 		gameCommands:   []IPCCommand{command},
 		gameActionName: string(a.spec.Name),
+		gameSession:    session,
 	}, neuro.NewSuccessResult("accepted")
 }
 

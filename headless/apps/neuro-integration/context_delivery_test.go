@@ -37,7 +37,7 @@ func TestStartupContextIsCompactRegisteredFirstAndSentOnce(t *testing.T) {
 			t.Setenv("NEURO_PROMPT_ASSIST", "true")
 			t.Setenv("NEURO_CONTEXT_POLL_SECONDS", "0")
 			h := newBridgeHarness(t, allowEverythingPolicy)
-			brief := h.backend.waitForContextContaining("Neurcro connected", time.Second)
+			brief := h.backend.waitForContextContaining("Neuro Desktop connected", time.Second)
 			if len(brief) < 600 || len(brief) > 900 || !utf8.ValidString(brief) {
 				t.Fatalf("startup brief must stay within the small-context budget: %d bytes", len(brief))
 			}
@@ -123,7 +123,7 @@ func TestStartupBriefFailedSendCanRetryAfterConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	n.sendStartupGuide()
-	backend.waitForContextContaining("Neurcro connected", time.Second)
+	backend.waitForContextContaining("Neuro Desktop connected", time.Second)
 	if !n.contextDelivery.briefSent {
 		t.Fatal("a successful retry was not remembered")
 	}
@@ -250,9 +250,17 @@ func TestDesktopGuideTopicsUsePublicModeAwareNames(t *testing.T) {
 		if got := n.desktopGuide("").Message; got != n.startupGuide() {
 			t.Fatal("the default topic should be the compact overview")
 		}
-		overview := n.startupGuide()
-		if !strings.Contains(overview, "## Neurcro connected") || strings.Contains(overview, "Neuro Desktop") {
-			t.Fatalf("the compact overview should use the public product name: %s", overview)
-		}
+	}
+}
+
+func TestProductAndMacroNamesStayDistinct(t *testing.T) {
+	setGuideTestMode(t, false, true)
+	var n *NDIntegration
+	if brief := n.startupGuide(); !strings.Contains(brief, "Neuro Desktop connected") {
+		t.Fatalf("startup lost the product name: %s", brief)
+	}
+	result := n.desktopGuide("script")
+	if !strings.Contains(result.Message, "Neurcro is Neuro Desktop") || !strings.Contains(result.Message, "run_script") {
+		t.Fatalf("macro help must name Neurcro and preserve its action: %s", result.Message)
 	}
 }

@@ -20,5 +20,5 @@ Devcontainer ready.
   Python controller: PYTHONPATH=desktop/python .venv/bin/python -m controller.agent --help
   Go:                go test ./... (from headless/apps/neuro-integration)
   Frontend:          npm --prefix desktop/frontend run build
-  GUI tests:         xvfb-run -a env NEURO_MANAGER_GUI_TESTS=1 .venv/bin/python -m unittest discover -s desktop/apps/neuro-manager/tests
+  GUI tests:         xvfb-run -a env NEURO_MANAGER_GUI_TESTS=1 PYTHONPATH=desktop/apps/neuro-manager .venv/bin/python -m unittest discover -s desktop/apps/neuro-manager/tests
 EOF
