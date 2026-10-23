@@ -98,6 +98,8 @@ type GameDetected struct {
 
 // GameSession is live state for "Neuro is playing this game right now".
 type GameSession struct {
+	// generation identifies a session independently of wall-clock resolution.
+	generation    uint64
 	ProfileID     string          `json:"profile_id"`
 	ProfileName   string          `json:"profile_name"`
 	ControlMode   GameControlMode `json:"control_mode"`
@@ -407,9 +409,10 @@ func (r *GameRegistry) Detect(activeWindow string, processes []string) GameDetec
 // loaded profile registry as well, so one object answers "what can Neuro play"
 // and "what is Neuro playing right now".
 type GameRuntime struct {
-	mu       sync.Mutex
-	registry *GameRegistry
-	session  *GameSession
+	mu                sync.Mutex
+	registry          *GameRegistry
+	session           *GameSession
+	sessionGeneration uint64
 	// lastDetection caches the desktop snapshot so `game_detect` cannot be used
 	// to hammer the executor with get_status calls.
 	lastDetection       GameDetected
@@ -483,7 +486,9 @@ func (g *GameRuntime) start(profile GameProfile, mode GameControlMode) GameSessi
 		mode = profile.Control.Mode
 	}
 
+	g.sessionGeneration++
 	session := &GameSession{
+		generation:   g.sessionGeneration,
 		ProfileID:    profile.ID,
 		ProfileName:  profile.Name,
 		ControlMode:  mode,

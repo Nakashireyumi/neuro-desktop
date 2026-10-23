@@ -202,7 +202,7 @@ func (n *NDIntegration) sendToFileIPC(cmd IPCCommand) (*IPCResponse, error) {
 				return &resp, nil
 			}
 			// Another writer may have been mid-write; keep polling briefly.
-		} else if !errors.Is(err, os.ErrNotExist) {
+		} else if !errors.Is(err, os.ErrNotExist) && !transientIPCReadError(err) {
 			return nil, fmt.Errorf("failed to read IPC response file: %w", err)
 		}
 		time.Sleep(25 * time.Millisecond)

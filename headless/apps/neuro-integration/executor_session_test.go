@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -51,12 +53,26 @@ func waitForFileCommand(path string, timeout time.Duration) (IPCCommand, error) 
 			}
 			return command, nil
 		}
-		if !os.IsNotExist(err) {
+		if !os.IsNotExist(err) && !transientIPCReadError(err) {
 			return IPCCommand{}, err
 		}
 		time.Sleep(time.Millisecond)
 	}
 	return IPCCommand{}, fmt.Errorf("executor did not receive an IPC command")
+}
+
+func TestIPCReadRetriesOnlyWindowsSharingViolations(t *testing.T) {
+	for _, code := range []syscall.Errno{32, 33} {
+		wrapped := &os.PathError{Op: "open", Path: "ipc.json", Err: code}
+		if got := transientIPCReadError(wrapped); got != (runtime.GOOS == "windows") {
+			t.Fatalf("sharing violation retry = %v on %s", got, runtime.GOOS)
+		}
+	}
+	for _, err := range []error{nil, os.ErrPermission, os.ErrInvalid, syscall.Errno(5)} {
+		if transientIPCReadError(err) {
+			t.Fatalf("permanent error was made retryable: %v", err)
+		}
+	}
 }
 
 func writeIPCResponse(path string, command IPCCommand, mutate func(*IPCResponse)) error {

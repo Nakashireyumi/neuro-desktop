@@ -4,9 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"syscall"
 )
 
 // An executor queue is approved by one running bridge. Never inherit it after
@@ -36,6 +39,13 @@ func (n *NDIntegration) prepareExecutionSession(cmd *IPCCommand) error {
 }
 
 const maxIPCFileBytes = 8 << 20
+
+// A Windows atomic replacement can briefly deny readers while its handle is
+// open. Retry only sharing/lock violations inside the existing IPC deadline;
+// permission failures and invalid protocol files still fail immediately.
+func transientIPCReadError(err error) bool {
+	return runtime.GOOS == "windows" && (errors.Is(err, syscall.Errno(32)) || errors.Is(err, syscall.Errno(33)))
+}
 
 // Protocol-shaped files may belong to another running bridge. Startup cannot
 // establish that they are abandoned, so it never removes or reads them. The

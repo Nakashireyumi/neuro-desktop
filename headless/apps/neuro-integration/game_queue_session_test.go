@@ -27,7 +27,7 @@ func TestQueuedGameInputCannotInheritReplacementSession(t *testing.T) {
 					state, _ = n.buildGamePress(action, params)
 				}
 				work, ok := state.(pendingWork)
-				if !ok || work.gameSession == nil || !work.gameSession.StartedAt.Equal(original.StartedAt) {
+				if !ok || work.gameSession == nil || work.gameSession.generation != original.generation {
 					t.Fatal("input was not bound to its original session")
 				}
 				if replacement == "ended" {
@@ -37,6 +37,11 @@ func TestQueuedGameInputCannotInheritReplacementSession(t *testing.T) {
 						profile.ID = "second"
 					}
 					n.games.start(profile, "")
+					// Windows wall-clock ticks can be identical across starts.
+					// Reproduce that deterministically on every test platform.
+					n.games.mu.Lock()
+					n.games.session.StartedAt = original.StartedAt
+					n.games.mu.Unlock()
 				}
 				// No executor is configured. A stale batch must be rejected before
 				// any input, release, or IPC attempt on the replacement desktop.

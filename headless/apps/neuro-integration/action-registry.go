@@ -949,7 +949,7 @@ func (a *IPCProxyAction) executeGameCommands(work pendingWork) neuro.ExecutionRe
 			return err
 		}
 		current := a.integration.games.Session()
-		if session == nil || current == nil || session.ProfileID != current.ProfileID || !session.StartedAt.Equal(current.StartedAt) {
+		if session == nil || current == nil || session.ProfileID != current.ProfileID || session.generation != current.generation {
 			return fmt.Errorf("game session changed; request a new game action")
 		}
 		profile, _ := a.integration.games.ProfileByID(current.ProfileID)
