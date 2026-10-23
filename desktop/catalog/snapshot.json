@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "repository": "Nakashireyumi/neuro-desktop",
+  "commit": "cafb87275389fa45d9de087313e6e90a5c8df087",
+  "files": {
+    "games/README.md": "desktop/catalog/games/README.md",
+    "games/generic-keyboard-mouse.json": "desktop/catalog/games/generic-keyboard-mouse.json",
+    "games/minecraft.json": "desktop/catalog/games/minecraft.json",
+    "games/osu.json": "desktop/catalog/games/osu.json",
+    "games/stardew-valley.json": "desktop/catalog/games/stardew-valley.json",
+    "index.json": "desktop/catalog/index.json",
+    "publishers.json": "desktop/catalog/publishers.json",
+    "marketplace.json": "marketplace/index.json"
+  }
+}

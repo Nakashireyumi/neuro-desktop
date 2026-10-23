@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "description": "Gives Neuro a small knowledge graph that lasts between sessions: entities, relations and observations, searchable. Its tools appear to Neuro as mcp_memory_* actions once Vedal enables this extension.",
+      "homepage": "https://www.npmjs.com/package/@modelcontextprotocol/server-memory",
+      "id": "memory",
+      "launch_hints": [
+        "Installs disabled. Vedal turns it on in the Extensions page; Neuro cannot start it herself.",
+        "Runs @modelcontextprotocol/server-memory 2026.8.31 through npx, so Node.js and network access are needed on first start.",
+        "Set MEMORY_FILE_PATH in the bridge's environment to choose where memory is saved. The bridge passes only that one variable to the server."
+      ],
+      "mcp": {
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-memory@2026.8.31"
+        ],
+        "command": "npx",
+        "env": [
+          "MEMORY_FILE_PATH"
+        ],
+        "timeout_seconds": 60
+      },
+      "name": "MCP Memory",
+      "publisher": "neuro-desktop",
+      "repository": "https://github.com/modelcontextprotocol/servers",
+      "signature": "h7CyPIXImbe0WNlkmkHgkfw9yFgRDKsQvgktpKfRThFtcrX0kO2p1SCjXjojzU/t6fij3PWjgk0BflsTEfNoAw==",
+      "tags": [
+        "mcp",
+        "memory",
+        "reference"
+      ],
+      "type": "mcp-plugin"
+    }
+  ]
+}

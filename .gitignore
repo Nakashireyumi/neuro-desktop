@@ -1,14 +1,40 @@
-# Ignore local environments during development and usage
-neuro-sdk
-neuro-api-jippity
-neuro-api-tony
+.venv/
+dist/
 
-# Python packagees
-.venv
-.vscode
-__pycache__
+__pycache__/
 
-# bin/ stuff
-node_modules
-*.exe
-*.log
+libs/
+target/
+build/
+
+# Testing tools from other repositories.
+neuro-sdk/Randy
+Randy/
+
+.idea/
+_external/
+
+# Repository-specific build files during development
+headless/apps/neuro-integration/*.exe
+headless/apps/neuro-integration/integration-code
+headless/apps/neuro-integration/integration-code.exe
+headless/apps/neuro-integration/dist/*.exe
+desktop/dist/**/*.exe
+
+*.zip
+
+# Runtime state written by the bridge (installed extensions, relay and dashboard tokens). Never commit it.
+**/catalog/extensions-state.json
+**/catalog/extension-permissions.json
+**/catalog/integrations.json
+**/catalog/builtin-services.json
+relay-token
+**/relay-token
+dashboard-token
+**/dashboard-token
+*.tsbuildinfo
+
+# These items are meant to be in a different repository / different branch of neuro-desktop.
+# They're locally in the same repository folder during development, as they need to be developed together.
+ecosystem/
+marketplace/

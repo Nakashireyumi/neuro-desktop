@@ -1,0 +1,51 @@
+{
+  "name": "Neuro Desktop",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.22"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "installDirectlyFromGitHubRelease": true,
+      "version": "latest"
+    }
+  },
+  "forwardPorts": [
+    8300,
+    9876,
+    5173
+  ],
+  "portsAttributes": {
+    "8300": {
+      "label": "Neuro admin API"
+    },
+    "9876": {
+      "label": "Executor hub"
+    },
+    "5173": {
+      "label": "Frontend dev server"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "go.testFlags": [
+          "-race"
+        ]
+      }
+    }
+  }
+}

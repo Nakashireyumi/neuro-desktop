@@ -1,0 +1,59 @@
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestBuildDesktopContextMessage(t *testing.T) {
+	status := map[string]interface{}{
+		"active_window": "Notepad",
+		"open_windows":  []interface{}{"Notepad", "Explorer"},
+		"running_processes": []interface{}{
+			"explorer.exe",
+			"notepad.exe",
+		},
+		"screen": map[string]interface{}{
+			"width":  float64(1920),
+			"height": float64(1080),
+		},
+		"mouse_position": map[string]interface{}{
+			"x": float64(300),
+			"y": float64(250),
+		},
+		"recent_actions": []interface{}{map[string]interface{}{"type": "TYPE"}},
+	}
+
+	msg := buildDesktopContextMessage(status, "A text editor is open")
+
+	if !strings.Contains(msg, "Active window: Notepad") {
+		t.Fatalf("missing active window info: %s", msg)
+	}
+	if !strings.Contains(msg, "Vision summary: A text editor is open") {
+		t.Fatalf("missing vision summary: %s", msg)
+	}
+}
+
+func TestDesktopContextExplainsUnavailableInput(t *testing.T) {
+	message := buildDesktopContextMessage(map[string]interface{}{
+		"input_available": false, "input_error": "GUI driver could not load",
+	}, "")
+	if !strings.Contains(message, "GUI driver could not load") || !strings.Contains(message, "shell_command") {
+		t.Fatalf("Neuro needs an actionable explanation: %s", message)
+	}
+}
+
+func TestDesktopContextExplainsUnavailableWindows(t *testing.T) {
+	message := buildDesktopContextMessage(map[string]interface{}{
+		"open_windows": []interface{}{},
+		"capabilities": map[string]interface{}{
+			"windows": map[string]interface{}{
+				"available": false,
+				"reason":    "PyGetWindow cannot list native Wayland windows",
+			},
+		},
+	}, "")
+	if !strings.Contains(message, "Window list: unavailable") || !strings.Contains(message, "Wayland") {
+		t.Fatalf("an empty list must not look like a desktop with no windows: %s", message)
+	}
+}

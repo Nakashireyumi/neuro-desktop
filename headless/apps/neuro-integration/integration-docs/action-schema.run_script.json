@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Neurcro run_script Action Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "script": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536,
+      "description": "Neurcro macro body. See Action Script Documentation.md for supported commands."
+    },
+    "execute_now": {
+      "type": "boolean",
+      "default": true,
+      "description": "Execute queued instructions immediately."
+    },
+    "clear_after": {
+      "type": "boolean",
+      "default": true,
+      "description": "Discard pending instructions after this request; set false with execute_now:false only when deliberately retaining work."
+    }
+  },
+  "required": [
+    "script"
+  ]
+}

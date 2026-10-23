@@ -1,0 +1,502 @@
+name: Release bundles
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New version, for example v0.2.0 or v0.2.0-rc.1'
+        required: true
+        type: string
+      publish:
+        description: 'Create an upstream draft release after all checks (master only)'
+        default: false
+        type: boolean
+
+# No release starts on a push, tag, schedule, or pull_request_target event.
+# Builds need read access only; the separately gated draft job receives writes.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.repository }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  NEURO_HEADLESS: '1'
+  PYAUTOGUI_FAILSAFE: '0'
+  GSK_RENDERER: cairo
+  CGO_ENABLED: '0'
+  GOFLAGS: '-mod=readonly -trimpath'
+  PYTHONNOUSERSITE: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  PIP_NO_INPUT: '1'
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      sha: ${{ steps.validate.outputs.sha }}
+      ci_run_id: ${{ steps.validate.outputs.ci_run_id }}
+    steps:
+      - name: Validate input and require green CI for this exact commit
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PUBLISH_REQUESTED: ${{ inputs.publish }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          version, repo, sha = os.environ['VERSION'], os.environ['GITHUB_REPOSITORY'], os.environ['GITHUB_SHA']
+          if len(version) > 64 or not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:alpha|beta|rc)\.(0|[1-9][0-9]*))?', version):
+              raise SystemExit('Use vMAJOR.MINOR.PATCH, optionally -alpha.N, -beta.N, or -rc.N')
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', path], text=True))
+          if os.environ.get('PUBLISH_REQUESTED') == 'true' and repo == 'Nakashireyumi/neuro-desktop' and os.environ['GITHUB_REF'] == 'refs/heads/master':
+              for endpoint in ('git/ref/tags', 'releases/tags'):
+                  p = subprocess.run(['gh','api',f'repos/{repo}/{endpoint}/{version}'],text=True,capture_output=True)
+                  if p.returncode == 0:
+                      raise SystemExit('This version already exists; choose a new version before building')
+                  if '(HTTP 404)' not in p.stderr:
+                      raise SystemExit('Could not establish that the release version is unused')
+          runs = api(f'repos/{repo}/actions/workflows/ci.yml/runs?head_sha={sha}&per_page=100')['workflow_runs']
+          runs = [r for r in runs if r['head_sha'] == sha and r['event'] in ('push', 'workflow_dispatch')]
+          if not runs:
+              raise SystemExit('Run CI on this exact branch commit before dispatching release bundles')
+          run = max(runs, key=lambda r: r['id'])
+          if run['status'] != 'completed' or run['conclusion'] != 'success':
+              raise SystemExit(f"Latest CI for this commit is not green: {run['html_url']}")
+          jobs = api(f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100")['jobs']
+          gates = [j for j in jobs if j['name'] == 'Release gate (every required job succeeded)']
+          if len(gates) != 1 or gates[0]['conclusion'] != 'success':
+              raise SystemExit('The required CI release-gate job did not succeed')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"version={version}\nsha={sha}\nci_run_id={run['id']}\n")
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write(f"Building `{version}` from `{sha}`. Verified [CI]({run['html_url']}).\n\n")
+              f.write('Forks and non-master refs produce artifacts only. Upstream master requires an explicit publish request to create a draft.\n')
+          PY
+
+  build:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux-x64
+            arch: x86_64
+          - os: windows-2022
+            target: windows-x64
+            arch: AMD64
+          - os: macos-14
+            target: macos-arm64
+            arch: arm64
+          - os: macos-15-intel
+            target: macos-x64
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
+      RELEASE_CI_RUN_ID: ${{ needs.validate.outputs.ci_run_id }}
+      RELEASE_TARGET: ${{ matrix.target }}
+      RELEASE_ARCH: ${{ matrix.arch }}
+      RELEASE_PUBLISHABLE: ${{ inputs.publish && github.repository == 'Nakashireyumi/neuro-desktop' && github.ref == 'refs/heads/master' }}
+      NEURO_BUNDLE_SKIP_VENV: '1'
+      NEURO_BUNDLE_SKIP_CLIENT: '0'
+      NEURO_MANAGER_SOURCE_ONLY: '0'
+    steps:
+      - name: Checkout the validated source without persisting credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.22.x'
+          cache-dependency-path: headless/apps/neuro-integration/go.sum
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: Verify architecture and pinned direct dependencies
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, pathlib, platform, re
+          if platform.machine().lower() != os.environ['RELEASE_ARCH'].lower():
+              raise SystemExit(f"Runner architecture mismatch: {platform.machine()}")
+          for path in pathlib.Path('desktop/python').glob('requirements*.txt'):
+              for raw in path.read_text().splitlines():
+                  line = raw.split('#', 1)[0].strip()
+                  if line and not line.startswith('-r ') and not re.fullmatch(r'[A-Za-z0-9_.-]+==[A-Za-z0-9_.+!-]+', line):
+                      raise SystemExit(f'Unpinned direct dependency in {path}: {line}')
+          assert pathlib.Path('desktop/frontend/package-lock.json').is_file()
+          if os.environ['RELEASE_PUBLISHABLE'] == 'true':
+              expected = os.environ['RELEASE_VERSION'][1:]
+              sources = [('headless/apps/neuro-integration/main.go', r'const Version = "([^"]+)"'),
+                         ('desktop/apps/neuro-manager/neuro_manager/__init__.py', r'__version__ = "([^"]+)"')]
+              for path, pattern in sources:
+                  match = re.search(pattern, pathlib.Path(path).read_text())
+                  if match is None or match[1] != expected:
+                      raise SystemExit(f'Update the shipped version in {path} to {expected} before publishing')
+          PY
+
+      - name: Install GTK with its matching Python (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-4.0 python3-venv python3-dev xvfb xauth dbus-x11
+          echo 'NEURO_MANAGER_PYTHON=/usr/bin/python3' >> "$GITHUB_ENV"
+          dpkg-query -W python3-gi python3-gi-cairo gir1.2-gtk-4.0 libgtk-4-1 > "$RUNNER_TEMP/manager-packages.txt"
+
+      - name: Install GTK with its matching Python (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install pygobject3 gtk4
+          manager_python="$(brew --prefix)/bin/python3"
+          "$manager_python" -c 'import gi; gi.require_version("Gtk", "4.0"); from gi.repository import Gtk'
+          echo "NEURO_MANAGER_PYTHON=$manager_python" >> "$GITHUB_ENV"
+          brew list --versions > "$RUNNER_TEMP/manager-packages.txt"
+
+      - name: Install native GTK toolchain (Windows UCRT64)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-gobject
+            mingw-w64-ucrt-x86_64-pyinstaller
+
+      - name: Record GTK Python without replacing the agent's CPython (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          echo "NEURO_MANAGER_PYTHON=$(cygpath -w "$(command -v python)")" >> "$GITHUB_ENV"
+          echo "PYGI_DLL_PATH=$(cygpath -w /ucrt64/bin)" >> "$GITHUB_ENV"
+          python -c 'import PyInstaller; assert PyInstaller.__version__ == "6.22.3", "Review and update the pinned packager before releasing"'
+          pacman -Q > "$(cygpath -u "$RUNNER_TEMP")/manager-packages.txt"
+
+      - name: Required backend, controller and native-client unit checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python desktop/tools/ci/repo_checks.py
+          python -m unittest discover -s desktop/tools/ci -p 'test_*.py'
+          python -m unittest discover desktop/python/tests -t desktop/python
+          PYTHONPATH=desktop/apps/neuro-manager python -m unittest discover -s desktop/apps/neuro-manager/tests
+          for module in neuro-integration neuro-dashboard; do
+            (cd "headless/apps/$module" && go mod verify && go vet ./... && go test -count=1 ./...)
+          done
+
+      - name: Test the actual native GTK controls (Linux)
+        if: runner.os == 'Linux'
+        env:
+          PYTHONPATH: desktop/apps/neuro-manager
+        run: xvfb-run -a env NEURO_MANAGER_GUI_TESTS=1 "$NEURO_MANAGER_PYTHON" -m unittest discover -s desktop/apps/neuro-manager/tests
+
+      - name: Test the actual native GTK controls (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          PYTHONPATH: desktop/apps/neuro-manager
+          NEURO_MANAGER_GUI_TESTS: '1'
+        run: '"$NEURO_MANAGER_PYTHON" -m unittest discover -s desktop/apps/neuro-manager/tests'
+
+      - name: Test the actual native GTK controls (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          PYTHONPATH: desktop/apps/neuro-manager
+          NEURO_MANAGER_GUI_TESTS: '1'
+        run: python -m unittest discover -s desktop/apps/neuro-manager/tests
+
+      - name: Build the complete standalone release bundle once (Linux and macOS)
+        if: runner.os != 'Windows'
+        working-directory: desktop
+        shell: bash
+        run: ./scripts/bundle/prod.sh
+
+      - name: Build the complete standalone release bundle once (Windows)
+        if: runner.os == 'Windows'
+        working-directory: desktop
+        shell: pwsh
+        run: ./scripts/bundle/prod.ps1 -SkipVenv
+
+      - name: Test the built frontend without rebuilding it
+        working-directory: desktop/frontend
+        shell: bash
+        run: npm test
+
+      - name: Verify frozen binaries, authenticated API, and packaged executor
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, secrets, shutil, socket, subprocess, tempfile, time, urllib.error, urllib.request
+          bundle = pathlib.Path('desktop/dist/neuro-desktop').resolve()
+          ext = '.exe' if os.name == 'nt' else ''
+          server, dashboard = bundle / ('neuro-integration'+ext), bundle / ('neuro-dashboard'+ext)
+          client, manager = bundle / 'neuro-client' / ('neuro-client'+ext), bundle / 'manager' / ('neuro-manager'+ext)
+          for path in (server, dashboard, client, manager):
+              if not path.is_file() or (os.name != 'nt' and not os.access(path, os.X_OK)):
+                  raise SystemExit(f'Required standalone executable missing: {path}')
+          if (bundle/'manager'/'launch.py').exists():
+              raise SystemExit('A source-only manager cannot be published as a standalone bundle')
+          for path in bundle.rglob('*'):
+              if path.name in {'dashboard-token','relay-token','executor-token','extension-permissions.json','integrations.json','extensions-state.json','builtin-services.json'}:
+                  raise SystemExit(f'Runtime state must not ship in a new release: {path.relative_to(bundle)}')
+              if path.is_symlink() and (not path.exists() or not path.resolve().is_relative_to(bundle)):
+                  raise SystemExit(f'Bundle contains a broken or non-portable symlink: {path.relative_to(bundle)}')
+          subprocess.run([str(server), 'catalog', 'verify', '--index', 'catalog/index.json', '--publishers', 'catalog/publishers.json'], cwd=bundle, check=True, timeout=30)
+          subprocess.run([str(client), '--help'], check=True, capture_output=True, timeout=30)
+          unused = subprocess.run([str(client), '--bridge', '127.0.0.1:1', '--once'], capture_output=True, text=True, timeout=30)
+          if unused.returncode != 1 or 'giving up' not in unused.stdout+unused.stderr:
+              raise SystemExit('The frozen client did not fail cleanly with an unreachable server')
+          ports = set()
+          while len(ports) < 3:
+              with socket.socket() as s:
+                  s.bind(('127.0.0.1', 0)); ports.add(s.getsockname()[1])
+          admin_port, executor_port, dashboard_port = sorted(ports)
+          with tempfile.TemporaryDirectory(prefix='nd-release-smoke-') as temporary:
+              work = pathlib.Path(temporary)
+              token = secrets.token_urlsafe(32)
+              env = dict(os.environ, NEURO_ADMIN_TOKEN=token, NEURO_EXECUTOR_TOKEN=secrets.token_urlsafe(32),
+                         NEURO_ADMIN_LISTEN=f'127.0.0.1:{admin_port}', NEURO_EXECUTOR_LISTEN=f'127.0.0.1:{executor_port}',
+                         NEURO_UI_DIR=str(bundle/'frontend'), NEURO_CATALOG_FILE=str(bundle/'catalog/index.json'),
+                         NEURO_PUBLISHERS_FILE=str(bundle/'catalog/publishers.json'), NEURO_GAME_PROFILES_DIR=str(bundle/'catalog/games'),
+                         NEURO_PERMISSIONS_FILE=str(work/'permissions.json'), NEURO_EXTENSIONS_STATE_FILE=str(work/'extensions-state.json'),
+                         NEURO_INTEGRATIONS_FILE=str(work/'integrations.json'), NEURO_EXTENSION_PERMISSIONS_FILE=str(work/'extension-permissions.json'))
+              shutil.copyfile(bundle/'permissions.json', work/'permissions.json')
+              processes = []
+              def request(path, port=admin_port, authenticated=True):
+                  headers = {'X-ND-Token':token} if authenticated else {}
+                  with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}{path}', headers=headers), timeout=2) as response:
+                      return response.read()
+              def wait_for(check):
+                  deadline = time.monotonic()+30
+                  while time.monotonic() < deadline:
+                      try:
+                          if check(): return
+                      except (OSError, ValueError): pass
+                      if any(p.poll() is not None for p in processes):
+                          raise RuntimeError('A packaged process exited during the release smoke test')
+                      time.sleep(0.2)
+                  raise TimeoutError('Packaged components did not become ready')
+              with open(work/'processes.log','wb') as log:
+                  try:
+                      processes.append(subprocess.Popen([str(server)], cwd=work, env=env, stdout=log, stderr=log))
+                      wait_for(lambda: json.loads(request('/health'))['version'])
+                      try: request('/api/status', authenticated=False)
+                      except urllib.error.HTTPError as error:
+                          assert error.code == 401
+                      else: raise AssertionError('The packaged API accepted an anonymous request')
+                      processes.append(subprocess.Popen([str(client), '--bridge', f'127.0.0.1:{executor_port}'], cwd=work, env=env, stdout=log, stderr=log))
+                      wait_for(lambda: json.loads(request('/api/status'))['executor']['connected'])
+                      processes.append(subprocess.Popen([str(dashboard), '--server', f'http://127.0.0.1:{admin_port}', '--listen', f'127.0.0.1:{dashboard_port}', '--ui-dir', str(bundle/'frontend')], cwd=work, env=env, stdout=log, stderr=log))
+                      wait_for(lambda: b'./assets/' in request('/ui/', port=dashboard_port))
+                      assert json.loads(request('/api/status', port=dashboard_port))['ok']
+                  finally:
+                      for process in reversed(processes):
+                          if os.name == 'nt' and process.poll() is None:
+                              # The one-file agent has a bootloader child. End
+                              # its complete process tree before deleting logs.
+                              subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                          elif process.poll() is None: process.terminate()
+                      for process in reversed(processes):
+                          try: process.wait(timeout=10)
+                          except subprocess.TimeoutExpired: process.kill(); process.wait(timeout=5)
+          print('Standalone server, dashboard, authenticated API, and frozen executor passed')
+          PY
+
+      - name: Start the frozen native manager (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a timeout 30 desktop/dist/neuro-desktop/manager/neuro-manager --smoke-test --diagnostics
+
+      - name: Start the frozen native manager (macOS and Windows)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, subprocess
+          binary = 'desktop/dist/neuro-desktop/manager/neuro-manager'+('.exe' if os.name == 'nt' else '')
+          subprocess.run([binary, '--smoke-test', '--diagnostics'], check=True, timeout=30)
+          PY
+
+      - name: Archive the tested bytes and record their build identity
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, platform, shutil, subprocess, tarfile, zipfile
+          bundle = pathlib.Path('desktop/dist/neuro-desktop')
+          out = pathlib.Path('release-out'); out.mkdir()
+          shutil.copyfile('LICENSE', bundle/'LICENSE')
+          (bundle/'licenses').mkdir(exist_ok=True)
+          shutil.copyfile('headless/apps/neuro-integration/third_party/neuro-integration-sdk/LICENSE', bundle/'licenses'/'neuro-integration-sdk-LICENSE')
+          target, version = os.environ['RELEASE_TARGET'], os.environ['RELEASE_VERSION']
+          def command(*args): return subprocess.check_output(args, text=True).strip()
+          def digest(path):
+              h=hashlib.sha256()
+              with open(path,'rb') as f:
+                  for block in iter(lambda:f.read(1024*1024),b''): h.update(block)
+              return h.hexdigest()
+          lock_paths = ['desktop/frontend/package-lock.json','headless/apps/neuro-integration/go.mod','headless/apps/neuro-integration/go.sum',
+                        'headless/apps/neuro-dashboard/go.mod','desktop/python/requirements.txt','desktop/python/requirements-windows.txt',
+                        'desktop/apps/neuro-manager/neuro-manager.spec','desktop/catalog/index.json','desktop/catalog/publishers.json','desktop/catalog/marketplace.json']
+          agent_python = pathlib.Path('desktop/dist/.client-build/venv')/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
+          metadata = {'schema_version':1, 'version':version, 'source_repository':os.environ['GITHUB_REPOSITORY'], 'source_sha':os.environ['RELEASE_SHA'],
+                      'source_ref':os.environ['GITHUB_REF'], 'target':target, 'architecture':platform.machine(), 'runner_image':os.environ.get('ImageOS',''),
+                      'workflow_run_id':os.environ['GITHUB_RUN_ID'], 'ci_run_id':os.environ['RELEASE_CI_RUN_ID'],
+                      'go':command('go','version'), 'node':command('node','--version'), 'agent_python':command(str(agent_python),'--version'),
+                      'agent_packages':command(str(agent_python),'-m','pip','freeze').splitlines(),
+                      'manager_system_packages':(pathlib.Path(os.environ['RUNNER_TEMP'])/'manager-packages.txt').read_text().splitlines(),
+                      'input_sha256':{p:digest(p) for p in lock_paths if pathlib.Path(p).exists()},
+                      'limitations':['Python transitive packages and OS GTK packages are recorded, not fully hash-locked.', 'Platform code-signing and notarization are not configured.']}
+          (bundle/'BUILD.json').write_text(json.dumps(metadata,indent=2)+'\n')
+          base=f'neuro-desktop-{version}-{target}'
+          archive=out/(base+('.zip' if os.name=='nt' else '.tar.gz'))
+          if os.name=='nt':
+              with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+                  for path in sorted(bundle.rglob('*')):
+                      if path.is_file(): z.write(path, pathlib.Path('neuro-desktop')/path.relative_to(bundle))
+          else:
+              # TarFile does not dereference symlinks; modes and .app links survive.
+              with tarfile.open(archive,'w:gz',compresslevel=6,dereference=False) as t: t.add(bundle,arcname='neuro-desktop')
+          metadata['archive']={'name':archive.name,'sha256':digest(archive),'size':archive.stat().st_size}
+          manifest=out/(base+'.build.json'); manifest.write_text(json.dumps(metadata,indent=2)+'\n')
+          (out/(base+'.sha256')).write_text(f"{digest(archive)}  {archive.name}\n{digest(manifest)}  {manifest.name}\n")
+          print(f'Archived tested bundle: {archive.name}')
+          PY
+
+      - name: Ensure dependency inputs were not rewritten during the build
+        shell: bash
+        run: git diff --exit-code -- desktop/frontend/package-lock.json headless/apps/neuro-integration/go.mod headless/apps/neuro-integration/go.sum headless/apps/neuro-dashboard/go.mod desktop/python/requirements.txt desktop/python/requirements-windows.txt
+
+      - name: Save immutable tested artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ matrix.target }}
+          path: release-out/*
+          if-no-files-found: error
+          overwrite: false
+          compression-level: 0
+          retention-days: 30
+
+  draft:
+    needs: [validate, build]
+    if: >-
+      inputs.publish && github.repository == 'Nakashireyumi/neuro-desktop' &&
+      github.ref == 'refs/heads/master'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+      CI_RUN_ID: ${{ needs.validate.outputs.ci_run_id }}
+    steps:
+      - name: Download the exact tested artifacts without rebuilding
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+
+      - name: Recheck upstream identity, protected master, CI, checksums and version availability
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          repo, sha, version = os.environ['GITHUB_REPOSITORY'], os.environ['SOURCE_SHA'], os.environ['VERSION']
+          assert repo == 'Nakashireyumi/neuro-desktop' and os.environ['GITHUB_REF'] == 'refs/heads/master'
+          def api(path, missing_ok=False):
+              p=subprocess.run(['gh','api',path],text=True,capture_output=True)
+              if p.returncode:
+                  if missing_ok and '(HTTP 404)' in p.stderr: return None
+                  raise SystemExit(f'GitHub API request failed: {path}')
+              return json.loads(p.stdout)
+          assert api(f'repos/{repo}/branches/master')['protected'], 'Protect upstream master before releasing'
+          run=api(f"repos/{repo}/actions/runs/{os.environ['CI_RUN_ID']}")
+          assert run['head_sha']==sha and run['status']=='completed' and run['conclusion']=='success'
+          jobs=api(f"repos/{repo}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100")['jobs']
+          assert any(j['name']=='Release gate (every required job succeeded)' and j['conclusion']=='success' for j in jobs)
+          if api(f'repos/{repo}/git/ref/tags/{version}',missing_ok=True) is not None:
+              raise SystemExit('This tag already exists; release artifacts will not be overwritten')
+          for page in range(1,101):
+              releases=api(f'repos/{repo}/releases?per_page=100&page={page}')
+              if any(r['tag_name']==version for r in releases): raise SystemExit('This release or draft already exists')
+              if len(releases)<100: break
+          else: raise SystemExit('Could not establish that this version is unused')
+          root=pathlib.Path('release'); targets={'linux-x64','windows-x64','macos-arm64','macos-x64'}
+          manifests=list(root.glob('*.build.json'))
+          assert len(manifests)==len(targets)
+          observed=set()
+          def digest(path):
+              h=hashlib.sha256()
+              with open(path,'rb') as f:
+                  for block in iter(lambda:f.read(1024*1024),b''):h.update(block)
+              return h.hexdigest()
+          for path in manifests:
+              m=json.loads(path.read_text()); observed.add(m['target'])
+              assert m['source_sha']==sha and m['source_repository']==repo and m['version']==version
+              assert str(m['workflow_run_id'])==os.environ['GITHUB_RUN_ID'] and str(m['ci_run_id'])==os.environ['CI_RUN_ID']
+              archive=m['archive']; assert pathlib.Path(archive['name']).name==archive['name']
+              assert digest(root/archive['name'])==archive['sha256']
+          assert observed==targets
+          checks=list(root.glob('*.sha256')); assert len(checks)==len(targets)
+          for path in checks:
+              for line in path.read_text().splitlines():
+                  expected,name=line.split('  ',1); assert pathlib.Path(name).name==name
+                  assert digest(root/name)==expected, f'Checksum mismatch: {name}'
+          print('All platform artifacts match the tested source and immutable build outputs')
+          PY
+
+      - name: Attest the tested release assets
+        id: attest
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: |
+            release/*.tar.gz
+            release/*.zip
+            release/*.build.json
+
+      - name: Verify provenance and prepare the draft release
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$ATTESTATION_BUNDLE" release/provenance.intoto.jsonl
+          for asset in release/*.tar.gz release/*.zip; do
+            gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY" --bundle release/provenance.intoto.jsonl \
+              --signer-workflow Nakashireyumi/neuro-desktop/.github/workflows/release.yml \
+              --source-digest "$SOURCE_SHA" --source-ref refs/heads/master --deny-self-hosted-runners
+          done
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          version,sha,repo=os.environ['VERSION'],os.environ['SOURCE_SHA'],os.environ['GITHUB_REPOSITORY']
+          body=f"Built and tested from `{sha}` on each target OS. These are the same archived artifacts tested in workflow run {os.environ['GITHUB_RUN_ID']}.\n\nVerify SHA-256 files and GitHub artifact provenance before installing. Linux/macOS archives preserve executable modes and application symlinks.\n\nThis draft requires review before publication. Native OS code signing/notarization and real desktop input on every supported environment remain separate release checks."
+          payload={'tag_name':version,'target_commitish':sha,'name':version,'body':body,'draft':True,'prerelease':'-' in version}
+          path=pathlib.Path(os.environ['RUNNER_TEMP'])/'release-request.json';path.write_text(json.dumps(payload))
+          result=json.loads(subprocess.check_output(['gh','api','--method','POST',f'repos/{repo}/releases','--input',str(path)],text=True))
+          assert result['draft'] and result['tag_name']==version
+          subprocess.run(['gh','release','upload',version,*[str(p) for p in sorted(pathlib.Path('release').iterdir())],'--repo',repo],check=True)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(f"Draft release: {result['html_url']}\n")
+          PY
